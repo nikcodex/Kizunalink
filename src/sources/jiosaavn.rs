@@ -28,7 +28,6 @@ impl JioSaavnSource {
         Arc::new(Self { client })
     }
 
-    /// Search JioSaavn songs by query string
     pub async fn search(&self, query: &str, limit: usize) -> Result<Vec<LavalinkTrack>, String> {
         let clean_query = query.trim();
         if clean_query.is_empty() {
@@ -44,7 +43,6 @@ impl JioSaavnSource {
         let response = self.client.get(&url).send().await.map_err(|e| e.to_string())?;
         let text = response.text().await.map_err(|e| e.to_string())?;
 
-        // JioSaavn occasionally prepends garbage or invalid whitespace
         let json_str = match text.find('{') {
             Some(idx) => &text[idx..],
             None => return Ok(vec![]),
@@ -54,7 +52,6 @@ impl JioSaavnSource {
         self.parse_search_results(&json_val)
     }
 
-    /// Parse search results from JSON response
     fn parse_search_results(&self, json: &Value) -> Result<Vec<LavalinkTrack>, String> {
         let songs = json
             .get("songs")
@@ -101,40 +98,40 @@ impl JioSaavnSource {
                         d.as_u64()
                     }
                 })
-                .unwrap_or(0);
+                .unwrap_or(210);
 
-            let raw_image = song
+            let artwork = song
                 .get("image")
                 .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .replace("150x150", "500x500")
-                .replace(".webp", ".jpg");
+                .map(|img| img.replace("50x50", "500x500").replace("150x150", "500x500"));
 
-            let perma_url = song
+            let url = song
                 .get("perma_url")
+                .or_else(|| song.get("url"))
                 .and_then(|v| v.as_str())
                 .map(|s| s.to_string());
 
-            let encoded = STANDARD.encode(format!("jiosaavn:{}", id));
+            let clean_title = title.replace("&quot;", "\"").replace("&amp;", "&").replace("&#039;", "'");
+            let clean_artist = artist.replace("&quot;", "\"").replace("&amp;", "&").replace("&#039;", "'");
 
-            let track_info = TrackInfo {
-                identifier: id,
-                is_seekable: true,
-                author: artist,
-                length: duration_sec * 1000,
-                is_stream: false,
-                position: 0,
-                title,
-                uri: perma_url,
-                artwork_url: Some(raw_image),
-                source_name: "jiosaavn".to_string(),
-                bitrate: Some("320kbps".to_string()),
-                stream_url: None,
-            };
+            let encoded = STANDARD.encode(format!("jiosaavn:{}", id));
 
             tracks.push(LavalinkTrack {
                 encoded,
-                info: track_info,
+                info: TrackInfo {
+                    identifier: id,
+                    is_seekable: true,
+                    author: clean_artist,
+                    length: duration_sec * 1000,
+                    is_stream: false,
+                    position: 0,
+                    title: clean_title,
+                    uri: url,
+                    artwork_url: artwork,
+                    source_name: "jiosaavn".to_string(),
+                    bitrate: Some("320kbps".to_string()),
+                    stream_url: None,
+                },
                 plugin_info: Value::Object(Default::default()),
                 user_data: Value::Object(Default::default()),
             });
@@ -143,9 +140,7 @@ impl JioSaavnSource {
         Ok(tracks)
     }
 
-    /// Resolve direct 320kbps CloudFront CDN stream URL for a JioSaavn song ID
     pub async fn resolve_stream_url(&self, song_id: &str) -> Result<String, String> {
-        // 1. Fetch song details to extract encrypted_media_url
         let details_url = format!(
             "{}?__call=song.getDetails&pids={}&_format=json&_marker=0&ctx=android&api_version=4",
             JIOSAAVN_API_BASE, song_id
@@ -162,7 +157,7 @@ impl JioSaavnSource {
         let details_json: Value = serde_json::from_str(json_str).map_err(|e| e.to_string())?;
         let song_obj = details_json
             .get(song_id)
-            .or_else(|| details_json.get("songs").and_then(|s| s.get(0)))
+            .or_else(|| details_json.get("songs").and_then(|s| s.as_array()).and_then(|a| a.first()))
             .ok_or_else(|| format!("Song ID {} not found in details", song_id))?;
 
         let encrypted_url = song_obj
@@ -171,7 +166,6 @@ impl JioSaavnSource {
             .and_then(|v| v.as_str())
             .ok_or_else(|| "Missing encrypted_media_url in song object".to_string())?;
 
-        // 2. Generate signed 320kbps CloudFront CDN stream URL
         let auth_url = format!(
             "{}?__call=song.generateAuthToken&url={}&bitrate=320&_format=json&_marker=0&ctx=android&api_version=4",
             JIOSAAVN_API_BASE,
@@ -190,7 +184,6 @@ impl JioSaavnSource {
         Ok(stream_url.to_string())
     }
 
-    /// Retrieve plain text or synced lyrics for a song
     pub async fn get_lyrics(&self, song_id: &str) -> Result<Option<String>, String> {
         let lyrics_url = format!(
             "{}?__call=lyrics.getLyrics&lyrics_id={}&_format=json&_marker=0&ctx=web6dot0&api_version=4",
@@ -208,7 +201,6 @@ impl JioSaavnSource {
         Ok(None)
     }
 
-    /// Generate JioSaavn Radio Recommendations for a song ID or query
     pub async fn get_recommendations(&self, query: &str) -> Result<Vec<LavalinkTrack>, String> {
         let song_id = if query.chars().all(|c| c.is_alphanumeric() || c == '_' || c == '-') && query.len() < 20 {
             query.to_string()
@@ -221,7 +213,6 @@ impl JioSaavnSource {
             }
         };
 
-        // 1. Create Radio Entity Station
         let station_url = format!(
             "{}?__call=webradio.createEntityStation&api_version=4&ctx=android&entity_id=[\"{}\"]&entity_type=queue&_format=json",
             JIOSAAVN_API_BASE, song_id
@@ -230,7 +221,6 @@ impl JioSaavnSource {
         if let Ok(res) = self.client.get(&station_url).send().await {
             if let Ok(json) = res.json::<Value>().await {
                 if let Some(station_id) = json.get("stationid").and_then(|v| v.as_str()) {
-                    // 2. Fetch Radio Station Songs
                     let songs_url = format!(
                         "{}?__call=webradio.getSong&api_version=4&ctx=android&stationid={}&k=20&_format=json",
                         JIOSAAVN_API_BASE, urlencoding::encode(station_id)
@@ -249,7 +239,6 @@ impl JioSaavnSource {
             }
         }
 
-        // Fallback: search similar mix
         self.search(&format!("{} mix", query), 15).await
     }
 }

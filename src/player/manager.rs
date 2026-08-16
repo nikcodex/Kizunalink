@@ -51,36 +51,30 @@ impl PlayerManager {
 
         let mut player = player_arc.write().await;
 
-        // 1. Update Voice State if provided
         if let Some(voice) = payload.voice {
-            info!("🔌 Received voice credentials for guild: {}", guild_id);
+            info!("Received voice credentials for guild: {}", guild_id);
             player.set_voice(voice).await;
         }
 
-        // 2. Update Volume
         if let Some(volume) = payload.volume {
             player.set_volume(volume);
         }
 
-        // 3. Update Paused
         if let Some(paused) = payload.paused {
             player.set_paused(paused);
         }
 
-        // 4. Update Position
         if let Some(position) = payload.position {
             player.seek(position);
         }
 
-        // 5. Update Filters
         if let Some(filters) = payload.filters {
             player.filters = filters;
         }
 
-        // 6. Update Track (Play / Stop)
         if let Some(encoded_opt) = payload.encoded_track {
             if encoded_opt.trim().is_empty() {
-                info!("⏹️ Stopped player for guild: {}", guild_id);
+                info!("Stopped player for guild: {}", guild_id);
                 player.stop();
             } else {
                 let track_id = if let Ok(decoded) = STANDARD.decode(&encoded_opt) {

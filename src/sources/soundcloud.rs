@@ -4,7 +4,6 @@ use reqwest::Client;
 use serde_json::Value;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use urlencoding;
 
 const SOUNDCLOUD_API: &str = "https://api-v2.soundcloud.com";
 
@@ -25,7 +24,6 @@ impl SoundCloudSource {
         })
     }
 
-    /// Search SoundCloud tracks
     pub async fn search(&self, query: &str, limit: usize) -> Result<Vec<LavalinkTrack>, String> {
         let client_id = self.client_id.read().await.clone();
         let url = format!(

@@ -65,12 +65,11 @@ impl GuildPlayer {
             user_id: UserId::from(user_num),
         };
 
-        info!("🔌 Connecting Songbird voice driver for guild: {}", self.guild_id);
         let mut driver_lock = self.driver.lock().await;
         if let Err(e) = driver_lock.connect(info).await {
-            error!("❌ Songbird voice connection failed for guild {}: {:?}", self.guild_id, e);
+            error!("Voice connection failed for guild {}: {:?}", self.guild_id, e);
         } else {
-            info!("✅ Songbird voice driver connected for guild: {}", self.guild_id);
+            info!("Voice driver connected for guild: {}", self.guild_id);
         }
 
         self.voice = Some(voice);
@@ -78,7 +77,6 @@ impl GuildPlayer {
     }
 
     pub async fn play_stream(&mut self, track: LavalinkTrack, stream_url: String, http_client: reqwest::Client) {
-        info!("🎶 Songbird playing direct stream for guild {}: {}", self.guild_id, track.info.title);
         let input = HttpRequest::new(http_client, stream_url).into();
 
         let mut driver_lock = self.driver.lock().await;

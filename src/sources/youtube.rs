@@ -28,7 +28,6 @@ impl YouTubeSource {
         Arc::new(Self { client })
     }
 
-    /// Search YouTube videos by query
     pub async fn search(&self, query: &str, limit: usize) -> Result<Vec<LavalinkTrack>, String> {
         for instance in PIPED_API_INSTANCES {
             let url = format!("{}/search?q={}&filter=videos", instance, urlencoding::encode(query.trim()));
@@ -52,7 +51,6 @@ impl YouTubeSource {
         Ok(vec![])
     }
 
-    /// Resolve a direct YouTube video ID
     pub async fn resolve_video(&self, video_id: &str) -> Result<Option<LavalinkTrack>, String> {
         for instance in PIPED_API_INSTANCES {
             let url = format!("{}/streams/{}", instance, video_id);
@@ -63,7 +61,6 @@ impl YouTubeSource {
                     let duration_sec = json.get("duration").and_then(|d| d.as_u64()).unwrap_or(0);
                     let artwork = json.get("thumbnailUrl").and_then(|t| t.as_str()).map(|s| s.to_string());
 
-                    // Direct audio stream URL from Piped
                     let audio_stream = json
                         .get("audioStreams")
                         .and_then(|s| s.as_array())
@@ -100,14 +97,14 @@ impl YouTubeSource {
         Ok(None)
     }
 
-    fn parse_item(&self, json: &Value) -> Option<LavalinkTrack> {
-        let url_path = json.get("url").and_then(|u| u.as_str())?;
+    fn parse_item(&self, item: &Value) -> Option<LavalinkTrack> {
+        let url_path = item.get("url").and_then(|u| u.as_str())?;
         let video_id = url_path.strip_prefix("/watch?v=").unwrap_or(url_path).to_string();
 
-        let title = json.get("title").and_then(|t| t.as_str()).unwrap_or("Unknown Title").to_string();
-        let author = json.get("uploaderName").and_then(|u| u.as_str()).unwrap_or("Unknown Artist").to_string();
-        let duration_sec = json.get("duration").and_then(|d| d.as_u64()).unwrap_or(0);
-        let thumbnail = json.get("thumbnail").and_then(|t| t.as_str()).map(|s| s.to_string());
+        let title = item.get("title").and_then(|t| t.as_str()).unwrap_or("Unknown Title").to_string();
+        let author = item.get("uploaderName").and_then(|u| u.as_str()).unwrap_or("Unknown Artist").to_string();
+        let duration_sec = item.get("duration").and_then(|d| d.as_u64()).unwrap_or(0);
+        let artwork = item.get("thumbnail").and_then(|t| t.as_str()).map(|s| s.to_string());
 
         let encoded = STANDARD.encode(format!("youtube:{}", video_id));
 
@@ -122,7 +119,7 @@ impl YouTubeSource {
                 position: 0,
                 title,
                 uri: Some(format!("https://www.youtube.com/watch?v={}", video_id)),
-                artwork_url: thumbnail,
+                artwork_url: artwork,
                 source_name: "youtube".to_string(),
                 bitrate: Some("160kbps".to_string()),
                 stream_url: None,

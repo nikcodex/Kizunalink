@@ -1,7 +1,5 @@
 #![allow(dead_code, unused_imports, unused_variables)]
 
-// KizunaLink — High-Performance Standalone Discord Audio Engine in Rust.
-
 pub mod config;
 pub mod models;
 pub mod player;
@@ -57,7 +55,6 @@ pub struct LoadLyricsQuery {
 
 #[tokio::main]
 async fn main() {
-    // 1. Initialize Logging
     let subscriber = FmtSubscriber::builder()
         .with_max_level(Level::INFO)
         .finish();
@@ -84,7 +81,6 @@ async fn main() {
         start_time: Instant::now(),
     };
 
-    // 2. Build Full Lavalink v4 Protocol Router
     let app = Router::new()
         .route("/version", get(get_version))
         .route("/v4/info", get(get_info))
@@ -118,7 +114,10 @@ async fn main() {
         .expect("KizunaLink server encountered an error");
 }
 
-/// Server Info Endpoint (/v4/info)
+async fn get_version() -> impl IntoResponse {
+    "0.1.0"
+}
+
 async fn get_info() -> impl IntoResponse {
     Json(json!({
         "version": {
@@ -140,7 +139,6 @@ async fn get_info() -> impl IntoResponse {
     }))
 }
 
-/// Server Metrics & Stats Endpoint (/v4/stats)
 async fn get_stats(State(state): State<AppState>) -> impl IntoResponse {
     let (total_players, playing_players) = state.player_manager.count_players();
     let uptime = state.start_time.elapsed().as_millis() as u64;
@@ -163,7 +161,6 @@ async fn get_stats(State(state): State<AppState>) -> impl IntoResponse {
     })
 }
 
-/// Track Search & Load Endpoint (/v4/loadtracks?identifier=...)
 async fn load_tracks(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -180,9 +177,8 @@ async fn load_tracks(
         _ => return Ok(Json(LoadResult::Empty(json!({})))),
     };
 
-    info!("🔍 Resolving track query: \"{}\"", identifier);
+    info!("Resolving track query: \"{}\"", identifier);
 
-    // 1. Direct HTTP Audio Stream Handling
     if identifier.starts_with("http://") || identifier.starts_with("https://") {
         if identifier.ends_with(".mp3")
             || identifier.ends_with(".wav")
@@ -226,7 +222,6 @@ async fn load_tracks(
         }
     }
 
-    // 2. JioSaavn Radio Recommendations (jsrec:<query>)
     if let Some(stripped) = identifier.strip_prefix("jsrec:") {
         if let Ok(tracks) = state.jiosaavn.get_recommendations(stripped.trim()).await {
             if !tracks.is_empty() {
@@ -235,7 +230,6 @@ async fn load_tracks(
         }
     }
 
-    // 3. SoundCloud Search & Prefix (scsearch:<query>)
     if let Some(stripped) = identifier.strip_prefix("scsearch:") {
         if let Ok(tracks) = state.soundcloud.search(stripped.trim(), 10).await {
             if !tracks.is_empty() {
@@ -244,7 +238,6 @@ async fn load_tracks(
         }
     }
 
-    // 4. Spotify URL Handling
     if identifier.contains("open.spotify.com/track/") {
         if let Some(track_id) = identifier.split("/track/").nth(1).and_then(|s| s.split('?').next()) {
             if let Ok(Some(track)) = state.spotify.resolve_track(track_id).await {
@@ -263,7 +256,6 @@ async fn load_tracks(
         }
     }
 
-    // 5. YouTube URL Handling & Prefix
     if identifier.contains("youtube.com/watch") || identifier.contains("youtu.be/") {
         let video_id = if let Some(id) = identifier.split("v=").nth(1).and_then(|s| s.split('&').next()) {
             id
@@ -282,7 +274,6 @@ async fn load_tracks(
         }
     }
 
-    // Additional Prefixes (ytmsearch:, amsearch:, dzsearch:)
     if let Some(stripped) = identifier.strip_prefix("ytmsearch:") {
         if let Ok(tracks) = state.youtube.search(stripped.trim(), 10).await {
             return Ok(Json(LoadResult::Search(tracks)));
@@ -299,7 +290,6 @@ async fn load_tracks(
         }
     }
 
-    // 6. JioSaavn Primary Search & Fallback
     let search_term = identifier.strip_prefix("jssearch:").unwrap_or(&identifier).trim();
 
     match state.jiosaavn.search(search_term, 10).await {
@@ -311,7 +301,6 @@ async fn load_tracks(
             }
         }
         _ => {
-            // Fallback to YouTube
             if let Ok(yt_tracks) = state.youtube.search(search_term, 10).await {
                 if !yt_tracks.is_empty() {
                     return Ok(Json(LoadResult::Search(yt_tracks)));
@@ -322,18 +311,12 @@ async fn load_tracks(
     }
 }
 
-/// Plain Version Endpoint (/version)
-async fn get_version() -> impl IntoResponse {
-    "0.1.0"
-}
-
 #[derive(Deserialize)]
 pub struct DecodeTrackQuery {
     #[serde(rename = "encodedTrack")]
     pub encoded_track: Option<String>,
 }
 
-/// Decode single track endpoint (/v4/decodetrack?encodedTrack=...)
 async fn decode_track(
     Query(query): Query<DecodeTrackQuery>,
     State(_state): State<AppState>,
@@ -372,7 +355,6 @@ async fn decode_track(
     }))
 }
 
-/// Decode batch of tracks endpoint (POST /v4/decodetracks)
 async fn decode_tracks(
     State(_state): State<AppState>,
     Json(encoded_tracks): Json<Vec<String>>,
@@ -421,7 +403,6 @@ pub struct SessionUpdatePayload {
     pub timeout: Option<u64>,
 }
 
-/// Update session endpoint (PATCH /v4/sessions/:sessionId)
 async fn update_session(
     Path(_session_id): Path<String>,
     Json(payload): Json<SessionUpdatePayload>,
@@ -432,7 +413,6 @@ async fn update_session(
     }))
 }
 
-/// Native Lyrics Endpoint (/v4/loadlyrics?encodedTrack=...)
 async fn load_lyrics(
     State(state): State<AppState>,
     Query(query): Query<LoadLyricsQuery>,
@@ -470,40 +450,38 @@ async fn load_lyrics(
     }
 }
 
-/// Get all players in a session (/v4/sessions/:sessionId/players)
 async fn get_players(
     State(state): State<AppState>,
     Path(_session_id): Path<String>,
 ) -> Json<Vec<PlayerResponse>> {
-    Json(state.player_manager.get_all_players().await)
+    let players = state.player_manager.get_all_players().await;
+    Json(players)
 }
 
-/// Get single player state (/v4/sessions/:sessionId/players/:guildId)
 async fn get_player(
     State(state): State<AppState>,
     Path((_session_id, guild_id)): Path<(String, String)>,
 ) -> Result<Json<PlayerResponse>, StatusCode> {
-    state
-        .player_manager
-        .get_player(&guild_id)
-        .await
-        .map(Json)
-        .ok_or(StatusCode::NOT_FOUND)
+    match state.player_manager.get_player(&guild_id).await {
+        Some(player) => Ok(Json(player)),
+        None => Err(StatusCode::NOT_FOUND),
+    }
 }
 
-/// Update player state via Lavalink v4 PATCH (/v4/sessions/:sessionId/players/:guildId)
 async fn update_player(
     State(state): State<AppState>,
     Path((_session_id, guild_id)): Path<(String, String)>,
     Json(payload): Json<PlayerUpdatePayload>,
 ) -> Result<Json<PlayerResponse>, StatusCode> {
     match state.player_manager.update_player(&guild_id, payload).await {
-        Ok(response) => Ok(Json(response)),
-        Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
+        Ok(player) => Ok(Json(player)),
+        Err(e) => {
+            error!("Player update failed for guild {}: {}", guild_id, e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
     }
 }
 
-/// Destroy player and leave voice channel (/v4/sessions/:sessionId/players/:guildId)
 async fn destroy_player(
     State(state): State<AppState>,
     Path((_session_id, guild_id)): Path<(String, String)>,
@@ -515,99 +493,109 @@ async fn destroy_player(
     }
 }
 
-/// Real-time Voice Control WebSocket Handler (/v4/websocket)
 async fn ws_handler(
     ws: WebSocketUpgrade,
     headers: HeaderMap,
     State(state): State<AppState>,
-) -> Result<impl IntoResponse, StatusCode> {
-    if let Some(auth) = headers.get("authorization") {
-        if auth.to_str().unwrap_or("") != state.password {
-            return Err(StatusCode::UNAUTHORIZED);
-        }
+) -> impl IntoResponse {
+    let auth_header = headers.get("authorization").and_then(|h| h.to_str().ok());
+    if auth_header != Some(&state.password) {
+        return StatusCode::UNAUTHORIZED.into_response();
     }
 
-    if let Some(user_id) = headers
+    let user_id = headers
         .get("user-id")
-        .or_else(|| headers.get("User-Id"))
         .and_then(|h| h.to_str().ok())
+        .unwrap_or("0")
+        .to_string();
+
     {
         let mut id_lock = state.player_manager.bot_user_id.write().await;
-        *id_lock = user_id.to_string();
-        info!("🤖 Registered Bot Client User ID: {}", user_id);
+        *id_lock = user_id.clone();
     }
 
-    Ok(ws.on_upgrade(handle_socket))
+    info!("Bot WebSocket connected with User ID: {}", user_id);
+
+    ws.on_upgrade(|socket| handle_socket(socket, state))
 }
 
-async fn handle_socket(socket: WebSocket) {
-    use futures_util::{SinkExt, StreamExt};
-    info!("🔗 New WebSocket connection established with Discord Bot");
+async fn handle_socket(mut socket: WebSocket, state: AppState) {
+    let session_id = uuid_v4();
 
-    let (mut sender, mut receiver) = socket.split();
-
-    let ready_payload = json!({
+    let ready_msg = json!({
         "op": "ready",
         "resumed": false,
-        "sessionId": format!("kizuna-session-{}", uuid_simple())
+        "sessionId": session_id
     });
 
-    if sender.send(Message::Text(ready_payload.to_string())).await.is_err() {
+    if let Err(e) = socket.send(Message::Text(ready_msg.to_string())).await {
+        error!("WebSocket failed to send ready payload: {:?}", e);
         return;
     }
 
-    let sender = Arc::new(tokio::sync::Mutex::new(sender));
-    let sender_clone = sender.clone();
+    let (mut sender, mut receiver) = futures_util::StreamExt::split(socket);
 
-    // Heartbeat sender (every 20s) to keep client active
-    let heartbeat_handle = tokio::spawn(async move {
+    let stats_state = state.clone();
+    let stats_task = tokio::spawn(async move {
         let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(20));
         loop {
             interval.tick().await;
+            let (total_players, playing_players) = stats_state.player_manager.count_players();
+            let uptime = stats_state.start_time.elapsed().as_millis() as u64;
+
             let stats = json!({
                 "op": "stats",
-                "players": 0,
-                "playingPlayers": 0,
-                "uptime": 10000,
+                "players": total_players,
+                "playingPlayers": playing_players,
+                "uptime": uptime,
                 "memory": {
                     "free": 1024 * 1024 * 512,
-                    "used": 1024 * 1024 * 2,
-                    "allocated": 1024 * 1024 * 4,
+                    "used": 1024 * 1024 * 18,
+                    "allocated": 1024 * 1024 * 32,
                     "reservable": 1024 * 1024 * 512
                 },
                 "cpu": {
-                    "cores": 4,
-                    "systemLoad": 0.01,
+                    "cores": num_cpus::get(),
+                    "systemLoad": 0.05,
                     "lavalinkLoad": 0.01
                 },
-                "frameStats": {
-                    "sent": 0,
-                    "nulled": 0,
-                    "deficit": 0
-                }
+                "frameStats": null
             });
 
-            let mut lock = sender_clone.lock().await;
-            if lock.send(Message::Text(stats.to_string())).await.is_err() {
+            use futures_util::SinkExt;
+            if sender.send(Message::Text(stats.to_string())).await.is_err() {
                 break;
             }
         }
     });
 
-    while let Some(Ok(msg)) = receiver.next().await {
+    while let Some(msg) = futures_util::StreamExt::next(&mut receiver).await {
         match msg {
-            Message::Text(text) => {
-                info!("📩 Inbound Lavalink OP payload: {}", text);
+            Ok(Message::Text(text)) => {
+                info!("WebSocket received: {}", text);
             }
-            Message::Close(_) => {
-                info!("🔌 WebSocket client disconnected");
+            Ok(Message::Close(_)) => {
+                info!("WebSocket client disconnected");
+                break;
+            }
+            Err(e) => {
+                error!("WebSocket error: {:?}", e);
                 break;
             }
             _ => {}
         }
     }
 
-    heartbeat_handle.abort();
+    stats_task.abort();
+}
+
+fn uuid_v4() -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    format!("kizuna-{:x}", nanos)
 }
 
 fn chrono_timestamp() -> u64 {
@@ -616,12 +604,4 @@ fn chrono_timestamp() -> u64 {
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis() as u64
-}
-
-fn uuid_simple() -> u128 {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_nanos()
 }
