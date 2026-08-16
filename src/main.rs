@@ -175,13 +175,13 @@ async fn load_tracks(
     if identifier.contains("open.spotify.com/track/") {
         if let Some(track_id) = identifier.split("/track/").nth(1).and_then(|s| s.split('?').next()) {
             if let Ok(Some(track)) = state.spotify.resolve_track(track_id).await {
-                return Ok(Json(LoadResult::Track(Box::new(track))));
+                return Ok(Json(LoadResult::Track(track)));
             }
         }
     } else if identifier.contains("open.spotify.com/playlist/") {
         if let Some(pl_id) = identifier.split("/playlist/").nth(1).and_then(|s| s.split('?').next()) {
             if let Ok(Some(pl)) = state.spotify.resolve_playlist(pl_id).await {
-                return Ok(Json(LoadResult::Playlist(Box::new(pl))));
+                return Ok(Json(LoadResult::Playlist(pl)));
             }
         }
     } else if let Some(stripped) = identifier.strip_prefix("spsearch:") {
@@ -201,7 +201,7 @@ async fn load_tracks(
         };
 
         if let Ok(Some(track)) = state.youtube.resolve_video(video_id).await {
-            return Ok(Json(LoadResult::Track(Box::new(track))));
+            return Ok(Json(LoadResult::Track(track)));
         }
     } else if let Some(stripped) = identifier.strip_prefix("ytsearch:") {
         if let Ok(tracks) = state.youtube.search(stripped.trim(), 10).await {
@@ -215,7 +215,7 @@ async fn load_tracks(
     match state.jiosaavn.search(search_term, 10).await {
         Ok(tracks) if !tracks.is_empty() => {
             if identifier.starts_with("http") && tracks.len() == 1 {
-                Ok(Json(LoadResult::Track(Box::new(tracks.into_iter().next().unwrap()))))
+                Ok(Json(LoadResult::Track(tracks.into_iter().next().unwrap())))
             } else {
                 Ok(Json(LoadResult::Search(tracks)))
             }
