@@ -7,10 +7,21 @@ pub struct VoiceStateUpdate {
     pub endpoint: String,
     #[serde(rename = "sessionId")]
     pub session_id: String,
+    #[serde(rename = "channelId", default)]
+    pub channel_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct TrackPayload {
+    pub encoded: Option<String>,
+    pub identifier: Option<String>,
+    #[serde(rename = "userData", default)]
+    pub user_data: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct PlayerUpdatePayload {
+    pub track: Option<TrackPayload>,
     #[serde(rename = "encodedTrack")]
     pub encoded_track: Option<String>,
     pub identifier: Option<String>,

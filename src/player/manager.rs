@@ -72,11 +72,17 @@ impl PlayerManager {
             player.filters = filters;
         }
 
-        if let Some(encoded_opt) = payload.encoded_track {
+        let encoded_value = payload.track
+            .as_ref()
+            .and_then(|t| t.encoded.clone())
+            .or(payload.encoded_track.clone());
+
+        if let Some(encoded_opt) = encoded_value {
             if encoded_opt.trim().is_empty() {
                 info!("Stopped player for guild: {}", guild_id);
                 player.stop();
             } else {
+                info!("Received play request for guild: {} with encoded track", guild_id);
                 let track_id = if let Ok(decoded) = STANDARD.decode(&encoded_opt) {
                     String::from_utf8_lossy(&decoded).to_string()
                 } else {
@@ -89,6 +95,7 @@ impl PlayerManager {
                     if let Some(mut track) = results.into_iter().next() {
                         if let Ok(stream_url) = self.jiosaavn.resolve_stream_url(&track.info.identifier).await {
                             track.info.stream_url = Some(stream_url.clone());
+                            info!("Starting audio stream for guild: {}", guild_id);
                             player.play_stream(track, stream_url, self.http_client.clone()).await;
                         }
                     }
