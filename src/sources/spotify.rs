@@ -203,7 +203,7 @@ impl SpotifySource {
             .get("album")
             .and_then(|a| a.get("images"))
             .and_then(|i| i.as_array())
-            .and_then(|arr| arr.get(0))
+            .and_then(|arr| arr.first())
             .and_then(|img| img.get("url"))
             .and_then(|u| u.as_str())
             .map(|s| s.to_string());
