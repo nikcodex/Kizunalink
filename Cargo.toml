@@ -2,7 +2,7 @@
 name = "kizunalink"
 version = "0.1.0"
 edition = "2021"
-authors = ["Nikhil <kai._.dev>"]
+authors = ["Nikhil <codexnik23@gmail.com>"]
 description = "High-Performance Standalone Discord Audio Streaming Engine in Rust"
 license = "MIT"
 
@@ -24,8 +24,6 @@ urlencoding = "2.1"
 # Discord Voice & Audio Protocol
 songbird = { version = "0.4", default-features = false, features = ["builtin-queue", "gateway", "driver", "rustls"] }
 symphonia = { version = "0.5", features = ["all"] }
-audiopus = "0.3"
-rubato = "0.15"
 
 # Utilities & Logging
 tracing = "0.1"

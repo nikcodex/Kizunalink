@@ -3,6 +3,8 @@
  * @description KizunaLink — High-Performance Standalone Discord Audio Engine in Rust.
  */
 
+#![allow(dead_code, unused_imports, unused_variables)]
+
 pub mod models;
 pub mod player;
 pub mod sources;
