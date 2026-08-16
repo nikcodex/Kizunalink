@@ -25,7 +25,10 @@ use models::{
 use player::manager::PlayerManager;
 use serde::Deserialize;
 use serde_json::json;
-use sources::{jiosaavn::JioSaavnSource, spotify::SpotifySource, youtube::YouTubeSource};
+use sources::{
+    jiosaavn::JioSaavnSource, soundcloud::SoundCloudSource, spotify::SpotifySource,
+    youtube::YouTubeSource,
+};
 use std::{net::SocketAddr, sync::Arc, time::Instant};
 use tracing::{error, info, Level};
 use tracing_subscriber::FmtSubscriber;
@@ -33,6 +36,7 @@ use tracing_subscriber::FmtSubscriber;
 #[derive(Clone)]
 pub struct AppState {
     pub jiosaavn: Arc<JioSaavnSource>,
+    pub soundcloud: Arc<SoundCloudSource>,
     pub spotify: Arc<SpotifySource>,
     pub youtube: Arc<YouTubeSource>,
     pub player_manager: Arc<PlayerManager>,
@@ -64,6 +68,7 @@ async fn main() {
 
     let cfg = AppConfig::load();
     let jiosaavn = JioSaavnSource::new();
+    let soundcloud = SoundCloudSource::new();
     let spotify = SpotifySource::new();
     let youtube = YouTubeSource::new();
     let player_manager = PlayerManager::new(jiosaavn.clone());
@@ -71,6 +76,7 @@ async fn main() {
 
     let state = AppState {
         jiosaavn,
+        soundcloud,
         spotify,
         youtube,
         player_manager,
@@ -172,7 +178,69 @@ async fn load_tracks(
 
     info!("🔍 Resolving track query: \"{}\"", identifier);
 
-    // 1. Spotify URL Handling
+    // 1. Direct HTTP Audio Stream Handling
+    if identifier.starts_with("http://") || identifier.starts_with("https://") {
+        if identifier.ends_with(".mp3")
+            || identifier.ends_with(".wav")
+            || identifier.ends_with(".ogg")
+            || identifier.ends_with(".flac")
+            || identifier.ends_with(".m4a")
+            || identifier.ends_with(".aac")
+            || identifier.contains("cdn.discordapp.com/attachments/")
+        {
+            use base64::{engine::general_purpose::STANDARD, Engine as _};
+            let title = identifier
+                .split('/')
+                .last()
+                .unwrap_or("Direct Audio Stream")
+                .split('?')
+                .next()
+                .unwrap_or("Direct Audio Stream")
+                .to_string();
+
+            let encoded = STANDARD.encode(format!("http:{}", identifier));
+            let track = crate::models::track::LavalinkTrack {
+                encoded,
+                info: crate::models::track::TrackInfo {
+                    identifier: identifier.clone(),
+                    is_seekable: true,
+                    author: "HTTP Stream".to_string(),
+                    length: 0,
+                    is_stream: true,
+                    position: 0,
+                    title,
+                    uri: Some(identifier.clone()),
+                    artwork_url: None,
+                    source_name: "http".to_string(),
+                    bitrate: Some("320kbps".to_string()),
+                    stream_url: Some(identifier.clone()),
+                },
+                plugin_info: serde_json::json!({}),
+                user_data: serde_json::json!({}),
+            };
+            return Ok(Json(LoadResult::Track(track)));
+        }
+    }
+
+    // 2. JioSaavn Radio Recommendations (jsrec:<query>)
+    if let Some(stripped) = identifier.strip_prefix("jsrec:") {
+        if let Ok(tracks) = state.jiosaavn.get_recommendations(stripped.trim()).await {
+            if !tracks.is_empty() {
+                return Ok(Json(LoadResult::Search(tracks)));
+            }
+        }
+    }
+
+    // 3. SoundCloud Search & Prefix (scsearch:<query>)
+    if let Some(stripped) = identifier.strip_prefix("scsearch:") {
+        if let Ok(tracks) = state.soundcloud.search(stripped.trim(), 10).await {
+            if !tracks.is_empty() {
+                return Ok(Json(LoadResult::Search(tracks)));
+            }
+        }
+    }
+
+    // 4. Spotify URL Handling
     if identifier.contains("open.spotify.com/track/") {
         if let Some(track_id) = identifier.split("/track/").nth(1).and_then(|s| s.split('?').next()) {
             if let Ok(Some(track)) = state.spotify.resolve_track(track_id).await {
@@ -191,7 +259,7 @@ async fn load_tracks(
         }
     }
 
-    // 2. YouTube URL Handling & Prefix
+    // 5. YouTube URL Handling & Prefix
     if identifier.contains("youtube.com/watch") || identifier.contains("youtu.be/") {
         let video_id = if let Some(id) = identifier.split("v=").nth(1).and_then(|s| s.split('&').next()) {
             id
@@ -210,7 +278,7 @@ async fn load_tracks(
         }
     }
 
-    // 3. JioSaavn Primary Search & Fallback
+    // 6. JioSaavn Primary Search & Fallback
     let search_term = identifier.strip_prefix("jssearch:").unwrap_or(&identifier).trim();
 
     match state.jiosaavn.search(search_term, 10).await {

@@ -201,4 +201,50 @@ impl JioSaavnSource {
 
         Ok(None)
     }
+
+    /// Generate JioSaavn Radio Recommendations for a song ID or query
+    pub async fn get_recommendations(&self, query: &str) -> Result<Vec<LavalinkTrack>, String> {
+        let song_id = if query.chars().all(|c| c.is_alphanumeric() || c == '_' || c == '-') && query.len() < 20 {
+            query.to_string()
+        } else {
+            let search_results = self.search(query, 1).await?;
+            if let Some(first) = search_results.into_iter().next() {
+                first.info.identifier
+            } else {
+                return Ok(Vec::new());
+            }
+        };
+
+        // 1. Create Radio Entity Station
+        let station_url = format!(
+            "{}?__call=webradio.createEntityStation&api_version=4&ctx=android&entity_id=[\"{}\"]&entity_type=queue&_format=json",
+            JIOSAAVN_API_BASE, song_id
+        );
+
+        if let Ok(res) = self.client.get(&station_url).send().await {
+            if let Ok(json) = res.json::<Value>().await {
+                if let Some(station_id) = json.get("stationid").and_then(|v| v.as_str()) {
+                    // 2. Fetch Radio Station Songs
+                    let songs_url = format!(
+                        "{}?__call=webradio.getSong&api_version=4&ctx=android&stationid={}&k=20&_format=json",
+                        JIOSAAVN_API_BASE, urlencoding::encode(station_id)
+                    );
+
+                    if let Ok(songs_res) = self.client.get(&songs_url).send().await {
+                        if let Ok(songs_json) = songs_res.json::<Value>().await {
+                            if let Ok(tracks) = self.parse_search_results(&songs_json) {
+                                if !tracks.is_empty() {
+                                    return Ok(tracks);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Fallback: search similar mix
+        self.search(&format!("{} mix", query), 15).await
+    }
 }
+
