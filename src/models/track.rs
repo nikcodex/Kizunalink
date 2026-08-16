@@ -33,17 +33,18 @@ pub struct LavalinkTrack {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "loadType", content = "data")]
+#[allow(clippy::large_enum_variant)]
 pub enum LoadResult {
     #[serde(rename = "track")]
-    Track(Box<LavalinkTrack>),
+    Track(LavalinkTrack),
     #[serde(rename = "playlist")]
-    Playlist(Box<PlaylistData>),
+    Playlist(PlaylistData),
     #[serde(rename = "search")]
     Search(Vec<LavalinkTrack>),
     #[serde(rename = "empty")]
     Empty(serde_json::Value),
     #[serde(rename = "error")]
-    Error(Box<ErrorInfo>),
+    Error(ErrorInfo),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
