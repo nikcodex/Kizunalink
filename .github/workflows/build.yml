@@ -1,0 +1,112 @@
+# ==============================================================================
+#  🌸 KizunaLink — Cloud CI/CD Build Pipeline
+# ==============================================================================
+#  This workflow compiles your Rust Discord audio engine in GitHub's cloud
+#  so you never have to compile locally on Termux / mobile devices.
+#  Runs 100% free on GitHub-hosted public runners.
+# ==============================================================================
+
+name: Build KizunaLink Engine
+
+on:
+  # Trigger automatically on push to main branch
+  push:
+    branches: [ "main" ]
+  # Trigger on Pull Requests to main branch
+  pull_request:
+    branches: [ "main" ]
+  # Allow manual 1-tap build trigger from the GitHub Mobile App / Web UI
+  workflow_dispatch:
+
+# Permissions needed to checkout code and upload artifacts
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # ============================================================================
+  #  JOB 1: Linux x86_64 (Default for Standard VPS / Cloud Servers)
+  # ============================================================================
+  build-linux-x86_64:
+    name: Build (Linux x86_64)
+    runs-on: ubuntu-latest
+
+    steps:
+      # Step 1: Clone your repository source code
+      - name: 📥 Checkout Source Code
+        uses: actions/checkout@v4
+
+      # Step 2: Install stable Rust with x86_64 target & Clippy linter
+      - name: 🦀 Install Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-gnu
+          components: clippy, rustfmt
+
+      # Step 3: Cache Cargo registry and build target cache to make builds super fast (~30s)
+      - name: ⚡ Cache Cargo Dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: x86_64-unknown-linux-gnu
+
+      # Step 4: Run unit tests — fails build immediately if tests break
+      - name: 🧪 Run Automated Tests
+        run: cargo test --release --target x86_64-unknown-linux-gnu
+
+      # Step 5: Run Clippy linter — fails build if code has warnings/bugs
+      - name: 🔍 Run Clippy Linter
+        run: cargo clippy --target x86_64-unknown-linux-gnu -- -D warnings
+
+      # Step 6: Compile optimized release binary
+      - name: 🚀 Build Release Binary
+        run: cargo build --release --target x86_64-unknown-linux-gnu
+
+      # Step 7: Upload compiled binary as a downloadable GitHub Artifact (90-day retention)
+      - name: 📦 Upload Binary Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: kizunalink-linux-x86_64
+          path: target/x86_64-unknown-linux-gnu/release/kizunalink
+          if-no-files-found: error
+          retention-days: 90
+
+  # ============================================================================
+  #  JOB 2: Linux ARM64 / aarch64 (Optional for ARM VPS / Raspberry Pi)
+  #  Uncomment this entire block when you want to compile for ARM64 servers!
+  # ============================================================================
+  # build-linux-arm64:
+  #   name: Build (Linux ARM64)
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - name: 📥 Checkout Source Code
+  #       uses: actions/checkout@v4
+  #
+  #     - name: 🦀 Install Rust Toolchain (ARM64)
+  #       uses: dtolnay/rust-toolchain@stable
+  #       with:
+  #         targets: aarch64-unknown-linux-gnu
+  #         components: clippy
+  #
+  #     - name: ⚡ Cache Cargo Dependencies
+  #       uses: Swatinem/rust-cache@v2
+  #       with:
+  #         key: aarch64-unknown-linux-gnu
+  #
+  #     - name: 🛠️ Install Cross-Compilation Tool
+  #       run: cargo install cross --git https://github.com/cross-rs/cross
+  #
+  #     - name: 🔍 Run Clippy Linter (ARM64)
+  #       run: cross clippy --target aarch64-unknown-linux-gnu -- -D warnings
+  #
+  #     - name: 🚀 Build Release Binary (ARM64)
+  #       run: cross build --release --target aarch64-unknown-linux-gnu
+  #
+  #     - name: 📦 Upload ARM64 Binary Artifact
+  #       uses: actions/upload-artifact@v4
+  #       with:
+  #         name: kizunalink-linux-arm64
+  #         path: target/aarch64-unknown-linux-gnu/release/kizunalink
+  #         if-no-files-found: error
+  #         retention-days: 90
