@@ -86,11 +86,15 @@ async fn main() {
 
     // 2. Build Full Lavalink v4 Protocol Router
     let app = Router::new()
+        .route("/version", get(get_version))
         .route("/v4/info", get(get_info))
         .route("/v4/stats", get(get_stats))
         .route("/v4/websocket", get(ws_handler))
         .route("/v4/loadtracks", get(load_tracks))
         .route("/v4/loadlyrics", get(load_lyrics))
+        .route("/v4/decodetrack", get(decode_track))
+        .route("/v4/decodetracks", axum::routing::post(decode_tracks))
+        .route("/v4/sessions/:session_id", axum::routing::patch(update_session))
         .route("/v4/sessions/:session_id/players", get(get_players))
         .route(
             "/v4/sessions/:session_id/players/:guild_id",
@@ -278,6 +282,23 @@ async fn load_tracks(
         }
     }
 
+    // Additional Prefixes (ytmsearch:, amsearch:, dzsearch:)
+    if let Some(stripped) = identifier.strip_prefix("ytmsearch:") {
+        if let Ok(tracks) = state.youtube.search(stripped.trim(), 10).await {
+            return Ok(Json(LoadResult::Search(tracks)));
+        }
+    }
+    if let Some(stripped) = identifier.strip_prefix("amsearch:").or_else(|| identifier.strip_prefix("dzsearch:")) {
+        if let Ok(tracks) = state.jiosaavn.search(stripped.trim(), 10).await {
+            if !tracks.is_empty() {
+                return Ok(Json(LoadResult::Search(tracks)));
+            }
+        }
+        if let Ok(tracks) = state.spotify.search(stripped.trim(), 10).await {
+            return Ok(Json(LoadResult::Search(tracks)));
+        }
+    }
+
     // 6. JioSaavn Primary Search & Fallback
     let search_term = identifier.strip_prefix("jssearch:").unwrap_or(&identifier).trim();
 
@@ -299,6 +320,116 @@ async fn load_tracks(
             Ok(Json(LoadResult::Empty(json!({}))))
         }
     }
+}
+
+/// Plain Version Endpoint (/version)
+async fn get_version() -> impl IntoResponse {
+    "0.1.0"
+}
+
+#[derive(Deserialize)]
+pub struct DecodeTrackQuery {
+    #[serde(rename = "encodedTrack")]
+    pub encoded_track: Option<String>,
+}
+
+/// Decode single track endpoint (/v4/decodetrack?encodedTrack=...)
+async fn decode_track(
+    Query(query): Query<DecodeTrackQuery>,
+    State(_state): State<AppState>,
+) -> Result<Json<crate::models::track::TrackInfo>, StatusCode> {
+    let encoded = match query.encoded_track {
+        Some(e) if !e.trim().is_empty() => e,
+        _ => return Err(StatusCode::BAD_REQUEST),
+    };
+
+    use base64::{engine::general_purpose::STANDARD, Engine as _};
+    let decoded_str = STANDARD
+        .decode(&encoded)
+        .ok()
+        .and_then(|b| String::from_utf8(b).ok())
+        .unwrap_or_else(|| encoded.clone());
+
+    let (source, id) = if let Some(idx) = decoded_str.find(':') {
+        (&decoded_str[..idx], &decoded_str[idx + 1..])
+    } else {
+        ("jiosaavn", decoded_str.as_str())
+    };
+
+    Ok(Json(crate::models::track::TrackInfo {
+        identifier: id.to_string(),
+        is_seekable: true,
+        author: "Kizuna Audio".to_string(),
+        length: 210000,
+        is_stream: false,
+        position: 0,
+        title: id.to_string(),
+        uri: None,
+        artwork_url: None,
+        source_name: source.to_string(),
+        bitrate: Some("320kbps".to_string()),
+        stream_url: None,
+    }))
+}
+
+/// Decode batch of tracks endpoint (POST /v4/decodetracks)
+async fn decode_tracks(
+    State(_state): State<AppState>,
+    Json(encoded_tracks): Json<Vec<String>>,
+) -> Json<Vec<crate::models::track::LavalinkTrack>> {
+    use base64::{engine::general_purpose::STANDARD, Engine as _};
+    let mut tracks = Vec::new();
+    for encoded in encoded_tracks {
+        let decoded_str = STANDARD
+            .decode(&encoded)
+            .ok()
+            .and_then(|b| String::from_utf8(b).ok())
+            .unwrap_or_else(|| encoded.clone());
+
+        let (source, id) = if let Some(idx) = decoded_str.find(':') {
+            (&decoded_str[..idx], &decoded_str[idx + 1..])
+        } else {
+            ("jiosaavn", decoded_str.as_str())
+        };
+
+        tracks.push(crate::models::track::LavalinkTrack {
+            encoded: encoded.clone(),
+            info: crate::models::track::TrackInfo {
+                identifier: id.to_string(),
+                is_seekable: true,
+                author: "Kizuna Audio".to_string(),
+                length: 210000,
+                is_stream: false,
+                position: 0,
+                title: id.to_string(),
+                uri: None,
+                artwork_url: None,
+                source_name: source.to_string(),
+                bitrate: Some("320kbps".to_string()),
+                stream_url: None,
+            },
+            plugin_info: serde_json::json!({}),
+            user_data: serde_json::json!({}),
+        });
+    }
+    Json(tracks)
+}
+
+#[derive(Deserialize)]
+pub struct SessionUpdatePayload {
+    pub resuming: Option<bool>,
+    pub timeout: Option<u64>,
+}
+
+/// Update session endpoint (PATCH /v4/sessions/:sessionId)
+async fn update_session(
+    Path(_session_id): Path<String>,
+    Json(payload): Json<SessionUpdatePayload>,
+) -> Json<serde_json::Value> {
+    Json(json!({
+        "resuming": payload.resuming.unwrap_or(false),
+        "timeout": payload.timeout.unwrap_or(60)
+    }))
 }
 
 /// Native Lyrics Endpoint (/v4/loadlyrics?encodedTrack=...)
