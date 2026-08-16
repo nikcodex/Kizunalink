@@ -45,6 +45,7 @@ pub struct PlayerResponse {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "op")]
+#[allow(clippy::large_enum_variant)]
 pub enum OutboundWsMessage {
     #[serde(rename = "ready")]
     Ready {
