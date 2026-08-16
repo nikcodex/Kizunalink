@@ -4,11 +4,14 @@ use crate::sources::jiosaavn::JioSaavnSource;
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use dashmap::DashMap;
 use std::sync::Arc;
+use tokio::sync::RwLock;
 use tracing::info;
 
 pub struct PlayerManager {
-    players: DashMap<String, GuildPlayer>,
+    players: DashMap<String, Arc<RwLock<GuildPlayer>>>,
     jiosaavn: Arc<JioSaavnSource>,
+    http_client: reqwest::Client,
+    pub bot_user_id: Arc<RwLock<String>>,
 }
 
 impl PlayerManager {
@@ -16,39 +19,42 @@ impl PlayerManager {
         Arc::new(Self {
             players: DashMap::new(),
             jiosaavn,
+            http_client: reqwest::Client::builder()
+                .tcp_keepalive(Some(std::time::Duration::from_secs(30)))
+                .build()
+                .unwrap_or_default(),
+            bot_user_id: Arc::new(RwLock::new("0".to_string())),
         })
     }
 
-    /// Retrieve or initialize a player for a Discord guild
-    pub fn get_or_create(&self, guild_id: &str) -> GuildPlayer {
-        self.players
-            .entry(guild_id.to_string())
-            .or_insert_with(|| GuildPlayer::new(guild_id.to_string()))
-            .clone()
+    pub async fn get_player(&self, guild_id: &str) -> Option<PlayerResponse> {
+        if let Some(player_arc) = self.players.get(guild_id) {
+            let player = player_arc.read().await;
+            Some(player.to_response())
+        } else {
+            None
+        }
     }
 
-    /// Retrieve existing player
-    pub fn get_player(&self, guild_id: &str) -> Option<PlayerResponse> {
-        self.players.get(guild_id).map(|p| p.to_response())
-    }
-
-    /// Update player state via Lavalink v4 PATCH payload
     pub async fn update_player(
         &self,
         guild_id: &str,
         payload: PlayerUpdatePayload,
     ) -> Result<PlayerResponse, String> {
-        let mut entry = self
+        let user_id = self.bot_user_id.read().await.clone();
+
+        let player_arc = self
             .players
             .entry(guild_id.to_string())
-            .or_insert_with(|| GuildPlayer::new(guild_id.to_string()));
+            .or_insert_with(|| Arc::new(RwLock::new(GuildPlayer::new(guild_id.to_string(), user_id))))
+            .clone();
 
-        let player = entry.value_mut();
+        let mut player = player_arc.write().await;
 
         // 1. Update Voice State if provided
         if let Some(voice) = payload.voice {
-            info!("🔌 Updated voice state for guild: {}", guild_id);
-            player.set_voice(voice);
+            info!("🔌 Received voice credentials for guild: {}", guild_id);
+            player.set_voice(voice).await;
         }
 
         // 2. Update Volume
@@ -77,7 +83,6 @@ impl PlayerManager {
                 info!("⏹️ Stopped player for guild: {}", guild_id);
                 player.stop();
             } else {
-                // Decode track string or identifier
                 let track_id = if let Ok(decoded) = STANDARD.decode(&encoded_opt) {
                     String::from_utf8_lossy(&decoded).to_string()
                 } else {
@@ -86,16 +91,12 @@ impl PlayerManager {
 
                 let clean_id = track_id.strip_prefix("jiosaavn:").unwrap_or(&track_id);
 
-                // Fetch JioSaavn track info & 320kbps stream URL
                 if let Ok(results) = self.jiosaavn.search(clean_id, 1).await {
                     if let Some(mut track) = results.into_iter().next() {
-                        // Resolve direct 320kbps CDN stream
                         if let Ok(stream_url) = self.jiosaavn.resolve_stream_url(&track.info.identifier).await {
-                            track.info.stream_url = Some(stream_url);
+                            track.info.stream_url = Some(stream_url.clone());
+                            player.play_stream(track, stream_url, self.http_client.clone()).await;
                         }
-
-                        info!("▶️ Started track \"{}\" for guild {}", track.info.title, guild_id);
-                        player.set_track(track);
                     }
                 }
             }
@@ -104,20 +105,28 @@ impl PlayerManager {
         Ok(player.to_response())
     }
 
-    /// Destroy and remove a player
     pub fn destroy_player(&self, guild_id: &str) -> bool {
-        self.players.remove(guild_id).is_some()
+        if let Some((_, player_arc)) = self.players.remove(guild_id) {
+            tokio::spawn(async move {
+                let mut player = player_arc.write().await;
+                player.stop();
+            });
+            true
+        } else {
+            false
+        }
     }
 
-    /// Get all active player counts (total, playing)
     pub fn count_players(&self) -> (usize, usize) {
-        let total = self.players.len();
-        let playing = self.players.iter().filter(|p| p.current_track.is_some() && !p.paused).count();
-        (total, playing)
+        (self.players.len(), self.players.len())
     }
 
-    /// Get all players as responses
-    pub fn get_all_players(&self) -> Vec<PlayerResponse> {
-        self.players.iter().map(|p| p.to_response()).collect()
+    pub async fn get_all_players(&self) -> Vec<PlayerResponse> {
+        let mut responses = Vec::new();
+        for item in self.players.iter() {
+            let player = item.value().read().await;
+            responses.push(player.to_response());
+        }
+        responses
     }
 }

@@ -275,7 +275,7 @@ async fn get_players(
     State(state): State<AppState>,
     Path(_session_id): Path<String>,
 ) -> Json<Vec<PlayerResponse>> {
-    Json(state.player_manager.get_all_players())
+    Json(state.player_manager.get_all_players().await)
 }
 
 /// Get single player state (/v4/sessions/:sessionId/players/:guildId)
@@ -286,6 +286,7 @@ async fn get_player(
     state
         .player_manager
         .get_player(&guild_id)
+        .await
         .map(Json)
         .ok_or(StatusCode::NOT_FOUND)
 }
@@ -326,11 +327,24 @@ async fn ws_handler(
         }
     }
 
+    if let Some(user_id) = headers
+        .get("user-id")
+        .or_else(|| headers.get("User-Id"))
+        .and_then(|h| h.to_str().ok())
+    {
+        let mut id_lock = state.player_manager.bot_user_id.write().await;
+        *id_lock = user_id.to_string();
+        info!("🤖 Registered Bot Client User ID: {}", user_id);
+    }
+
     Ok(ws.on_upgrade(handle_socket))
 }
 
-async fn handle_socket(mut socket: WebSocket) {
+async fn handle_socket(socket: WebSocket) {
+    use futures_util::{SinkExt, StreamExt};
     info!("🔗 New WebSocket connection established with Discord Bot");
+
+    let (mut sender, mut receiver) = socket.split();
 
     let ready_payload = json!({
         "op": "ready",
@@ -338,26 +352,62 @@ async fn handle_socket(mut socket: WebSocket) {
         "sessionId": format!("kizuna-session-{}", uuid_simple())
     });
 
-    if socket.send(Message::Text(ready_payload.to_string())).await.is_err() {
+    if sender.send(Message::Text(ready_payload.to_string())).await.is_err() {
         return;
     }
 
-    while let Some(msg) = socket.recv().await {
-        if let Ok(msg) = msg {
-            match msg {
-                Message::Text(text) => {
-                    info!("📩 Inbound Lavalink OP payload: {}", text);
+    let sender = Arc::new(tokio::sync::Mutex::new(sender));
+    let sender_clone = sender.clone();
+
+    // Heartbeat sender (every 20s) to keep client active
+    let heartbeat_handle = tokio::spawn(async move {
+        let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(20));
+        loop {
+            interval.tick().await;
+            let stats = json!({
+                "op": "stats",
+                "players": 0,
+                "playingPlayers": 0,
+                "uptime": 10000,
+                "memory": {
+                    "free": 1024 * 1024 * 512,
+                    "used": 1024 * 1024 * 2,
+                    "allocated": 1024 * 1024 * 4,
+                    "reservable": 1024 * 1024 * 512
+                },
+                "cpu": {
+                    "cores": 4,
+                    "systemLoad": 0.01,
+                    "lavalinkLoad": 0.01
+                },
+                "frameStats": {
+                    "sent": 0,
+                    "nulled": 0,
+                    "deficit": 0
                 }
-                Message::Close(_) => {
-                    info!("🔌 WebSocket client disconnected");
-                    break;
-                }
-                _ => {}
+            });
+
+            let mut lock = sender_clone.lock().await;
+            if lock.send(Message::Text(stats.to_string())).await.is_err() {
+                break;
             }
-        } else {
-            break;
+        }
+    });
+
+    while let Some(Ok(msg)) = receiver.next().await {
+        match msg {
+            Message::Text(text) => {
+                info!("📩 Inbound Lavalink OP payload: {}", text);
+            }
+            Message::Close(_) => {
+                info!("🔌 WebSocket client disconnected");
+                break;
+            }
+            _ => {}
         }
     }
+
+    heartbeat_handle.abort();
 }
 
 fn chrono_timestamp() -> u64 {

@@ -2,11 +2,19 @@ use crate::models::{
     protocol::{PlayerResponse, PlayerState, VoiceStateUpdate},
     track::LavalinkTrack,
 };
+use songbird::driver::Driver;
+use songbird::id::{GuildId, UserId};
+use songbird::input::HttpRequest;
+use songbird::ConnectionInfo;
+use songbird::tracks::TrackHandle;
+use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
+use tokio::sync::Mutex;
+use tracing::{error, info, warn};
 
-#[derive(Debug, Clone)]
 pub struct GuildPlayer {
     pub guild_id: String,
+    pub user_id: String,
     pub current_track: Option<LavalinkTrack>,
     pub volume: u32,
     pub paused: bool,
@@ -14,12 +22,16 @@ pub struct GuildPlayer {
     pub voice: Option<VoiceStateUpdate>,
     pub filters: serde_json::Value,
     pub last_update: u64,
+    pub driver: Arc<Mutex<Driver>>,
+    pub track_handle: Option<TrackHandle>,
 }
 
 impl GuildPlayer {
-    pub fn new(guild_id: String) -> Self {
+    pub fn new(guild_id: String, user_id: String) -> Self {
+        let driver = Driver::new(Default::default());
         Self {
             guild_id,
+            user_id,
             current_track: None,
             volume: 100,
             paused: false,
@@ -27,10 +39,55 @@ impl GuildPlayer {
             voice: None,
             filters: serde_json::json!({}),
             last_update: current_timestamp(),
+            driver: Arc::new(Mutex::new(driver)),
+            track_handle: None,
         }
     }
 
-    pub fn set_track(&mut self, track: LavalinkTrack) {
+    pub async fn set_voice(&mut self, voice: VoiceStateUpdate) {
+        let endpoint_raw = voice.endpoint.clone();
+        let endpoint = endpoint_raw
+            .trim_start_matches("wss://")
+            .trim_start_matches("ws://")
+            .split(':')
+            .next()
+            .unwrap_or(&endpoint_raw)
+            .to_string();
+
+        let guild_num = self.guild_id.parse::<u64>().unwrap_or(0);
+        let user_num = self.user_id.parse::<u64>().unwrap_or(0);
+
+        let info = ConnectionInfo {
+            endpoint,
+            server_id: GuildId::from(guild_num),
+            session_id: voice.session_id.clone(),
+            token: voice.token.clone(),
+            user_id: UserId::from(user_num),
+        };
+
+        info!("🔌 Connecting Songbird voice driver for guild: {}", self.guild_id);
+        let mut driver_lock = self.driver.lock().await;
+        if let Err(e) = driver_lock.connect(info).await {
+            error!("❌ Songbird voice connection failed for guild {}: {:?}", self.guild_id, e);
+        } else {
+            info!("✅ Songbird voice driver connected for guild: {}", self.guild_id);
+        }
+
+        self.voice = Some(voice);
+        self.last_update = current_timestamp();
+    }
+
+    pub async fn play_stream(&mut self, track: LavalinkTrack, stream_url: String, http_client: reqwest::Client) {
+        info!("🎶 Songbird playing direct stream for guild {}: {}", self.guild_id, track.info.title);
+        let input = HttpRequest::new(http_client, stream_url).into();
+
+        let mut driver_lock = self.driver.lock().await;
+        let handle = driver_lock.play(input);
+        if let Err(e) = handle.set_volume(self.volume as f32 / 100.0) {
+            warn!("Failed to set volume on handle: {:?}", e);
+        }
+
+        self.track_handle = Some(handle);
         self.current_track = Some(track);
         self.position = 0;
         self.paused = false;
@@ -38,6 +95,9 @@ impl GuildPlayer {
     }
 
     pub fn stop(&mut self) {
+        if let Some(handle) = &self.track_handle {
+            let _ = handle.stop();
+        }
         self.current_track = None;
         self.position = 0;
         self.paused = false;
@@ -45,22 +105,27 @@ impl GuildPlayer {
     }
 
     pub fn set_paused(&mut self, paused: bool) {
+        if let Some(handle) = &self.track_handle {
+            if paused {
+                let _ = handle.pause();
+            } else {
+                let _ = handle.play();
+            }
+        }
         self.paused = paused;
         self.last_update = current_timestamp();
     }
 
     pub fn set_volume(&mut self, volume: u32) {
         self.volume = volume.clamp(0, 1000);
+        if let Some(handle) = &self.track_handle {
+            let _ = handle.set_volume(self.volume as f32 / 100.0);
+        }
         self.last_update = current_timestamp();
     }
 
     pub fn seek(&mut self, position: u64) {
         self.position = position;
-        self.last_update = current_timestamp();
-    }
-
-    pub fn set_voice(&mut self, voice: VoiceStateUpdate) {
-        self.voice = Some(voice);
         self.last_update = current_timestamp();
     }
 

@@ -87,8 +87,14 @@ impl JioSaavnSource {
             let duration_sec = song
                 .get("more_info")
                 .and_then(|m| m.get("duration"))
-                .and_then(|d| d.as_str())
-                .and_then(|s| s.parse::<u64>().ok())
+                .or_else(|| song.get("duration"))
+                .and_then(|d| {
+                    if let Some(s) = d.as_str() {
+                        s.parse::<u64>().ok()
+                    } else {
+                        d.as_u64()
+                    }
+                })
                 .unwrap_or(0);
 
             let raw_image = song
