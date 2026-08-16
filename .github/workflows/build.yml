@@ -71,8 +71,13 @@ jobs:
         with:
           key: aarch64-unknown-linux-gnu
 
-      - name: 🛠️ Setup Zig & cargo-zigbuild
-        uses: rust-cross/cargo-zigbuild-action@v1
+      - name: 🛠️ Setup Zig
+        uses: korandoru/setup-zig@v1
+        with:
+          zig-version: 0.13.0
+
+      - name: 🛠️ Install cargo-zigbuild
+        run: pip install cargo-zigbuild
 
       - name: 🚀 Build Release Binary (ARM64)
         run: cargo zigbuild --release --target aarch64-unknown-linux-gnu
