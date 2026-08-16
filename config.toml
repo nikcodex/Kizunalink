@@ -1,0 +1,13 @@
+# ==============================================================================
+#  🌸 KizunaLink — Configuration File
+# ==============================================================================
+
+[server]
+host = "0.0.0.0"
+port = 2333
+password = "youshallnotpass"
+
+[sources]
+jiosaavn = true    # Native 320kbps Indian & Global audio
+spotify = true     # High-speed Spotify metadata & playlist resolver
+youtube = true     # Piped / InnerTube YouTube stream fallback

@@ -2,10 +2,12 @@
 
 // KizunaLink — High-Performance Standalone Discord Audio Engine in Rust.
 
+pub mod config;
 pub mod models;
 pub mod player;
 pub mod sources;
 
+use config::AppConfig;
 use axum::{
     extract::{
         ws::{Message, WebSocket, WebSocketUpgrade},
@@ -60,11 +62,12 @@ async fn main() {
 
     info!("🌸 Initializing KizunaLink v0.1.0 (Rust Audio Core)...");
 
+    let cfg = AppConfig::load();
     let jiosaavn = JioSaavnSource::new();
     let spotify = SpotifySource::new();
     let youtube = YouTubeSource::new();
     let player_manager = PlayerManager::new(jiosaavn.clone());
-    let password = std::env::var("KIZUNA_PASSWORD").unwrap_or_else(|_| "youshallnotpass".to_string());
+    let password = cfg.server.password.clone();
 
     let state = AppState {
         jiosaavn,
@@ -91,9 +94,7 @@ async fn main() {
         )
         .with_state(state);
 
-    let host = std::env::var("KIZUNA_HOST").unwrap_or_else(|_| "0.0.0.0".to_string());
-    let port = std::env::var("KIZUNA_PORT").unwrap_or_else(|_| "2333".to_string());
-    let addr: SocketAddr = format!("{}:{}", host, port)
+    let addr: SocketAddr = format!("{}:{}", cfg.server.host, cfg.server.port)
         .parse()
         .expect("Invalid host or port configuration");
 
