@@ -35,15 +35,15 @@ pub struct LavalinkTrack {
 #[serde(tag = "loadType", content = "data")]
 pub enum LoadResult {
     #[serde(rename = "track")]
-    Track(LavalinkTrack),
+    Track(Box<LavalinkTrack>),
     #[serde(rename = "playlist")]
-    Playlist(PlaylistData),
+    Playlist(Box<PlaylistData>),
     #[serde(rename = "search")]
     Search(Vec<LavalinkTrack>),
     #[serde(rename = "empty")]
     Empty(serde_json::Value),
     #[serde(rename = "error")]
-    Error(ErrorInfo),
+    Error(Box<ErrorInfo>),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
