@@ -12,6 +12,8 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
+  LIBOPUS_STATIC: "1"
+  OPUS_STATIC: "1"
 
 jobs:
   build-linux-x86_64:
@@ -21,6 +23,9 @@ jobs:
     steps:
       - name: Checkout Source Code
         uses: actions/checkout@v4
+
+      - name: Install System Dependencies
+        run: sudo apt-get update && sudo apt-get install -y cmake libopus-dev
 
       - name: Install Rust Toolchain (x86_64)
         uses: dtolnay/rust-toolchain@stable
@@ -50,6 +55,9 @@ jobs:
     steps:
       - name: Checkout Source Code
         uses: actions/checkout@v4
+
+      - name: Install System Dependencies
+        run: sudo apt-get update && sudo apt-get install -y cmake libopus-dev
 
       - name: Install Rust Toolchain (ARM64)
         uses: dtolnay/rust-toolchain@stable

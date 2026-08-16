@@ -21,6 +21,7 @@ base64 = "0.22"
 urlencoding = "2.1"
 
 songbird = { version = "0.4", default-features = false, features = ["builtin-queue", "gateway", "driver", "rustls"] }
+audiopus_sys = { version = "0.2", features = ["static"] }
 symphonia = { version = "0.5", features = ["all"] }
 
 tracing = "0.1"
