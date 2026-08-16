@@ -1,7 +1,7 @@
 use crate::models::track::LavalinkTrack;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct VoiceStateUpdate {
     pub token: String,
     pub endpoint: String,
