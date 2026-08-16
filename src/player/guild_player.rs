@@ -7,6 +7,7 @@ use songbird::id::{GuildId, UserId};
 use songbird::input::HttpRequest;
 use songbird::ConnectionInfo;
 use songbird::tracks::TrackHandle;
+use std::num::NonZeroU64;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::Mutex;
@@ -57,12 +58,16 @@ impl GuildPlayer {
         let guild_num = self.guild_id.parse::<u64>().unwrap_or(0);
         let user_num = self.user_id.parse::<u64>().unwrap_or(0);
 
+        let guild_nz = NonZeroU64::new(guild_num).unwrap_or(NonZeroU64::new(1).unwrap());
+        let user_nz = NonZeroU64::new(user_num).unwrap_or(NonZeroU64::new(1).unwrap());
+
         let info = ConnectionInfo {
             endpoint,
-            server_id: GuildId::from(guild_num),
+            guild_id: GuildId::from(guild_nz),
+            channel_id: None,
             session_id: voice.session_id.clone(),
             token: voice.token.clone(),
-            user_id: UserId::from(user_num),
+            user_id: UserId::from(user_nz),
         };
 
         let mut driver_lock = self.driver.lock().await;
