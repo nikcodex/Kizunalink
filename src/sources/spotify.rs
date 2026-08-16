@@ -5,7 +5,7 @@ use serde::Deserialize;
 use serde_json::Value;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tracing::{error, info};
+use tracing::info;
 
 const SPOTIFY_TOKEN_URL: &str = "https://open.spotify.com/get_access_token?reason=transport&productType=web_player";
 const SPOTIFY_API_BASE: &str = "https://api.spotify.com/v1";

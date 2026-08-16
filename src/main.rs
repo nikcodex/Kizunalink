@@ -1,9 +1,6 @@
-/**
- * @file main.rs
- * @description KizunaLink — High-Performance Standalone Discord Audio Engine in Rust.
- */
-
 #![allow(dead_code, unused_imports, unused_variables)]
+
+// KizunaLink — High-Performance Standalone Discord Audio Engine in Rust.
 
 pub mod models;
 pub mod player;
@@ -16,21 +13,19 @@ use axum::{
     },
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Json},
-    routing::{delete, get, patch},
+    routing::get,
     Router,
 };
 use models::{
-    protocol::{
-        CpuStats, MemoryStats, OutboundWsMessage, PlayerResponse, PlayerUpdatePayload, StatsPayload,
-    },
-    track::{ErrorInfo, LavalinkTrack, LoadResult},
+    protocol::{CpuStats, MemoryStats, PlayerResponse, PlayerUpdatePayload, StatsPayload},
+    track::{ErrorInfo, LoadResult},
 };
 use player::manager::PlayerManager;
 use serde::Deserialize;
 use serde_json::json;
 use sources::{jiosaavn::JioSaavnSource, spotify::SpotifySource, youtube::YouTubeSource};
 use std::{net::SocketAddr, sync::Arc, time::Instant};
-use tracing::{error, info, warn, Level};
+use tracing::{error, info, Level};
 use tracing_subscriber::FmtSubscriber;
 
 #[derive(Clone)]

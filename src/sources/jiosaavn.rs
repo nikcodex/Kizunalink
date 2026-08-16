@@ -3,7 +3,7 @@ use base64::{engine::general_purpose::STANDARD, Engine as _};
 use reqwest::header::{HeaderMap, HeaderValue, ACCEPT, REFERER, USER_AGENT};
 use serde_json::Value;
 use std::sync::Arc;
-use tracing::{error, info};
+use tracing::info;
 
 const JIOSAAVN_API_BASE: &str = "https://www.jiosaavn.com/api.php";
 const ANDROID_USER_AGENT: &str = "JioSaavn/9.5.0 (Linux; Android 13; SM-S908B Build/TP1A.220624.014; wv) AppleWebKit/537.36";

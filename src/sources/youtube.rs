@@ -3,7 +3,6 @@ use base64::{engine::general_purpose::STANDARD, Engine as _};
 use reqwest::header::{HeaderMap, HeaderValue, ACCEPT, USER_AGENT};
 use serde_json::Value;
 use std::sync::Arc;
-use tracing::{error, info};
 
 const PIPED_API_INSTANCES: &[&str] = &[
     "https://pipedapi.kavin.rocks",

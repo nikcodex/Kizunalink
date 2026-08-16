@@ -1,13 +1,10 @@
-use crate::models::{
-    protocol::{PlayerResponse, PlayerUpdatePayload},
-    track::LavalinkTrack,
-};
+use crate::models::protocol::{PlayerResponse, PlayerUpdatePayload};
 use crate::player::guild_player::GuildPlayer;
 use crate::sources::jiosaavn::JioSaavnSource;
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use dashmap::DashMap;
 use std::sync::Arc;
-use tracing::{info, warn};
+use tracing::info;
 
 pub struct PlayerManager {
     players: DashMap<String, GuildPlayer>,
