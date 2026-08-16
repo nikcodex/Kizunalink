@@ -67,7 +67,7 @@ impl YouTubeSource {
                     let audio_stream = json
                         .get("audioStreams")
                         .and_then(|s| s.as_array())
-                        .and_then(|arr| arr.get(0))
+                        .and_then(|arr| arr.first())
                         .and_then(|stream| stream.get("url"))
                         .and_then(|u| u.as_str())
                         .map(|s| s.to_string());
