@@ -51,10 +51,16 @@ impl JioSaavnSource {
         };
 
         let json_val: Value = serde_json::from_str(json_str).map_err(|e| e.to_string())?;
-        let songs = json_val
+        self.parse_search_results(&json_val)
+    }
+
+    /// Parse search results from JSON response
+    fn parse_search_results(&self, json: &Value) -> Result<Vec<LavalinkTrack>, String> {
+        let songs = json
             .get("songs")
             .and_then(|s| s.get("data"))
-            .and_then(|d| d.as_array());
+            .and_then(|d| d.as_array())
+            .or_else(|| json.get("songs").and_then(|s| s.as_array()));
 
         let songs_array = match songs {
             Some(arr) => arr,
@@ -63,7 +69,7 @@ impl JioSaavnSource {
 
         let mut tracks = Vec::new();
 
-        for song in songs_array.iter().take(limit) {
+        for song in songs_array.iter() {
             let id = song.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
             if id.is_empty() {
                 continue;
@@ -247,4 +253,3 @@ impl JioSaavnSource {
         self.search(&format!("{} mix", query), 15).await
     }
 }
-
