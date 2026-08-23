@@ -65,7 +65,6 @@ async fn main() {
         youtube.clone(),
         spotify.clone(),
         soundcloud.clone(),
-        plugin_manager: plugin_manager.clone(),
     ));
 
     let state = AppState {
