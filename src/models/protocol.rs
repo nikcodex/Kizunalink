@@ -1,4 +1,5 @@
 use crate::models::track::LavalinkTrack;
+use crate::models::filters::Filters;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -7,8 +8,8 @@ pub struct VoiceStateUpdate {
     pub endpoint: String,
     #[serde(rename = "sessionId")]
     pub session_id: String,
-    #[serde(rename = "channelId", default)]
-    pub channel_id: Option<String>,
+    #[serde(rename = "channelId")]
+    pub channel_id: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -30,7 +31,7 @@ pub struct PlayerUpdatePayload {
     pub end_time: Option<u64>,
     pub volume: Option<u32>,
     pub paused: Option<bool>,
-    pub filters: Option<serde_json::Value>,
+    pub filters: Option<Filters>,
     pub voice: Option<VoiceStateUpdate>,
 }
 
@@ -51,66 +52,7 @@ pub struct PlayerResponse {
     pub paused: bool,
     pub state: PlayerState,
     pub voice: VoiceStateUpdate,
-    pub filters: serde_json::Value,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "op")]
-#[allow(clippy::large_enum_variant)]
-pub enum OutboundWsMessage {
-    #[serde(rename = "ready")]
-    Ready {
-        resumed: bool,
-        #[serde(rename = "sessionId")]
-        session_id: String,
-    },
-    #[serde(rename = "playerUpdate")]
-    PlayerUpdate {
-        #[serde(rename = "guildId")]
-        guild_id: String,
-        state: PlayerState,
-    },
-    #[serde(rename = "event")]
-    Event(PlayerEvent),
-    #[serde(rename = "stats")]
-    Stats(StatsPayload),
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "type")]
-pub enum PlayerEvent {
-    TrackStartEvent {
-        #[serde(rename = "guildId")]
-        guild_id: String,
-        track: LavalinkTrack,
-    },
-    TrackEndEvent {
-        #[serde(rename = "guildId")]
-        guild_id: String,
-        track: LavalinkTrack,
-        reason: String,
-    },
-    TrackExceptionEvent {
-        #[serde(rename = "guildId")]
-        guild_id: String,
-        track: LavalinkTrack,
-        exception: serde_json::Value,
-    },
-    TrackStuckEvent {
-        #[serde(rename = "guildId")]
-        guild_id: String,
-        track: LavalinkTrack,
-        #[serde(rename = "thresholdMs")]
-        threshold_ms: u64,
-    },
-    WebSocketClosedEvent {
-        #[serde(rename = "guildId")]
-        guild_id: String,
-        code: u32,
-        reason: String,
-        #[serde(rename = "byRemote")]
-        by_remote: bool,
-    },
+    pub filters: Filters,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -121,6 +63,8 @@ pub struct StatsPayload {
     pub uptime: u64,
     pub memory: MemoryStats,
     pub cpu: CpuStats,
+    #[serde(rename = "frameStats")]
+    pub frame_stats: Option<FrameStats>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -138,4 +82,67 @@ pub struct CpuStats {
     pub system_load: f64,
     #[serde(rename = "lavalinkLoad")]
     pub lavalink_load: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FrameStats {
+    pub sent: u64,
+    pub nulled: u64,
+    pub deficit: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VersionInfo {
+    pub semver: String,
+    pub major: u32,
+    pub minor: u32,
+    pub patch: u32,
+    #[serde(rename = "preRelease", skip_serializing_if = "Option::is_none")]
+    pub pre_release: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GitInfo {
+    pub branch: String,
+    pub commit: String,
+    #[serde(rename = "commitTime")]
+    pub commit_time: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct JvmInfo {
+    pub version: String,
+    pub vm: String,
+    pub vendor: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ServerInfo {
+    pub version: VersionInfo,
+    #[serde(rename = "buildTime")]
+    pub build_time: u64,
+    pub git: GitInfo,
+    #[serde(rename = "sourceManagers")]
+    pub source_managers: Vec<String>,
+    pub filters: Vec<String>,
+    pub plugins: Vec<PluginInfo>,
+    pub jvm: JvmInfo,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PluginInfo {
+    pub name: String,
+    pub version: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SessionUpdate {
+    pub resuming: Option<bool>,
+    pub timeout: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SessionResponse {
+    pub resuming: bool,
+    pub timeout: u64,
 }

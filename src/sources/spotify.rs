@@ -217,8 +217,8 @@ impl SpotifySource {
         let encoded = STANDARD.encode(format!("spotify:{}", id));
 
         let mut plugin_info = serde_json::Map::new();
-        if let Some(code) = isrc {
-            plugin_info.insert("isrc".to_string(), Value::String(code));
+        if let Some(code) = &isrc {
+            plugin_info.insert("isrc".to_string(), Value::String(code.clone()));
         }
 
         Some(LavalinkTrack {
@@ -233,12 +233,46 @@ impl SpotifySource {
                 title,
                 uri,
                 artwork_url: artwork,
+                isrc: isrc.clone(),
                 source_name: "spotify".to_string(),
-                bitrate: Some("320kbps".to_string()),
-                stream_url: None,
             },
             plugin_info: Value::Object(plugin_info),
             user_data: Value::Object(Default::default()),
         })
+    }
+
+    pub async fn resolve_stream(&self, track_info: &crate::models::track::TrackInfo) -> Result<String, String> {
+        let search_query = format!("{} {}", track_info.title, track_info.author);
+        let token = self.get_token().await?;
+
+        let url = format!(
+            "{}/search?type=track&q={}&limit=1",
+            SPOTIFY_API_BASE,
+            urlencoding::encode(&search_query)
+        );
+
+        let res = self
+            .client
+            .get(&url)
+            .bearer_auth(token)
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
+
+        let json: Value = res.json().await.map_err(|e| e.to_string())?;
+        let isrc = json
+            .get("tracks")
+            .and_then(|t| t.get("items"))
+            .and_then(|i| i.as_array())
+            .and_then(|arr| arr.first())
+            .and_then(|item| item.get("external_ids"))
+            .and_then(|ext| ext.get("isrc"))
+            .and_then(|i| i.as_str());
+
+        if let Some(isrc_code) = isrc {
+            return Err(format!("ISRC:{}", isrc_code));
+        }
+
+        Err("No stream URL available for Spotify tracks directly".to_string())
     }
 }

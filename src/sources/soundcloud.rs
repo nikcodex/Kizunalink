@@ -61,9 +61,8 @@ impl SoundCloudSource {
                         title,
                         uri,
                         artwork_url: artwork,
+                        isrc: None,
                         source_name: "soundcloud".to_string(),
-                        bitrate: Some("128kbps".to_string()),
-                        stream_url: None,
                     },
                     plugin_info: serde_json::json!({}),
                     user_data: serde_json::json!({}),
@@ -72,5 +71,41 @@ impl SoundCloudSource {
         }
 
         Ok(tracks)
+    }
+
+    pub async fn resolve_stream(&self, track_id: &str) -> Result<String, String> {
+        let client_id = self.client_id.read().await.clone();
+        let url = format!(
+            "{}/tracks/{}?client_id={}",
+            SOUNDCLOUD_API, track_id, client_id
+        );
+
+        let res = self.client.get(&url).send().await.map_err(|e| e.to_string())?;
+        let json: Value = res.json().await.map_err(|e| e.to_string())?;
+
+        if let Some(stream_url) = json.get("stream_url").and_then(|u| u.as_str()) {
+            let mut params = url::form_urlencoded::parse(stream_url.split('?').nth(1).unwrap_or("").as_bytes())
+                .map(|(k, v)| (k.into_owned(), v.into_owned()))
+                .collect::<Vec<_>>();
+            params.push(("client_id".to_string(), client_id));
+
+            let redirect_url = format!(
+                "{}?{}",
+                stream_url.split('?').next().unwrap_or(stream_url),
+                params.iter()
+                    .map(|(k, v)| format!("{}={}", k, v))
+                    .collect::<Vec<_>>()
+                    .join("&")
+            );
+
+            let stream_res = self.client.get(&redirect_url).send().await.map_err(|e| e.to_string())?;
+            let stream_json: Value = stream_res.json().await.map_err(|e| e.to_string())?;
+
+            if let Some(url) = stream_json.get("url").and_then(|u| u.as_str()) {
+                return Ok(url.to_string());
+            }
+        }
+
+        Err("No stream URL found for SoundCloud track".to_string())
     }
 }

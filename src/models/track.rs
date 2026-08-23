@@ -14,11 +14,10 @@ pub struct TrackInfo {
     pub uri: Option<String>,
     #[serde(rename = "artworkUrl")]
     pub artwork_url: Option<String>,
+    #[serde(rename = "isrc")]
+    pub isrc: Option<String>,
     #[serde(rename = "sourceName")]
     pub source_name: String,
-    pub bitrate: Option<String>,
-    #[serde(rename = "streamUrl")]
-    pub stream_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -32,19 +31,10 @@ pub struct LavalinkTrack {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "loadType", content = "data")]
-#[allow(clippy::large_enum_variant)]
-pub enum LoadResult {
-    #[serde(rename = "track")]
-    Track(LavalinkTrack),
-    #[serde(rename = "playlist")]
-    Playlist(PlaylistData),
-    #[serde(rename = "search")]
-    Search(Vec<LavalinkTrack>),
-    #[serde(rename = "empty")]
-    Empty(serde_json::Value),
-    #[serde(rename = "error")]
-    Error(ErrorInfo),
+pub struct PlaylistInfo {
+    pub name: String,
+    #[serde(rename = "selectedTrack")]
+    pub selected_track: i32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -56,15 +46,26 @@ pub struct PlaylistData {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PlaylistInfo {
-    pub name: String,
-    #[serde(rename = "selectedTrack")]
-    pub selected_track: i32,
+pub struct ErrorInfo {
+    pub message: Option<String>,
+    pub severity: String,
+    pub cause: String,
+    #[serde(rename = "causeStackTrace")]
+    pub cause_stack_trace: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ErrorInfo {
-    pub message: String,
-    pub severity: String,
-    pub cause: String,
+#[serde(tag = "loadType", content = "data")]
+#[allow(clippy::large_enum_variant)]
+pub enum LoadResult {
+    #[serde(rename = "track")]
+    Track(LavalinkTrack),
+    #[serde(rename = "playlist")]
+    Playlist(PlaylistData),
+    #[serde(rename = "search")]
+    Search(Vec<LavalinkTrack>),
+    #[serde(rename = "empty")]
+    Empty,
+    #[serde(rename = "error")]
+    Error(ErrorInfo),
 }

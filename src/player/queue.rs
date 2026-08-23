@@ -1,0 +1,122 @@
+use crate::models::track::LavalinkTrack;
+use std::collections::VecDeque;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LoopMode {
+    None,
+    Track,
+    Queue,
+}
+
+pub struct TrackQueue {
+    pub tracks: VecDeque<LavalinkTrack>,
+    pub current: Option<LavalinkTrack>,
+    pub previous: Vec<LavalinkTrack>,
+    pub loop_mode: LoopMode,
+    max_history: usize,
+}
+
+impl TrackQueue {
+    pub fn new() -> Self {
+        Self {
+            tracks: VecDeque::new(),
+            current: None,
+            previous: Vec::new(),
+            loop_mode: LoopMode::None,
+            max_history: 50,
+        }
+    }
+
+    pub fn add(&mut self, track: LavalinkTrack) {
+        self.tracks.push_back(track);
+    }
+
+    pub fn add_at(&mut self, index: usize, track: LavalinkTrack) {
+        if index >= self.tracks.len() {
+            self.tracks.push_back(track);
+        } else {
+            self.tracks.insert(index, track);
+        }
+    }
+
+    pub fn next(&mut self) -> Option<LavalinkTrack> {
+        if let Some(current) = self.current.take() {
+            self.previous.push(current);
+            if self.previous.len() > self.max_history {
+                self.previous.remove(0);
+            }
+        }
+
+        match self.loop_mode {
+            LoopMode::Track => {
+                if let Some(current) = &self.current {
+                    return Some(current.clone());
+                }
+                self.tracks.pop_front()
+            }
+            LoopMode::Queue => {
+                if let Some(track) = self.tracks.pop_front() {
+                    self.tracks.push_back(track.clone());
+                    Some(track)
+                } else if let Some(current) = &self.current {
+                    Some(current.clone())
+                } else {
+                    None
+                }
+            }
+            LoopMode::None => self.tracks.pop_front(),
+        }
+    }
+
+    pub fn previous_track(&mut self) -> Option<LavalinkTrack> {
+        self.previous.pop()
+    }
+
+    pub fn clear(&mut self) {
+        self.tracks.clear();
+        self.current = None;
+        self.previous.clear();
+        self.loop_mode = LoopMode::None;
+    }
+
+    pub fn remove(&mut self, index: usize) -> Option<LavalinkTrack> {
+        if index < self.tracks.len() {
+            self.tracks.remove(index)
+        } else {
+            None
+        }
+    }
+
+    pub fn shuffle(&mut self) {
+        let mut vec: Vec<LavalinkTrack> = self.tracks.drain(..).collect();
+        use rand::seq::SliceRandom;
+        let mut rng = rand::thread_rng();
+        vec.shuffle(&mut rng);
+        self.tracks = vec.into();
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.tracks.is_empty() && self.current.is_none()
+    }
+
+    pub fn len(&self) -> usize {
+        self.tracks.len() + if self.current.is_some() { 1 } else { 0 }
+    }
+
+    pub fn queue(&self) -> Vec<&LavalinkTrack> {
+        self.tracks.iter().collect()
+    }
+
+    pub fn set_loop(&mut self, mode: LoopMode) {
+        self.loop_mode = mode;
+    }
+
+    pub fn toggle_loop(&mut self) -> LoopMode {
+        self.loop_mode = match self.loop_mode {
+            LoopMode::None => LoopMode::Track,
+            LoopMode::Track => LoopMode::Queue,
+            LoopMode::Queue => LoopMode::None,
+        };
+        self.loop_mode
+    }
+}
