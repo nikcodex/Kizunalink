@@ -74,6 +74,7 @@ async fn main() {
         youtube,
         spotify,
         soundcloud,
+        plugin_manager,
         password,
         start_time: std::time::Instant::now(),
         event_tx,
