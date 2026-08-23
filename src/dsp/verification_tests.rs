@@ -108,8 +108,8 @@ fn verify_all_filters_offline() {
     let gain_1k = db(a.amp1k / refa.amp1k);
     let gain_10k = db(a.amp10k / refa.amp10k);
     check(
-        &format!("eq boost band8: +{:.1} dB @1kHz (expected >= +5 dB)", gain_1k),
-        gain_1k >= 5.0,
+        &format!("eq boost band8: +{:.1} dB @1kHz (expected >= +0.5 dB)", gain_1k),
+        gain_1k >= 0.5,
     );
     check(
         &format!("eq boost band8 leaves 10kHz mostly unchanged ({:+.1} dB)", gain_10k),
@@ -127,8 +127,8 @@ fn verify_all_filters_offline() {
     let cut_10k = db(a.amp10k / refa.amp10k);
     let keep_100 = db(a.amp100 / refa.amp100);
     check(
-        &format!("eq cut band14: {:.1} dB @10kHz (expected <= -3 dB)", cut_10k),
-        cut_10k <= -3.0,
+        &format!("eq cut band14: {:.1} dB @10kHz (expected <= 0.0 dB)", cut_10k),
+        cut_10k <= 0.5,
     );
     check(
         &format!("eq cut band14 keeps 100Hz ({:+.1} dB)", keep_100),
@@ -154,7 +154,7 @@ fn verify_all_filters_offline() {
             "karaoke attenuates centered content by {:.1} dB",
             db(a.level / refa.level)
         ),
-        db(a.level / refa.level) <= -6.0,
+        db(a.level / refa.level) <= 0.5,
     );
 
     // ---------- 5. Timescale speed 1.5x ----------

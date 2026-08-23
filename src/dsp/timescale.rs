@@ -118,8 +118,8 @@ impl Timescale {
 
             while self.res_in[0].len() >= CHUNK_FRAMES {
                 let wave_in = vec![
-                    std::mem::take(&mut self.res_in[0]),
-                    std::mem::take(&mut self.res_in[1]),
+                    self.res_in[0].drain(..CHUNK_FRAMES).collect::<Vec<f32>>(),
+                    self.res_in[1].drain(..CHUNK_FRAMES).collect::<Vec<f32>>(),
                 ];
                 match resampler.process(&wave_in, None) {
                     Ok(mut wave_out) => {
@@ -131,9 +131,6 @@ impl Timescale {
                         break;
                     }
                 }
-                // mem::take left empty vecs behind; restore capacity hint
-                self.res_in[0] = Vec::with_capacity(CHUNK_FRAMES);
-                self.res_in[1] = Vec::with_capacity(CHUNK_FRAMES);
             }
 
             // Drain pending resampled frames into interleaved stage
@@ -164,10 +161,27 @@ impl Timescale {
     pub fn flush(&mut self) -> Vec<f32> {
         let mut out = Vec::new();
 
-        // Feed silence through remaining resampler chunks to flush tails
+        // Flush remaining partial chunk and Sinc delay line
         if let Some(resampler) = self.resampler.as_mut() {
+            while !self.res_in[0].is_empty() {
+                let pad = CHUNK_FRAMES.saturating_sub(self.res_in[0].len());
+                self.res_in[0].extend(std::iter::repeat(0.0).take(pad));
+                self.res_in[1].extend(std::iter::repeat(0.0).take(pad));
+
+                let wave_in = vec![
+                    self.res_in[0].drain(..CHUNK_FRAMES).collect::<Vec<f32>>(),
+                    self.res_in[1].drain(..CHUNK_FRAMES).collect::<Vec<f32>>(),
+                ];
+                if let Ok(mut wave_out) = resampler.process(&wave_in, None) {
+                    for i in 0..wave_out[0].len() {
+                        self.res_out_pending[0].push(wave_out[0][i]);
+                        self.res_out_pending[1].push(wave_out[1][i]);
+                    }
+                }
+            }
+
+            // A couple of chunks of pure silence to flush the sinc delay line
             let silence = vec![vec![0.0f32; CHUNK_FRAMES], vec![0.0f32; CHUNK_FRAMES]];
-            // A couple of chunks is enough to flush the sinc delay line
             for _ in 0..3 {
                 if let Ok(mut wave_out) = resampler.process(&silence, None) {
                     for i in 0..wave_out[0].len() {
