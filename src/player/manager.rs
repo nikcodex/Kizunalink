@@ -5,16 +5,16 @@ use crate::sources::jiosaavn::JioSaavnSource;
 use crate::sources::soundcloud::SoundCloudSource;
 use crate::sources::spotify::SpotifySource;
 use crate::sources::youtube::YouTubeSource;
-use base64::{engine::general_purpose::STANDARD, Engine as _};
 use dashmap::DashMap;
 use std::sync::Arc;
-use tokio::sync::{broadcast, RwLock};
-use tracing::{error, info, warn};
+use tokio::sync::{broadcast, mpsc, RwLock};
+use tracing::{info, warn};
 
 pub struct PlayerManager {
     players: DashMap<String, Arc<RwLock<GuildPlayer>>>,
     pub bot_user_id: Arc<RwLock<String>>,
     event_tx: broadcast::Sender<String>,
+    track_end_tx: mpsc::UnboundedSender<String>,
     jiosaavn: Arc<JioSaavnSource>,
     youtube: Arc<YouTubeSource>,
     spotify: Arc<SpotifySource>,
@@ -29,14 +29,45 @@ impl PlayerManager {
         spotify: Arc<SpotifySource>,
         soundcloud: Arc<SoundCloudSource>,
     ) -> Self {
-        Self {
+        let (track_end_tx, mut track_end_rx) = mpsc::unbounded_channel::<String>();
+
+        let manager = Self {
             players: DashMap::new(),
             bot_user_id: Arc::new(RwLock::new("0".to_string())),
             event_tx,
+            track_end_tx,
             jiosaavn,
             youtube,
             spotify,
             soundcloud,
+        };
+
+        let manager_arc = Arc::new(manager);
+        let task_manager = manager_arc.clone();
+
+        tokio::spawn(async move {
+            while let Some(guild_id) = track_end_rx.recv().await {
+                task_manager.handle_track_end(&guild_id).await;
+            }
+        });
+
+        // We return the unwrapped struct from Arc or deref
+        match Arc::try_unwrap(manager_arc) {
+            Ok(m) => m,
+            Err(arc) => (*arc).clone_shallow(),
+        }
+    }
+
+    fn clone_shallow(&self) -> Self {
+        Self {
+            players: self.players.clone(),
+            bot_user_id: self.bot_user_id.clone(),
+            event_tx: self.event_tx.clone(),
+            track_end_tx: self.track_end_tx.clone(),
+            jiosaavn: self.jiosaavn.clone(),
+            youtube: self.youtube.clone(),
+            spotify: self.spotify.clone(),
+            soundcloud: self.soundcloud.clone(),
         }
     }
 
@@ -49,12 +80,13 @@ impl PlayerManager {
         }
     }
 
-    fn create_guild_player(&self, guild_id: &str) -> Arc<RwLock<GuildPlayer>> {
-        let user_id = "0".to_string();
+    async fn create_guild_player(&self, guild_id: &str) -> Arc<RwLock<GuildPlayer>> {
+        let user_id = self.bot_user_id.read().await.clone();
         let player = GuildPlayer::new(
             guild_id.to_string(),
             user_id,
             self.event_tx.clone(),
+            self.track_end_tx.clone(),
         );
         Arc::new(RwLock::new(player))
     }
@@ -63,13 +95,64 @@ impl PlayerManager {
         &self,
         guild_id: &str,
         payload: PlayerUpdatePayload,
+        no_replace: bool,
     ) -> Result<PlayerResponse, String> {
-        let player_arc = self
-            .players
-            .entry(guild_id.to_string())
-            .or_insert_with(|| self.create_guild_player(guild_id))
-            .clone();
+        let player_arc = if let Some(p) = self.players.get(guild_id) {
+            p.clone()
+        } else {
+            let p = self.create_guild_player(guild_id).await;
+            self.players.insert(guild_id.to_string(), p.clone());
+            p
+        };
 
+        // Determine if track update is requested
+        let encoded_value = payload
+            .track
+            .as_ref()
+            .and_then(|t| t.encoded.clone())
+            .or(payload.encoded_track.clone());
+
+        let track_identifier = payload
+            .track
+            .as_ref()
+            .and_then(|t| t.identifier.clone())
+            .or(payload.identifier.clone());
+
+        let mut should_stop_track = false;
+        let mut resolved_track = None;
+        let mut resolved_stream_url = None;
+
+        if let Some(ref enc) = encoded_value {
+            if enc.trim().is_empty() {
+                should_stop_track = true;
+            } else {
+                // Decode track
+                match crate::track_encoding::decode_track(enc) {
+                    Ok(mut track) => {
+                        track.encoded = enc.clone();
+                        let stream_url = self.resolve_stream_url(&track).await;
+                        resolved_track = Some(track);
+                        resolved_stream_url = stream_url;
+                    }
+                    Err(e) => {
+                        warn!("Track decode error for guild {}: {}", guild_id, e);
+                    }
+                }
+            }
+        } else if let Some(ref id) = track_identifier {
+            if id.trim().is_empty() {
+                should_stop_track = true;
+            } else {
+                // Resolve identifier
+                if let Some(track) = self.resolve_identifier(id).await {
+                    let stream_url = self.resolve_stream_url(&track).await;
+                    resolved_track = Some(track);
+                    resolved_stream_url = stream_url;
+                }
+            }
+        }
+
+        // Lock player briefly to apply all state updates
         let mut player = player_arc.write().await;
 
         if let Some(voice) = payload.voice {
@@ -96,58 +179,21 @@ impl PlayerManager {
             player.apply_filters().await;
         }
 
-        let encoded_value = payload
-            .track
-            .as_ref()
-            .and_then(|t| t.encoded.clone())
-            .or(payload.encoded_track.clone());
-
-        if let Some(encoded_opt) = encoded_value {
-            if encoded_opt.trim().is_empty() {
-                info!("Stopping player for guild: {}", guild_id);
-                player.stop();
-            } else {
-                let decoded_str = STANDARD
-                    .decode(&encoded_opt)
-                    .ok()
-                    .and_then(|b| String::from_utf8(b).ok())
-                    .unwrap_or_else(|| encoded_opt.clone());
-
-                let (source, id) = if let Some(idx) = decoded_str.find(':') {
-                    (&decoded_str[..idx], &decoded_str[idx + 1..])
-                } else {
-                    ("jiosaavn", decoded_str.as_str())
-                };
-
-                let mut track = self.resolve_track_metadata(source, id).await.unwrap_or_else(|| {
-                    crate::models::track::LavalinkTrack {
-                        encoded: encoded_opt.clone(),
-                        info: crate::models::track::TrackInfo {
-                            identifier: id.to_string(),
-                            is_seekable: true,
-                            author: "Unknown".to_string(),
-                            length: 0,
-                            is_stream: false,
-                            position: 0,
-                            title: id.to_string(),
-                            uri: None,
-                            artwork_url: None,
-                            isrc: None,
-                            source_name: source.to_string(),
-                        },
-                        plugin_info: serde_json::json!({}),
-                        user_data: serde_json::json!({}),
-                    }
-                });
-
-                track.encoded = encoded_opt;
-
-                if let Some(stream_url) = self.resolve_stream_url(&track).await {
-                    info!("Resolved stream URL for guild {} source={}", guild_id, source);
+        if should_stop_track {
+            info!("Stopping player for guild: {}", guild_id);
+            player.stop();
+        } else if let Some(track) = resolved_track {
+            let is_currently_playing = player.is_playing();
+            if !(no_replace && is_currently_playing) {
+                if let Some(stream_url) = resolved_stream_url {
+                    info!(
+                        "Playing track '{}' for guild {}",
+                        track.info.title, guild_id
+                    );
                     player.play_track(track, stream_url).await;
                 } else {
                     warn!("Failed to resolve stream URL for guild {}", guild_id);
-                    player.emit_track_load_failed(&track, "Failed to resolve stream URL");
+                    player.emit_track_load_failed(&track, "Failed to resolve playable audio stream");
                 }
             }
         }
@@ -155,7 +201,36 @@ impl PlayerManager {
         Ok(player.to_response())
     }
 
-    async fn resolve_stream_url(&self, track: &crate::models::track::LavalinkTrack) -> Option<String> {
+    async fn resolve_identifier(&self, id: &str) -> Option<crate::models::track::LavalinkTrack> {
+        let clean = id.trim();
+        if clean.starts_with("http://") || clean.starts_with("https://") {
+            if clean.contains("spotify.com") {
+                if let Some(track_id) = clean.split("/track/").nth(1).and_then(|s| s.split('?').next()) {
+                    return self.spotify.resolve_track(track_id).await.ok().flatten();
+                }
+            } else if clean.contains("youtube.com") || clean.contains("youtu.be") {
+                let vid = if let Some(v) = clean.split("v=").nth(1).and_then(|s| s.split('&').next()) {
+                    v
+                } else if let Some(v) = clean.split("youtu.be/").nth(1).and_then(|s| s.split('?').next()) {
+                    v
+                } else {
+                    clean
+                };
+                return self.youtube.resolve_video(vid).await.ok().flatten();
+            }
+            return Some(crate::util::create_http_track(clean));
+        }
+
+        self.jiosaavn
+            .search(clean, 1)
+            .await
+            .ok()?
+            .into_iter()
+            .next()
+            .or_else(|| None)
+    }
+
+    pub async fn resolve_stream_url(&self, track: &crate::models::track::LavalinkTrack) -> Option<String> {
         let source = &track.info.source_name;
         let identifier = &track.info.identifier;
 
@@ -163,83 +238,70 @@ impl PlayerManager {
             "jiosaavn" => self.jiosaavn.resolve_stream_url(identifier).await.ok(),
             "youtube" => {
                 if let Some(url) = &track.info.uri {
-                    Some(url.clone())
-                } else {
-                    self.youtube.resolve_video(identifier).await.ok().flatten().and_then(|t| t.info.uri)
+                    if url.starts_with("http") && !url.contains("youtube.com") && !url.contains("youtu.be") {
+                        return Some(url.clone());
+                    }
                 }
+                self.youtube
+                    .resolve_video(identifier)
+                    .await
+                    .ok()
+                    .flatten()
+                    .and_then(|t| t.info.uri)
             }
             "soundcloud" => self.soundcloud.resolve_stream(identifier).await.ok(),
-            "spotify" => self.spotify.resolve_stream(&track.info).await.ok(),
+            "spotify" => {
+                // Spotify Mirror: Search JioSaavn first for 320kbps lossless stream
+                let query = format!("{} {}", track.info.title, track.info.author);
+                if let Ok(js_tracks) = self.jiosaavn.search(&query, 1).await {
+                    if let Some(first_js) = js_tracks.into_iter().next() {
+                        if let Ok(url) = self.jiosaavn.resolve_stream_url(&first_js.info.identifier).await {
+                            info!("⚡ Mirrored Spotify track '{}' -> JioSaavn 320kbps CDN", track.info.title);
+                            return Some(url);
+                        }
+                    }
+                }
+
+                // Fallback to YouTube
+                if let Ok(yt_tracks) = self.youtube.search(&query, 1).await {
+                    if let Some(first_yt) = yt_tracks.into_iter().next() {
+                        if let Ok(Some(yt_res)) = self.youtube.resolve_video(&first_yt.info.identifier).await {
+                            if let Some(url) = yt_res.info.uri {
+                                info!("⚡ Mirrored Spotify track '{}' -> YouTube stream", track.info.title);
+                                return Some(url);
+                            }
+                        }
+                    }
+                }
+
+                None
+            }
             "http" => track.info.uri.clone(),
             _ => None,
         }
     }
 
-    async fn resolve_track_metadata(&self, source: &str, id: &str) -> Option<crate::models::track::LavalinkTrack> {
-        match source {
-            "jiosaavn" => {
-                self.jiosaavn.search(id, 1).await.ok()?.into_iter().next()
-            }
-            "youtube" => {
-                self.youtube.resolve_video(id).await.ok()?
-            }
-            "spotify" => {
-                self.spotify.resolve_track(id).await.ok()?
-            }
-            "soundcloud" => {
-                self.soundcloud.search(id, 1).await.ok()?.into_iter().next()
-            }
-            _ => None,
-        }
-    }
-
     pub async fn queue_track(&self, guild_id: &str, encoded: &str) -> Result<PlayerResponse, String> {
-        let player_arc = self
-            .players
-            .entry(guild_id.to_string())
-            .or_insert_with(|| self.create_guild_player(guild_id))
-            .clone();
+        let player_arc = if let Some(p) = self.players.get(guild_id) {
+            p.clone()
+        } else {
+            let p = self.create_guild_player(guild_id).await;
+            self.players.insert(guild_id.to_string(), p.clone());
+            p
+        };
+
+        let track = crate::track_encoding::decode_track(encoded)
+            .map_err(|e| format!("Invalid encoded track: {}", e))?;
+
+        let stream_url = self.resolve_stream_url(&track).await;
 
         let mut player = player_arc.write().await;
 
-        let decoded_str = STANDARD
-            .decode(encoded)
-            .ok()
-            .and_then(|b| String::from_utf8(b).ok())
-            .unwrap_or_else(|| encoded.to_string());
-
-        let (source, id) = if let Some(idx) = decoded_str.find(':') {
-            (&decoded_str[..idx], &decoded_str[idx + 1..])
-        } else {
-            ("jiosaavn", decoded_str.as_str())
-        };
-
-        let mut track = self.resolve_track_metadata(source, id).await.unwrap_or_else(|| {
-            crate::models::track::LavalinkTrack {
-                encoded: encoded.to_string(),
-                info: crate::models::track::TrackInfo {
-                    identifier: id.to_string(),
-                    is_seekable: true,
-                    author: "Unknown".to_string(),
-                    length: 0,
-                    is_stream: false,
-                    position: 0,
-                    title: id.to_string(),
-                    uri: None,
-                    artwork_url: None,
-                    isrc: None,
-                    source_name: source.to_string(),
-                },
-                plugin_info: serde_json::json!({}),
-                user_data: serde_json::json!({}),
-            }
-        });
-
-        track.encoded = encoded.to_string();
-
         if !player.is_playing() && player.queue.current.is_none() {
-            if let Some(stream_url) = self.resolve_stream_url(&track).await {
-                player.play_track(track, stream_url).await;
+            if let Some(url) = stream_url {
+                player.play_track(track, url).await;
+            } else {
+                player.add_to_queue(track);
             }
         } else {
             player.add_to_queue(track);
@@ -254,11 +316,15 @@ impl PlayerManager {
             let next = player.skip_to_next();
 
             if let Some(track) = next {
+                drop(player);
                 if let Some(url) = self.resolve_stream_url(&track).await {
+                    let mut player = player_arc.write().await;
                     player.play_track(track, url).await;
+                    return Ok(player.to_response());
                 }
             }
 
+            let player = player_arc.read().await;
             Ok(player.to_response())
         } else {
             Err("Player not found".to_string())
@@ -271,11 +337,15 @@ impl PlayerManager {
             let prev = player.skip_to_previous();
 
             if let Some(track) = prev {
+                drop(player);
                 if let Some(url) = self.resolve_stream_url(&track).await {
+                    let mut player = player_arc.write().await;
                     player.play_track(track, url).await;
+                    return Ok(player.to_response());
                 }
             }
 
+            let player = player_arc.read().await;
             Ok(player.to_response())
         } else {
             Err("Player not found".to_string())
@@ -335,38 +405,67 @@ impl PlayerManager {
     }
 
     pub async fn handle_track_end(&self, guild_id: &str) {
-        if let Some(player_arc) = self.players.get(guild_id) {
-            let mut player = player_arc.write().await;
-            let next_track = player.get_next_track_for_autoplay();
+        let player_arc = match self.players.get(guild_id) {
+            Some(p) => p.clone(),
+            None => return,
+        };
 
-            if let Some(track) = next_track {
-                let url = self.resolve_stream_url(&track).await;
-                if let Some(stream_url) = url {
-                    player.play_track(track, stream_url).await;
-                    return;
-                }
+        // Emit finished event
+        let (next_track, last_track, is_autoplay) = {
+            let mut player = player_arc.write().await;
+            let finished_track = player.queue.current.clone();
+
+            if let Some(ref track) = finished_track {
+                player.emit_event(
+                    "TrackEndEvent",
+                    serde_json::json!({
+                        "track": track,
+                        "reason": "finished",
+                    }),
+                );
             }
 
-            if player.autoplay.enabled {
-                if let Some(last_track) = &player.queue.current {
-                    let autoplay_track = player.autoplay.get_recommendation(
-                        last_track,
-                        &self.jiosaavn,
-                        &self.youtube,
-                        &self.spotify,
-                    ).await;
+            let next = player.get_next_track_for_autoplay();
+            let last = player.queue.current.clone();
+            let autoplay = player.autoplay.enabled;
+            (next, last, autoplay)
+        };
 
-                    if let Some(track) = autoplay_track {
-                        if let Some(stream_url) = self.resolve_stream_url(&track).await {
-                            player.play_track(track, stream_url).await;
-                            return;
-                        }
+        if let Some(track) = next_track {
+            if let Some(stream_url) = self.resolve_stream_url(&track).await {
+                let mut player = player_arc.write().await;
+                player.play_track(track, stream_url).await;
+                return;
+            }
+        }
+
+        if is_autoplay {
+            if let Some(ref track) = last_track {
+                let recommendation = {
+                    let player = player_arc.read().await;
+                    player
+                        .autoplay
+                        .get_recommendation(
+                            track,
+                            &self.jiosaavn,
+                            &self.youtube,
+                            &self.spotify,
+                        )
+                        .await
+                };
+
+                if let Some(rec) = recommendation {
+                    if let Some(stream_url) = self.resolve_stream_url(&rec).await {
+                        let mut player = player_arc.write().await;
+                        player.play_track(rec, stream_url).await;
+                        return;
                     }
                 }
             }
-
-            player.stop();
         }
+
+        let mut player = player_arc.write().await;
+        player.stop();
     }
 
     pub async fn count_players(&self) -> (usize, usize) {

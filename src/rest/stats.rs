@@ -1,6 +1,13 @@
-use axum::response::Json;
+use axum::{
+    extract::State,
+    http::HeaderMap,
+    response::Json,
+};
+
+use crate::models::protocol::{CpuStats, MemoryStats, StatsPayload};
+use crate::rest::auth::require_auth;
+use crate::rest::error::LavalinkError;
 use crate::AppState;
-use crate::models::protocol::{StatsPayload, MemoryStats, CpuStats};
 
 fn get_memory_stats() -> MemoryStats {
     #[cfg(target_os = "linux")]
@@ -15,7 +22,7 @@ fn get_memory_stats() -> MemoryStats {
                 let free = free_pages * page_size;
                 return MemoryStats {
                     free,
-                    used: allocated - free,
+                    used: allocated.saturating_sub(free),
                     allocated,
                     reservable: allocated,
                 };
@@ -30,11 +37,16 @@ fn get_memory_stats() -> MemoryStats {
     }
 }
 
-pub async fn get_stats(state: axum::extract::State<AppState>) -> Json<StatsPayload> {
+pub async fn get_stats(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<StatsPayload>, LavalinkError> {
+    require_auth(&headers, &state.password, "/v4/stats")?;
+
     let (total_players, playing_players) = state.player_manager.count_players().await;
     let uptime = state.start_time.elapsed().as_millis() as u64;
 
-    Json(StatsPayload {
+    Ok(Json(StatsPayload {
         players: total_players,
         playing_players,
         uptime,
@@ -45,5 +57,5 @@ pub async fn get_stats(state: axum::extract::State<AppState>) -> Json<StatsPaylo
             lavalink_load: 0.01,
         },
         frame_stats: None,
-    })
+    }))
 }

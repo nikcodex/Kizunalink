@@ -1,8 +1,9 @@
-pub mod info;
-pub mod stats;
-pub mod loadtracks;
+pub mod auth;
 pub mod decodetrack;
-pub mod players;
-pub mod session;
-pub mod routeplanner;
 pub mod error;
+pub mod info;
+pub mod loadtracks;
+pub mod players;
+pub mod routeplanner;
+pub mod session;
+pub mod stats;

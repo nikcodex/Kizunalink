@@ -1,5 +1,4 @@
 use crate::models::track::{LavalinkTrack, TrackInfo};
-use base64::{engine::general_purpose::STANDARD, Engine as _};
 use reqwest::Client;
 use serde_json::Value;
 use std::sync::Arc;
@@ -47,10 +46,8 @@ impl SoundCloudSource {
                 let artwork = item.get("artwork_url").and_then(|a| a.as_str()).map(|s| s.replace("large", "t500x500"));
                 let uri = item.get("permalink_url").and_then(|u| u.as_str()).map(|s| s.to_string());
 
-                let encoded = STANDARD.encode(format!("soundcloud:{}", id));
-
-                tracks.push(LavalinkTrack {
-                    encoded,
+                let mut track = LavalinkTrack {
+                    encoded: String::new(),
                     info: TrackInfo {
                         identifier: id,
                         is_seekable: true,
@@ -66,7 +63,13 @@ impl SoundCloudSource {
                     },
                     plugin_info: serde_json::json!({}),
                     user_data: serde_json::json!({}),
-                });
+                };
+
+                if let Ok(enc) = crate::track_encoding::encode_track(&track) {
+                    track.encoded = enc;
+                }
+
+                tracks.push(track);
             }
         }
 

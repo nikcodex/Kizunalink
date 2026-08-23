@@ -1,24 +1,27 @@
-mod models;
-mod sources;
 mod config;
-mod player;
-mod ws;
-mod rest;
-mod util;
-mod track_encoding;
 pub mod dsp;
+mod models;
+mod player;
+mod rest;
+mod sources;
+mod track_encoding;
+mod util;
+mod ws;
 
-use std::sync::Arc;
 use axum::{
-    routing::{get, post, patch},
+    routing::{get, patch, post},
     Router,
 };
-use tower_http::cors::{CorsLayer, Any};
+use std::sync::Arc;
 use tokio::sync::broadcast;
+use tower_http::cors::{Any, CorsLayer};
 use tracing::info;
 
 use player::manager::PlayerManager;
-use sources::{jiosaavn::JioSaavnSource, youtube::YouTubeSource, spotify::SpotifySource, soundcloud::SoundCloudSource};
+use sources::{
+    jiosaavn::JioSaavnSource, soundcloud::SoundCloudSource, spotify::SpotifySource,
+    youtube::YouTubeSource,
+};
 
 #[derive(Clone)]
 pub struct AppState {
@@ -36,7 +39,10 @@ pub struct AppState {
 async fn main() {
     tracing_subscriber::fmt::init();
     let config = config::AppConfig::load();
-    info!("Loaded config: host={}, port={}", config.server.host, config.server.port);
+    info!(
+        "Loaded config: host={}, port={}",
+        config.server.host, config.server.port
+    );
 
     let (event_tx, _) = broadcast::channel::<String>(256);
     let password = config.server.password.clone();
@@ -66,26 +72,49 @@ async fn main() {
     };
 
     let app = Router::new()
-        .route("/version", get(|| async { "4.0.0" }))
+        .route("/version", get(|| async { "4.2.1" }))
         .route("/v4/info", get(rest::info::get_info))
         .route("/v4/stats", get(rest::stats::get_stats))
         .route("/v4/loadtracks", get(rest::loadtracks::load_tracks))
         .route("/v4/decodetrack", get(rest::decodetrack::decode_track))
         .route("/v4/decodetracks", post(rest::decodetrack::decode_tracks))
         .route("/v4/sessions/:session_id", patch(rest::session::update_session))
-        .route("/v4/sessions/:session_id/players", get(rest::players::get_players))
-        .route("/v4/sessions/:session_id/players/:guild_id", get(rest::players::get_player))
-        .route("/v4/sessions/:session_id/players/:guild_id", patch(rest::players::update_player).delete(rest::players::destroy_player))
-        .route("/v4/routeplanner/status", get(rest::routeplanner::get_routeplanner_status))
-        .route("/v4/routeplanner/free/address", post(rest::routeplanner::free_routeplanner_address))
-        .route("/v4/routeplanner/free/all", post(rest::routeplanner::free_routeplanner_all))
-        .route("/", get(|| async { "4.0.0" }))
+        .route(
+            "/v4/sessions/:session_id/players",
+            get(rest::players::get_players),
+        )
+        .route(
+            "/v4/sessions/:session_id/players/:guild_id",
+            get(rest::players::get_player),
+        )
+        .route(
+            "/v4/sessions/:session_id/players/:guild_id",
+            patch(rest::players::update_player).delete(rest::players::destroy_player),
+        )
+        .route(
+            "/v4/routeplanner/status",
+            get(rest::routeplanner::get_routeplanner_status),
+        )
+        .route(
+            "/v4/routeplanner/free/address",
+            post(rest::routeplanner::free_routeplanner_address),
+        )
+        .route(
+            "/v4/routeplanner/free/all",
+            post(rest::routeplanner::free_routeplanner_all),
+        )
+        .route("/", get(|| async { "4.2.1" }))
         .route("/v4/websocket", get(ws::handler::ws_handler))
-        .layer(CorsLayer::new().allow_origin(Any).allow_methods(Any).allow_headers(Any))
+        .layer(
+            CorsLayer::new()
+                .allow_origin(Any)
+                .allow_methods(Any)
+                .allow_headers(Any),
+        )
         .with_state(state);
 
     let addr = format!("{}:{}", config.server.host, config.server.port);
-    info!("KizunaLink server listening on {}", addr);
+    info!("⛩️ KizunaLink v4.2.1 listening on {}", addr);
 
     let listener = tokio::net::TcpListener::bind(&addr).await.unwrap();
     axum::serve(listener, app).await.unwrap();

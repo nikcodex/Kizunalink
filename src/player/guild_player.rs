@@ -7,15 +7,15 @@ use crate::player::autoplay::AutoplayEngine;
 use crate::player::queue::{LoopMode, TrackQueue};
 use crate::util;
 use songbird::driver::Driver;
-use songbird::events::{context_data, CoreEvent, EventContext, EventHandler};
+use songbird::events::{context_data, CoreEvent, Event, EventContext, EventHandler, TrackEvent};
 use songbird::id::{GuildId, UserId};
 use songbird::input::HttpRequest;
-use songbird::ConnectionInfo;
 use songbird::tracks::{Track, TrackHandle};
+use songbird::ConnectionInfo;
 use std::num::NonZeroU64;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tokio::sync::{broadcast, Mutex};
+use tokio::sync::{broadcast, mpsc, Mutex};
 use tracing::{error, info, warn};
 
 use crate::dsp::pipeline::{self, SharedChain};
@@ -24,16 +24,8 @@ const SAMPLE_RATE: f64 = 48000.0;
 
 // ---------------------------------------------------------------------------
 // Voice disconnect handling
-//
-// The event payload construction is a pure function so it can be unit-tested
-// without any Discord connection: tests feed each DisconnectReason variant
-// directly and assert the exact WebSocketClosedEvent JSON emitted to clients.
-//
-// Lavalink v4 shape:
-//   { op: "event", type: "WebSocketClosedEvent", guildId, code, reason, byRemote }
 // ---------------------------------------------------------------------------
 
-/// Human-readable reason strings for Discord voice close codes.
 fn describe_close_code(code: u16) -> &'static str {
     match code {
         4001 => "Unknown opcode",
@@ -52,10 +44,6 @@ fn describe_close_code(code: u16) -> &'static str {
     }
 }
 
-/// Map a Songbird disconnect reason to (close_code, reason, by_remote).
-///
-/// `byRemote == true` mirrors Lavalink semantics: the voice gateway dropped us
-/// (client should usually re-request the voice session via the main gateway).
 fn classify_disconnect(
     reason: &Option<context_data::DisconnectReason>,
 ) -> (u16, String, bool) {
@@ -82,12 +70,10 @@ fn classify_disconnect(
         Some(DR::Io) => (1006, "I/O error".to_string(), true),
         Some(DR::ProtocolViolation) => (1006, "Protocol violation".to_string(), true),
         Some(DR::Internal) => (1011, "Internal driver error".to_string(), false),
-        // #[non_exhaustive] upstream — future-proof catch-all
         Some(_) => (1006, "Voice connection lost".to_string(), true),
     }
 }
 
-/// Build the exact WebSocketClosedEvent JSON payload for a disconnect.
 pub fn ws_closed_event_json(
     guild_id: &str,
     reason: &Option<context_data::DisconnectReason>,
@@ -110,8 +96,6 @@ struct DisconnectHandler {
 }
 
 impl DisconnectHandler {
-    /// Produce and broadcast the WebSocketClosedEvent for a disconnect.
-    /// Split out from `act` so the broadcast side is testable too.
     fn handle_disconnect(&self, reason: &Option<context_data::DisconnectReason>) -> String {
         let payload = ws_closed_event_json(&self.guild_id, reason);
         let json = payload.to_string();
@@ -122,7 +106,7 @@ impl DisconnectHandler {
 
 #[async_trait::async_trait]
 impl EventHandler for DisconnectHandler {
-    async fn act(&self, ctx: &EventContext<'_>) -> Option<songbird::events::Event> {
+    async fn act(&self, ctx: &EventContext<'_>) -> Option<Event> {
         if let EventContext::DriverDisconnect(data) = ctx {
             let json = self.handle_disconnect(&data.reason);
             info!(
@@ -135,7 +119,30 @@ impl EventHandler for DisconnectHandler {
 }
 
 // ---------------------------------------------------------------------------
-// Player
+// Track End Notifier
+// ---------------------------------------------------------------------------
+
+struct TrackEndNotifier {
+    guild_id: String,
+    track_end_tx: mpsc::UnboundedSender<String>,
+}
+
+#[async_trait::async_trait]
+impl EventHandler for TrackEndNotifier {
+    async fn act(&self, ctx: &EventContext<'_>) -> Option<Event> {
+        if let EventContext::Track(track_events) = ctx {
+            for (state, _) in *track_events {
+                if state.playing.is_done() {
+                    let _ = self.track_end_tx.send(self.guild_id.clone());
+                }
+            }
+        }
+        None
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Guild Player
 // ---------------------------------------------------------------------------
 
 pub struct GuildPlayer {
@@ -147,7 +154,7 @@ pub struct GuildPlayer {
     pub filters: Filters,
     pub last_update: u64,
     pub driver: Arc<Mutex<Driver>>,
-    track_handle: Option<TrackHandle>,
+    pub track_handle: Option<TrackHandle>,
     pub is_playing: bool,
     pub queue: TrackQueue,
     pub autoplay: AutoplayEngine,
@@ -156,12 +163,10 @@ pub struct GuildPlayer {
     pub paused_at: Option<Instant>,
     pub paused_position: u64,
     pub event_tx: broadcast::Sender<String>,
+    pub track_end_tx: mpsc::UnboundedSender<String>,
 
-    /// DSP filter chain shared with the live audio pipeline (if active).
     pub shared_chain: SharedChain,
-    /// True while the current track plays through the filtered pipeline.
     filtered_active: bool,
-    /// Stream URL backing the current track, needed for hot-restarts.
     current_stream_url: Option<String>,
 }
 
@@ -170,6 +175,7 @@ impl GuildPlayer {
         guild_id: String,
         user_id: String,
         event_tx: broadcast::Sender<String>,
+        track_end_tx: mpsc::UnboundedSender<String>,
     ) -> Self {
         let driver = Driver::new(Default::default());
         Self {
@@ -190,6 +196,7 @@ impl GuildPlayer {
             paused_at: None,
             paused_position: 0,
             event_tx,
+            track_end_tx,
 
             shared_chain: pipeline::new_shared_chain(SAMPLE_RATE),
             filtered_active: false,
@@ -197,7 +204,7 @@ impl GuildPlayer {
         }
     }
 
-    fn emit_event(&self, event_type: &str, extra: serde_json::Value) {
+    pub fn emit_event(&self, event_type: &str, extra: serde_json::Value) {
         let mut event = serde_json::json!({
             "op": "event",
             "type": event_type,
@@ -214,18 +221,21 @@ impl GuildPlayer {
     }
 
     pub fn emit_track_load_failed(&self, track: &LavalinkTrack, exception: &str) {
-        self.emit_event("TrackExceptionEvent", serde_json::json!({
-            "track": track,
-            "exception": {
-                "message": exception,
-                "severity": "COMMON",
-                "cause": "",
-                "causeStackTrace": ""
-            },
-        }));
+        self.emit_event(
+            "TrackExceptionEvent",
+            serde_json::json!({
+                "track": track,
+                "exception": {
+                    "message": exception,
+                    "severity": "fault",
+                    "cause": "",
+                    "causeStackTrace": ""
+                },
+            }),
+        );
     }
 
-    fn emit_player_update(&self) {
+    pub fn emit_player_update(&self) {
         let resp = self.to_response();
         if let Ok(json) = serde_json::to_value(&resp) {
             let msg = serde_json::json!({
@@ -237,8 +247,36 @@ impl GuildPlayer {
         }
     }
 
-    pub async fn set_voice(&mut self, voice: VoiceStateUpdate) -> bool {
-        let endpoint_raw = voice.endpoint.clone();
+    pub async fn set_voice(&mut self, new_voice: VoiceStateUpdate) -> bool {
+        // Merge with existing voice update if partially received
+        let merged = match &self.voice {
+            Some(existing) => VoiceStateUpdate {
+                token: if !new_voice.token.is_empty() {
+                    new_voice.token
+                } else {
+                    existing.token.clone()
+                },
+                endpoint: if !new_voice.endpoint.is_empty() {
+                    new_voice.endpoint
+                } else {
+                    existing.endpoint.clone()
+                },
+                session_id: if !new_voice.session_id.is_empty() {
+                    new_voice.session_id
+                } else {
+                    existing.session_id.clone()
+                },
+                channel_id: new_voice.channel_id.or_else(|| existing.channel_id.clone()),
+            },
+            None => new_voice,
+        };
+
+        if merged.token.is_empty() || merged.endpoint.is_empty() || merged.session_id.is_empty() {
+            self.voice = Some(merged);
+            return false;
+        }
+
+        let endpoint_raw = merged.endpoint.clone();
         let endpoint = endpoint_raw
             .trim_start_matches("wss://")
             .trim_start_matches("ws://")
@@ -253,7 +291,7 @@ impl GuildPlayer {
         let guild_nz = NonZeroU64::new(guild_num).unwrap_or(NonZeroU64::new(1).unwrap());
         let user_nz = NonZeroU64::new(user_num).unwrap_or(NonZeroU64::new(1).unwrap());
 
-        let channel_id_val = voice.channel_id.parse::<u64>().ok();
+        let channel_id_val = merged.channel_id.as_deref().and_then(|c| c.parse::<u64>().ok());
 
         let info = ConnectionInfo {
             endpoint,
@@ -262,15 +300,15 @@ impl GuildPlayer {
                 let nz = NonZeroU64::new(id).unwrap_or(NonZeroU64::new(1).unwrap());
                 songbird::id::ChannelId::from(nz)
             }),
-            session_id: voice.session_id.clone(),
-            token: voice.token.clone(),
+            session_id: merged.session_id.clone(),
+            token: merged.token.clone(),
             user_id: UserId::from(user_nz),
         };
 
         let mut driver_lock = self.driver.lock().await;
         if let Err(e) = driver_lock.connect(info).await {
             error!("Voice connection failed for guild {}: {:?}", self.guild_id, e);
-            self.voice = Some(voice);
+            self.voice = Some(merged);
             self.last_update = util::current_timestamp();
             return false;
         }
@@ -289,13 +327,12 @@ impl GuildPlayer {
             );
         }
 
-        self.voice = Some(voice);
+        self.voice = Some(merged);
         self.last_update = util::current_timestamp();
         self.emit_player_update();
         true
     }
 
-    /// Guess a file extension hint for symphonia probing from the URL.
     fn extension_hint(url: &str) -> Option<String> {
         let path = url.split(['?', '#']).next()?;
         let name = path.rsplit('/').next()?;
@@ -310,8 +347,6 @@ impl GuildPlayer {
         }
     }
 
-    /// Build the playback Input for `stream_url`, routing through the DSP
-    /// pipeline when the filter chain is active. Returns (input, filtered).
     async fn build_input(
         &self,
         stream_url: &str,
@@ -345,7 +380,6 @@ impl GuildPlayer {
         )
     }
 
-    /// Stop the current handle without emitting TrackEndEvent (internal swaps).
     fn stop_handle_silently(&mut self) {
         if let Some(handle) = &self.track_handle {
             let _ = handle.stop();
@@ -353,9 +387,6 @@ impl GuildPlayer {
         self.track_handle = None;
     }
 
-    /// (Re)start the current track at `position_ms`, choosing the right
-    /// pipeline based on current filter state. Used by filter updates and
-    /// seeks on non-seekable filtered streams. Emits no track lifecycle events.
     async fn restart_at(&mut self, position_ms: u64) {
         let Some(url) = self.current_stream_url.clone() else {
             return;
@@ -373,11 +404,18 @@ impl GuildPlayer {
         let handle = driver_lock.play(Track::new(input));
         drop(driver_lock);
 
+        let _ = handle.add_event(
+            Event::Track(TrackEvent::End),
+            TrackEndNotifier {
+                guild_id: self.guild_id.clone(),
+                track_end_tx: self.track_end_tx.clone(),
+            },
+        );
+
         if let Err(e) = handle.set_volume(self.volume as f32 / 100.0) {
             warn!("Failed to set volume during restart: {:?}", e);
         }
 
-        // Align reported position: source_pos = wall_elapsed * duration_factor
         let factor = self.shared_chain.lock().unwrap().duration_factor().max(1e-6);
         let wall_offset_ms = (position_ms as f64 / factor) as u64;
 
@@ -406,10 +444,13 @@ impl GuildPlayer {
         if let Some(old_handle) = &self.track_handle {
             let _ = old_handle.stop();
             if let Some(old_track) = self.queue.current.take() {
-                self.emit_event("TrackEndEvent", serde_json::json!({
-                    "track": old_track,
-                    "reason": "replaced",
-                }));
+                self.emit_event(
+                    "TrackEndEvent",
+                    serde_json::json!({
+                        "track": old_track,
+                        "reason": "replaced",
+                    }),
+                );
             }
         }
 
@@ -418,6 +459,14 @@ impl GuildPlayer {
         let mut driver_lock = self.driver.lock().await;
         let handle = driver_lock.play(Track::new(input));
         drop(driver_lock);
+
+        let _ = handle.add_event(
+            Event::Track(TrackEvent::End),
+            TrackEndNotifier {
+                guild_id: self.guild_id.clone(),
+                track_end_tx: self.track_end_tx.clone(),
+            },
+        );
 
         if let Err(e) = handle.set_volume(self.volume as f32 / 100.0) {
             warn!("Failed to set volume on handle: {:?}", e);
@@ -435,9 +484,12 @@ impl GuildPlayer {
         self.last_update = util::current_timestamp();
 
         self.autoplay.record_track(&track);
-        self.emit_event("TrackStartEvent", serde_json::json!({
-            "track": track,
-        }));
+        self.emit_event(
+            "TrackStartEvent",
+            serde_json::json!({
+                "track": track,
+            }),
+        );
         self.emit_player_update();
         info!(
             "Started playback for guild: {} (filtered={})",
@@ -459,10 +511,13 @@ impl GuildPlayer {
         self.last_update = util::current_timestamp();
 
         if let Some(track) = &old_track {
-            self.emit_event("TrackEndEvent", serde_json::json!({
-                "track": track,
-                "reason": "stopped",
-            }));
+            self.emit_event(
+                "TrackEndEvent",
+                serde_json::json!({
+                    "track": track,
+                    "reason": "stopped",
+                }),
+            );
         }
         self.emit_player_update();
         old_track
@@ -495,21 +550,12 @@ impl GuildPlayer {
         self.emit_player_update();
     }
 
-    /// Push current `self.filters` into the shared DSP chain.
-    ///
-    /// Non-structural changes (EQ gains, tremolo depth, volume, ...) take
-    /// effect immediately on samples already flowing through the pipeline.
-    /// Structural changes (Timescale enabled/disabled/re-parameterised)
-    /// trigger a hot-restart of the current track at its present position,
-    /// mirroring Lavalink's behaviour of rebuilding the filter graph.
     pub async fn apply_filters(&mut self) {
         let structural = {
             let mut chain = self.shared_chain.lock().unwrap();
             chain.update_from_lavalink(&self.filters)
         };
 
-        // Mixer-level volume stays bound to the player volume; the DSP chain
-        // applies its own volume filter independently.
         if let Some(handle) = &self.track_handle {
             let _ = handle.set_volume(self.volume as f32 / 100.0);
         }
@@ -519,8 +565,6 @@ impl GuildPlayer {
             info!("Structural filter change; restarting at {} ms", pos);
             self.restart_at(pos).await;
         } else if !structural && !self.filtered_active {
-            // Filters became active while a plain (unfiltered) track runs;
-            // switch pipelines to pick them up.
             if self.shared_chain.lock().unwrap().is_active()
                 && self.is_playing
                 && self.queue.current.is_some()
@@ -538,7 +582,6 @@ impl GuildPlayer {
         let chain_active = self.shared_chain.lock().unwrap().is_active();
 
         if chain_active || self.filtered_active {
-            // Filtered streams are not seekable byte-wise; hot-restart instead.
             if self.is_playing {
                 self.restart_at(position).await;
             }
@@ -634,9 +677,7 @@ impl GuildPlayer {
         }
 
         match self.queue.loop_mode {
-            LoopMode::Track => {
-                self.queue.current.clone()
-            }
+            LoopMode::Track => self.queue.current.clone(),
             LoopMode::Queue => {
                 if let Some(track) = self.queue.tracks.pop_front() {
                     self.queue.tracks.push_back(track.clone());
@@ -645,9 +686,7 @@ impl GuildPlayer {
                     self.queue.current.clone()
                 }
             }
-            LoopMode::None => {
-                self.queue.tracks.pop_front()
-            }
+            LoopMode::None => self.queue.tracks.pop_front(),
         }
     }
 
@@ -776,8 +815,6 @@ mod disconnect_tests {
         assert_eq!(parsed["guildId"], "42");
         assert_eq!(parsed["code"], 4006);
         assert_eq!(parsed["byRemote"], true);
-        // Field order/format sanity: parses as an object with exactly the
-        // six Lavalink fields.
         let obj = parsed.as_object().unwrap();
         assert_eq!(obj.len(), 6);
     }
@@ -804,7 +841,6 @@ mod disconnect_tests {
             assert!(obj.contains_key("code"));
             assert!(obj.contains_key("reason"));
             assert!(obj.contains_key("byRemote"));
-            assert_eq!(obj["code"].as_u64().unwrap(), obj["code"].as_u64().unwrap());
             assert!(!obj["reason"].as_str().unwrap().is_empty());
         }
     }

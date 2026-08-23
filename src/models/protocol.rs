@@ -1,5 +1,5 @@
-use crate::models::track::LavalinkTrack;
 use crate::models::filters::Filters;
+use crate::models::track::LavalinkTrack;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -8,8 +8,8 @@ pub struct VoiceStateUpdate {
     pub endpoint: String,
     #[serde(rename = "sessionId")]
     pub session_id: String,
-    #[serde(rename = "channelId")]
-    pub channel_id: String,
+    #[serde(rename = "channelId", default)]
+    pub channel_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -97,7 +97,7 @@ pub struct VersionInfo {
     pub major: u32,
     pub minor: u32,
     pub patch: u32,
-    #[serde(rename = "preRelease", skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "preRelease")]
     pub pre_release: Option<String>,
 }
 
@@ -110,23 +110,17 @@ pub struct GitInfo {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct JvmInfo {
-    pub version: String,
-    pub vm: String,
-    pub vendor: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ServerInfo {
     pub version: VersionInfo,
     #[serde(rename = "buildTime")]
     pub build_time: u64,
     pub git: GitInfo,
+    pub jvm: String,
+    pub lavaplayer: String,
     #[serde(rename = "sourceManagers")]
     pub source_managers: Vec<String>,
     pub filters: Vec<String>,
     pub plugins: Vec<PluginInfo>,
-    pub jvm: JvmInfo,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

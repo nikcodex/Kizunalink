@@ -1,5 +1,4 @@
 use crate::models::track::{LavalinkTrack, PlaylistData, PlaylistInfo, TrackInfo};
-use base64::{engine::general_purpose::STANDARD, Engine as _};
 use reqwest::header::{HeaderMap, HeaderValue, ACCEPT, USER_AGENT};
 use serde::Deserialize;
 use serde_json::Value;
@@ -8,7 +7,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::RwLock;
 use tracing::info;
 
-const SPOTIFY_TOKEN_URL: &str = "https://open.spotify.com/get_access_token?reason=transport&productType=web_player";
+const SPOTIFY_TOKEN_URL: &str =
+    "https://open.spotify.com/get_access_token?reason=transport&productType=web_player";
 const SPOTIFY_API_BASE: &str = "https://api.spotify.com/v1";
 
 #[derive(Debug, Clone, Deserialize)]
@@ -27,7 +27,12 @@ pub struct SpotifySource {
 impl SpotifySource {
     pub fn new() -> Arc<Self> {
         let mut headers = HeaderMap::new();
-        headers.insert(USER_AGENT, HeaderValue::from_static("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"));
+        headers.insert(
+            USER_AGENT,
+            HeaderValue::from_static(
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            ),
+        );
         headers.insert(ACCEPT, HeaderValue::from_static("application/json"));
 
         let client = reqwest::Client::builder()
@@ -136,7 +141,10 @@ impl SpotifySource {
         Ok(self.parse_track_item(&json))
     }
 
-    pub async fn resolve_playlist(&self, playlist_id: &str) -> Result<Option<PlaylistData>, String> {
+    pub async fn resolve_playlist(
+        &self,
+        playlist_id: &str,
+    ) -> Result<Option<PlaylistData>, String> {
         let token = self.get_token().await?;
         let url = format!("{}/playlists/{}", SPOTIFY_API_BASE, playlist_id);
 
@@ -153,10 +161,18 @@ impl SpotifySource {
         }
 
         let json: Value = res.json().await.map_err(|e| e.to_string())?;
-        let pl_name = json.get("name").and_then(|n| n.as_str()).unwrap_or("Spotify Playlist").to_string();
+        let pl_name = json
+            .get("name")
+            .and_then(|n| n.as_str())
+            .unwrap_or("Spotify Playlist")
+            .to_string();
 
         let mut tracks = Vec::new();
-        if let Some(items) = json.get("tracks").and_then(|t| t.get("items")).and_then(|i| i.as_array()) {
+        if let Some(items) = json
+            .get("tracks")
+            .and_then(|t| t.get("items"))
+            .and_then(|i| i.as_array())
+        {
             for entry in items {
                 if let Some(track_val) = entry.get("track") {
                     if let Some(track) = self.parse_track_item(track_val) {
@@ -178,7 +194,11 @@ impl SpotifySource {
 
     fn parse_track_item(&self, item: &Value) -> Option<LavalinkTrack> {
         let id = item.get("id").and_then(|v| v.as_str())?.to_string();
-        let title = item.get("name").and_then(|v| v.as_str()).unwrap_or("Unknown Title").to_string();
+        let title = item
+            .get("name")
+            .and_then(|v| v.as_str())
+            .unwrap_or("Unknown Title")
+            .to_string();
 
         let artists = item
             .get("artists")
@@ -214,15 +234,13 @@ impl SpotifySource {
             .and_then(|u| u.as_str())
             .map(|s| s.to_string());
 
-        let encoded = STANDARD.encode(format!("spotify:{}", id));
-
         let mut plugin_info = serde_json::Map::new();
         if let Some(code) = &isrc {
             plugin_info.insert("isrc".to_string(), Value::String(code.clone()));
         }
 
-        Some(LavalinkTrack {
-            encoded,
+        let mut track = LavalinkTrack {
+            encoded: String::new(),
             info: TrackInfo {
                 identifier: id,
                 is_seekable: true,
@@ -233,46 +251,17 @@ impl SpotifySource {
                 title,
                 uri,
                 artwork_url: artwork,
-                isrc: isrc.clone(),
+                isrc,
                 source_name: "spotify".to_string(),
             },
             plugin_info: Value::Object(plugin_info),
             user_data: Value::Object(Default::default()),
-        })
-    }
+        };
 
-    pub async fn resolve_stream(&self, track_info: &crate::models::track::TrackInfo) -> Result<String, String> {
-        let search_query = format!("{} {}", track_info.title, track_info.author);
-        let token = self.get_token().await?;
-
-        let url = format!(
-            "{}/search?type=track&q={}&limit=1",
-            SPOTIFY_API_BASE,
-            urlencoding::encode(&search_query)
-        );
-
-        let res = self
-            .client
-            .get(&url)
-            .bearer_auth(token)
-            .send()
-            .await
-            .map_err(|e| e.to_string())?;
-
-        let json: Value = res.json().await.map_err(|e| e.to_string())?;
-        let isrc = json
-            .get("tracks")
-            .and_then(|t| t.get("items"))
-            .and_then(|i| i.as_array())
-            .and_then(|arr| arr.first())
-            .and_then(|item| item.get("external_ids"))
-            .and_then(|ext| ext.get("isrc"))
-            .and_then(|i| i.as_str());
-
-        if let Some(isrc_code) = isrc {
-            return Err(format!("ISRC:{}", isrc_code));
+        if let Ok(enc) = crate::track_encoding::encode_track(&track) {
+            track.encoded = enc;
         }
 
-        Err("No stream URL available for Spotify tracks directly".to_string())
+        Some(track)
     }
 }

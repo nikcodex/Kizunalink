@@ -3,17 +3,20 @@ use axum::{
         ws::{Message, WebSocket, WebSocketUpgrade},
         State,
     },
-    response::IntoResponse,
     http::{HeaderMap, StatusCode},
+    response::IntoResponse,
 };
 use dashmap::DashMap;
 use futures_util::{SinkExt, StreamExt};
 use std::sync::LazyLock;
-use crate::AppState;
-use crate::models::protocol::PlayerUpdatePayload;
 use tracing::{error, info, warn};
 
-static SESSION_STORE: LazyLock<DashMap<String, std::time::Instant>> = LazyLock::new(|| DashMap::new());
+use crate::models::protocol::PlayerUpdatePayload;
+use crate::util::constant_time_eq;
+use crate::AppState;
+
+static SESSION_STORE: LazyLock<DashMap<String, std::time::Instant>> =
+    LazyLock::new(DashMap::new);
 
 pub async fn ws_handler(
     ws: WebSocketUpgrade,
@@ -21,8 +24,10 @@ pub async fn ws_handler(
     State(state): State<AppState>,
 ) -> impl IntoResponse {
     let auth_header = headers.get("authorization").and_then(|h| h.to_str().ok());
-    if auth_header != Some(&state.password) {
-        return StatusCode::UNAUTHORIZED.into_response();
+
+    match auth_header {
+        Some(auth) if constant_time_eq(auth, &state.password) => {}
+        _ => return StatusCode::UNAUTHORIZED.into_response(),
     }
 
     let user_id = headers
@@ -47,12 +52,19 @@ pub async fn ws_handler(
         .and_then(|h| h.to_str().ok())
         .map(|s| s.to_string());
 
-    info!("WebSocket connected: client={} user={}", client_name, user_id);
+    info!(
+        "WebSocket connected: client={} user={}",
+        client_name, user_id
+    );
 
     ws.on_upgrade(move |socket| handle_socket(socket, state, session_id))
 }
 
-async fn handle_socket(mut socket: WebSocket, state: AppState, resume_session_id: Option<String>) {
+async fn handle_socket(
+    mut socket: WebSocket,
+    state: AppState,
+    resume_session_id: Option<String>,
+) {
     let (session_id, is_resumed) = if let Some(resume_id) = resume_session_id {
         if SESSION_STORE.contains_key(&resume_id) {
             (resume_id, true)
@@ -79,13 +91,23 @@ async fn handle_socket(mut socket: WebSocket, state: AppState, resume_session_id
     }
 
     let (mut sender, mut receiver) = socket.split();
-
     let mut event_rx = state.event_tx.subscribe();
 
     let event_task = tokio::spawn(async move {
-        while let Ok(msg) = event_rx.recv().await {
-            if sender.send(Message::Text(msg)).await.is_err() {
-                break;
+        loop {
+            match event_rx.recv().await {
+                Ok(msg) => {
+                    if sender.send(Message::Text(msg)).await.is_err() {
+                        break;
+                    }
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(skipped)) => {
+                    warn!("WebSocket subscriber lagged, skipped {} events", skipped);
+                    continue;
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                    break;
+                }
             }
         }
     });
@@ -95,11 +117,14 @@ async fn handle_socket(mut socket: WebSocket, state: AppState, resume_session_id
         let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(60));
         loop {
             interval.tick().await;
-            let (total_players, playing_players) = stats_state.player_manager.count_players().await;
+            let (total_players, playing_players) =
+                stats_state.player_manager.count_players().await;
             let uptime = stats_state.start_time.elapsed().as_millis() as u64;
 
             let now = std::time::Instant::now();
-            SESSION_STORE.retain(|_, last_active| now.duration_since(*last_active).as_secs() < 3600);
+            SESSION_STORE.retain(|_, last_active| {
+                now.duration_since(*last_active).as_secs() < 3600
+            });
 
             let stats = serde_json::json!({
                 "op": "stats",
@@ -130,12 +155,14 @@ async fn handle_socket(mut socket: WebSocket, state: AppState, resume_session_id
         loop {
             interval.tick().await;
             for player_response in update_state.player_manager.get_all_players().await {
-                let msg = serde_json::json!({
-                    "op": "playerUpdate",
-                    "guildId": player_response.guild_id,
-                    "state": player_response.state,
-                });
-                let _ = update_state.event_tx.send(msg.to_string());
+                if player_response.track.is_some() || player_response.state.connected {
+                    let msg = serde_json::json!({
+                        "op": "playerUpdate",
+                        "guildId": player_response.guild_id,
+                        "state": player_response.state,
+                    });
+                    let _ = update_state.event_tx.send(msg.to_string());
+                }
             }
         }
     });
@@ -188,8 +215,14 @@ async fn handle_ws_message(state: &AppState, text: &str) {
                     });
                 } else if track_obj.is_object() {
                     payload.track = Some(crate::models::protocol::TrackPayload {
-                        encoded: track_obj.get("encoded").and_then(|e| e.as_str()).map(|s| s.to_string()),
-                        identifier: track_obj.get("identifier").and_then(|i| i.as_str()).map(|s| s.to_string()),
+                        encoded: track_obj
+                            .get("encoded")
+                            .and_then(|e| e.as_str())
+                            .map(|s| s.to_string()),
+                        identifier: track_obj
+                            .get("identifier")
+                            .and_then(|i| i.as_str())
+                            .map(|s| s.to_string()),
                         user_data: track_obj.get("userData").cloned(),
                     });
                 }
@@ -213,15 +246,31 @@ async fn handle_ws_message(state: &AppState, text: &str) {
 
             if let Some(voice_obj) = msg.get("voice") {
                 payload.voice = Some(crate::models::protocol::VoiceStateUpdate {
-                    token: voice_obj.get("token").and_then(|t| t.as_str()).unwrap_or("").to_string(),
-                    endpoint: voice_obj.get("endpoint").and_then(|e| e.as_str()).unwrap_or("").to_string(),
-                    session_id: voice_obj.get("sessionId").and_then(|s| s.as_str()).unwrap_or("").to_string(),
-                    channel_id: voice_obj.get("channelId").and_then(|c| c.as_str()).unwrap_or("").to_string(),
+                    token: voice_obj
+                        .get("token")
+                        .and_then(|t| t.as_str())
+                        .unwrap_or("")
+                        .to_string(),
+                    endpoint: voice_obj
+                        .get("endpoint")
+                        .and_then(|e| e.as_str())
+                        .unwrap_or("")
+                        .to_string(),
+                    session_id: voice_obj
+                        .get("sessionId")
+                        .and_then(|s| s.as_str())
+                        .unwrap_or("")
+                        .to_string(),
+                    channel_id: voice_obj
+                        .get("channelId")
+                        .and_then(|c| c.as_str())
+                        .map(|s| s.to_string()),
                 });
             }
 
             if let Some(filters_obj) = msg.get("filters") {
-                match serde_json::from_value::<crate::models::filters::Filters>(filters_obj.clone()) {
+                match serde_json::from_value::<crate::models::filters::Filters>(filters_obj.clone())
+                {
                     Ok(f) => payload.filters = Some(f),
                     Err(e) => warn!("Invalid filters payload: {}", e),
                 }
@@ -235,7 +284,10 @@ async fn handle_ws_message(state: &AppState, text: &str) {
                 payload.identifier = Some(identifier.to_string());
             }
 
-            let _ = state.player_manager.update_player(guild_id, payload).await;
+            let _ = state
+                .player_manager
+                .update_player(guild_id, payload, false)
+                .await;
         }
         "queueTrack" => {
             if let Some(encoded) = msg.get("encoded").and_then(|e| e.as_str()) {
@@ -252,13 +304,19 @@ async fn handle_ws_message(state: &AppState, text: &str) {
             let _ = state.player_manager.toggle_autoplay(guild_id).await;
         }
         "loop" => {
-            let mode = msg.get("mode").and_then(|m| m.as_str()).unwrap_or("none");
+            let mode = msg
+                .get("mode")
+                .and_then(|m| m.as_str())
+                .unwrap_or("none");
             let loop_mode = match mode {
                 "track" => crate::player::queue::LoopMode::Track,
                 "queue" => crate::player::queue::LoopMode::Queue,
                 _ => crate::player::queue::LoopMode::None,
             };
-            let _ = state.player_manager.set_loop_mode(guild_id, loop_mode).await;
+            let _ = state
+                .player_manager
+                .set_loop_mode(guild_id, loop_mode)
+                .await;
         }
         "shuffleQueue" => {
             let _ = state.player_manager.shuffle_queue(guild_id).await;

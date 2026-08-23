@@ -1,18 +1,18 @@
 use axum::response::Json;
-use crate::models::protocol::{ServerInfo, VersionInfo, GitInfo, JvmInfo};
+use crate::models::protocol::{GitInfo, ServerInfo, VersionInfo};
 
 pub async fn get_version() -> &'static str {
-    "4.0.0"
+    "4.2.1"
 }
 
 pub async fn get_info() -> Json<ServerInfo> {
     Json(ServerInfo {
         version: VersionInfo {
-            semver: "4.0.0".to_string(),
+            semver: "4.2.1".to_string(),
             major: 4,
-            minor: 0,
-            patch: 0,
-            pre_release: Some("kizuna".to_string()),
+            minor: 2,
+            patch: 1,
+            pre_release: None,
         },
         build_time: 1724284800000,
         git: GitInfo {
@@ -20,6 +20,8 @@ pub async fn get_info() -> Json<ServerInfo> {
             commit: "kizuna-core".to_string(),
             commit_time: 1724284800000,
         },
+        jvm: "Rust (Tokio)".to_string(),
+        lavaplayer: "2.2.6".to_string(),
         source_managers: vec![
             "jiosaavn".to_string(),
             "youtube".to_string(),
@@ -40,10 +42,5 @@ pub async fn get_info() -> Json<ServerInfo> {
             "lowPass".to_string(),
         ],
         plugins: vec![],
-        jvm: JvmInfo {
-            version: "21".to_string(),
-            vm: "Rust (Tokio)".to_string(),
-            vendor: "KizunaLink".to_string(),
-        },
     })
 }

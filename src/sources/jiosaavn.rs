@@ -1,5 +1,4 @@
 use crate::models::track::{LavalinkTrack, TrackInfo};
-use base64::{engine::general_purpose::STANDARD, Engine as _};
 use reqwest::header::{HeaderMap, HeaderValue, ACCEPT, REFERER, USER_AGENT};
 use serde_json::Value;
 use std::sync::Arc;
@@ -28,7 +27,7 @@ impl JioSaavnSource {
         Arc::new(Self { client })
     }
 
-    pub async fn search(&self, query: &str, limit: usize) -> Result<Vec<LavalinkTrack>, String> {
+    pub async fn search(&self, query: &str, _limit: usize) -> Result<Vec<LavalinkTrack>, String> {
         let clean_query = query.trim();
         if clean_query.is_empty() {
             return Ok(vec![]);
@@ -111,13 +110,17 @@ impl JioSaavnSource {
                 .and_then(|v| v.as_str())
                 .map(|s| s.to_string());
 
-            let clean_title = title.replace("&quot;", "\"").replace("&amp;", "&").replace("&#039;", "'");
-            let clean_artist = artist.replace("&quot;", "\"").replace("&amp;", "&").replace("&#039;", "'");
+            let clean_title = title
+                .replace("&quot;", "\"")
+                .replace("&amp;", "&")
+                .replace("&#039;", "'");
+            let clean_artist = artist
+                .replace("&quot;", "\"")
+                .replace("&amp;", "&")
+                .replace("&#039;", "'");
 
-            let encoded = STANDARD.encode(format!("jiosaavn:{}", id));
-
-            tracks.push(LavalinkTrack {
-                encoded,
+            let mut track = LavalinkTrack {
+                encoded: String::new(),
                 info: TrackInfo {
                     identifier: id,
                     is_seekable: true,
@@ -133,7 +136,13 @@ impl JioSaavnSource {
                 },
                 plugin_info: Value::Object(Default::default()),
                 user_data: Value::Object(Default::default()),
-            });
+            };
+
+            if let Ok(enc) = crate::track_encoding::encode_track(&track) {
+                track.encoded = enc;
+            }
+
+            tracks.push(track);
         }
 
         Ok(tracks)
@@ -193,7 +202,10 @@ impl JioSaavnSource {
         let json: Value = res.json().await.map_err(|e| e.to_string())?;
 
         if let Some(lyrics_raw) = json.get("lyrics").and_then(|l| l.as_str()) {
-            let clean = lyrics_raw.replace("<br>", "\n").replace("<br/>", "\n").replace("<br />", "\n");
+            let clean = lyrics_raw
+                .replace("<br>", "\n")
+                .replace("<br/>", "\n")
+                .replace("<br />", "\n");
             return Ok(Some(clean));
         }
 
