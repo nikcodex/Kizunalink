@@ -1,3 +1,4 @@
+mod plugins;
 mod config;
 pub mod dsp;
 mod models;
@@ -15,7 +16,7 @@ use axum::{
 use std::sync::Arc;
 use tokio::sync::broadcast;
 use tower_http::cors::{Any, CorsLayer};
-use tracing::info;
+use tracing::{info, warn};
 
 use player::manager::PlayerManager;
 use sources::{
@@ -43,6 +44,10 @@ async fn main() {
         "Loaded config: host={}, port={}",
         config.server.host, config.server.port
     );
+
+    // Initialize the Cross-Platform WASM Plugin Manager
+    let mut plugin_manager = plugins::PluginManager::new();
+    plugin_manager.load_all();
 
     let (event_tx, _) = broadcast::channel::<String>(256);
     let password = config.server.password.clone();
