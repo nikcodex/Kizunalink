@@ -277,7 +277,8 @@ impl PlayerManager {
                 None
             }
             "http" => track.info.uri.clone(),
-            _ => None,
+            // For custom plugins (like itunes, gaana), the URL resolved by the plugin is stored in the URI field!
+            _ => track.info.uri.clone(),
         }
     }
 
