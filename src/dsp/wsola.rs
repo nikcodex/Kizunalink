@@ -26,7 +26,7 @@ pub struct Wsola {
     next_analysis_start: usize,
     total_input_consumed: usize,
     // last emitted overlap tail used as correlation reference
-    ref_tail: Vec<f32>,
+    ref_tail: [Vec<f32>; 2],
     // finished output frames not yet drained
     out_buf: [Vec<f32>; 2],
 }
@@ -55,7 +55,7 @@ impl Wsola {
             in_buf: [Vec::new(), Vec::new()],
             next_analysis_start: 0,
             total_input_consumed: 0,
-            ref_tail: Vec::new(),
+            ref_tail: [Vec::new(), Vec::new()],
             out_buf: [Vec::new(), Vec::new()],
         }
     }
@@ -68,7 +68,7 @@ impl Wsola {
     pub fn reset(&mut self) {
         self.in_buf = [Vec::new(), Vec::new()];
         self.out_buf = [Vec::new(), Vec::new()];
-        self.ref_tail.clear();
+        self.ref_tail = [Vec::new(), Vec::new()];
         self.next_analysis_start = 0;
         self.total_input_consumed = 0;
     }
@@ -156,9 +156,9 @@ impl Wsola {
             // Choose segment offset via cross-correlation against ref_tail
             let seg_start = self.find_best_offset(analysis_start, analysis_hop);
 
-            if self.ref_tail.is_empty() || self.out_buf[0].is_empty() && self.ref_tail.is_empty() {
-                // First frame: emit plain Hann-windowed frame? For simplicity emit raw frame.
-                let end = (seg_start + self.frame_len).min(self.in_buf[0].len());
+            if self.ref_tail[0].is_empty() {
+                // First frame: emit first `overlap` samples, keep next `overlap` as ref_tail
+                let end = (seg_start + self.overlap).min(self.in_buf[0].len());
                 if end <= seg_start {
                     break;
                 }
@@ -167,15 +167,15 @@ impl Wsola {
                         self.out_buf[ch].push(s);
                     }
                 }
-                let emitted = end - seg_start;
-                let tail_start = emitted.saturating_sub(self.overlap);
-                self.ref_tail = self.out_buf[0][self.out_buf[0].len() - self.overlap..].to_vec();
-                let _ = tail_start;
+                
+                let tail_start = end;
+                let tail_end = (tail_start + self.overlap).min(self.in_buf[0].len());
+                self.ref_tail[0] = self.in_buf[0][tail_start..tail_end].to_vec();
+                self.ref_tail[1] = self.in_buf[1][tail_start..tail_end].to_vec();
             } else {
-                // Crossfade `overlap` region between ref_tail and new segment head,
-                // then append non-overlapping remainder up to frame_len.
-                let ol = self.overlap.min(self.ref_tail.len());
-                let seg_end_limit = (seg_start + self.frame_len).min(self.in_buf[0].len());
+                // Crossfade `overlap` region between ref_tail and new segment head
+                let ol = self.overlap.min(self.ref_tail[0].len());
+                let seg_end_limit = (seg_start + ol).min(self.in_buf[0].len());
                 if seg_start + ol > seg_end_limit {
                     break;
                 }
@@ -184,28 +184,17 @@ impl Wsola {
                     // Linear crossfade (simpler and correct: always sums to 1.0)
                     let w = (i as f32 + 0.5) / ol as f32;
                     let inv_w = 1.0 - w;
-                    let old = self.ref_tail[i];
                     for ch in 0..2 {
+                        let old = self.ref_tail[ch][i];
                         let new_s = self.in_buf[ch][seg_start + i];
                         self.out_buf[ch].push(old * inv_w + new_s * w);
                     }
                 }
 
-                let body_start = seg_start + ol;
-                if body_start < seg_end_limit {
-                    for ch in 0..2 {
-                        for &s in &self.in_buf[ch][body_start..seg_end_limit] {
-                            self.out_buf[ch].push(s);
-                        }
-                    }
-                }
-
-                let emitted_total = self.out_buf[0].len();
-                let tail_from = emitted_total.saturating_sub(self.overlap);
-                self.ref_tail = self.out_buf[0][tail_from..].to_vec();
-
-                // Trim out_buf to keep memory bounded: keep only ref_tail plus nothing else?
-                // No: drain() consumes everything; fine.
+                let tail_start = seg_start + ol;
+                let tail_end = (tail_start + self.overlap).min(self.in_buf[0].len());
+                self.ref_tail[0] = self.in_buf[0][tail_start..tail_end].to_vec();
+                self.ref_tail[1] = self.in_buf[1][tail_start..tail_end].to_vec();
             }
 
             self.next_analysis_start = (analysis_start as i64 + analysis_hop.max(1)) as usize;
@@ -229,7 +218,7 @@ impl Wsola {
     }
 
     fn find_best_offset(&self, analysis_start: usize, analysis_hop: i64) -> usize {
-        if self.ref_tail.is_empty() {
+        if self.ref_tail[0].is_empty() {
             return analysis_start;
         }
 
@@ -240,7 +229,7 @@ impl Wsola {
         let mut best = natural.max(0) as usize;
         let mut best_score = f32::NEG_INFINITY;
 
-        let ol = self.overlap.min(self.ref_tail.len());
+        let ol = self.overlap.min(self.ref_tail[0].len());
 
         let mut cand = low;
         while cand + ol <= self.in_buf[0].len() && cand <= high {
@@ -249,7 +238,7 @@ impl Wsola {
             let mut e_ref = 0.0f32;
             let mut e_cand = 0.0f32;
             for i in 0..ol {
-                let r = self.ref_tail[i];
+                let r = 0.5 * (self.ref_tail[0][i] + self.ref_tail[1][i]);
                 let c = 0.5 * (self.in_buf[0][cand + i] + self.in_buf[1][cand + i]);
                 dot += r * c;
                 e_ref += r * r;

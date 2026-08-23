@@ -12,10 +12,8 @@ pub struct Karaoke {
     filter_width: f64,
 
     sample_rate: f64,
-    hp_left: BiquadFilter,
-    lp_left: BiquadFilter,
-    hp_right: BiquadFilter,
-    lp_right: BiquadFilter,
+    bp_left: BiquadFilter,
+    bp_right: BiquadFilter,
 }
 
 impl Karaoke {
@@ -26,26 +24,20 @@ impl Karaoke {
             filter_band: 220.0,
             filter_width: 100.0,
             sample_rate,
-            hp_left: BiquadFilter::new(),
-            lp_left: BiquadFilter::new(),
-            hp_right: BiquadFilter::new(),
-            lp_right: BiquadFilter::new(),
+            bp_left: BiquadFilter::new(),
+            bp_right: BiquadFilter::new(),
         };
         k.rebuild();
         k
     }
 
     fn rebuild(&mut self) {
-        // Band-pass = highpass(band - width/2) cascaded with lowpass(band + width/2)
-        let lo = (self.filter_band - self.filter_width / 2.0).max(20.0);
-        let hi = self.filter_band + self.filter_width / 2.0;
-        let nyquist = self.sample_rate / 2.0;
-        let hi = hi.min(nyquist * 0.95);
+        let band = self.filter_band.clamp(20.0, self.sample_rate / 2.0 * 0.95);
+        let width = self.filter_width.max(10.0);
+        let q = band / width;
 
-        self.hp_left = BiquadFilter::highpass(self.sample_rate, lo, 0.707);
-        self.lp_left = BiquadFilter::lowpass(self.sample_rate, hi, 0.707);
-        self.hp_right = BiquadFilter::highpass(self.sample_rate, lo, 0.707);
-        self.lp_right = BiquadFilter::lowpass(self.sample_rate, hi, 0.707);
+        self.bp_left = BiquadFilter::bandpass(self.sample_rate, band, q);
+        self.bp_right = BiquadFilter::bandpass(self.sample_rate, band, q);
     }
 
     pub fn set_level(&mut self, level: f64) {
@@ -79,8 +71,8 @@ impl Karaoke {
             let center = (l + r) / 2.0;
 
             // Band-pass the center content
-            let bp_l = self.lp_left.process(self.hp_left.process(center));
-            let bp_r = self.lp_right.process(self.hp_right.process(center));
+            let bp_l = self.bp_left.process(center);
+            let bp_r = self.bp_right.process(center);
 
             // Subtract band-passed center from each channel, scaled by level
             let removed_l = l - bp_l * self.level;
@@ -94,10 +86,8 @@ impl Karaoke {
 
     /// Reset filter states.
     pub fn reset(&mut self) {
-        self.hp_left.reset();
-        self.lp_left.reset();
-        self.hp_right.reset();
-        self.lp_right.reset();
+        self.bp_left.reset();
+        self.bp_right.reset();
     }
 }
 
