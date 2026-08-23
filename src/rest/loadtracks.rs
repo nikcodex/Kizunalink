@@ -83,11 +83,27 @@ pub async fn load_tracks(
         }
     } else if let Some(stripped) = identifier.strip_prefix("ytsearch:") {
         if let Ok(tracks) = state.youtube.search(stripped.trim(), 10).await {
-            return Ok(Json(LoadResult::Search(tracks)));
+            if !tracks.is_empty() {
+                return Ok(Json(LoadResult::Search(tracks)));
+            }
+        }
+        // Fallback to JioSaavn if YouTube API is dead/rate-limited
+        if let Ok(tracks) = state.jiosaavn.search(stripped.trim(), 10).await {
+            if !tracks.is_empty() {
+                return Ok(Json(LoadResult::Search(tracks)));
+            }
         }
     } else if let Some(stripped) = identifier.strip_prefix("ytmsearch:") {
         if let Ok(tracks) = state.youtube.search(stripped.trim(), 10).await {
-            return Ok(Json(LoadResult::Search(tracks)));
+            if !tracks.is_empty() {
+                return Ok(Json(LoadResult::Search(tracks)));
+            }
+        }
+        // Fallback to JioSaavn if YouTube API is dead
+        if let Ok(tracks) = state.jiosaavn.search(stripped.trim(), 10).await {
+            if !tracks.is_empty() {
+                return Ok(Json(LoadResult::Search(tracks)));
+            }
         }
     }
 
