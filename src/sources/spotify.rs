@@ -37,6 +37,7 @@ impl SpotifySource {
 
         let client = reqwest::Client::builder()
             .default_headers(headers)
+            .timeout(std::time::Duration::from_secs(5))
             .build()
             .expect("Failed to build Reqwest client for Spotify");
 
