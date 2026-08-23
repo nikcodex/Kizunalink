@@ -13,22 +13,25 @@ const BAND_FREQUENCIES: [f64; NUM_BANDS] = [
 
 #[derive(Debug)]
 pub struct Equalizer {
-    bands: [BiquadFilter; NUM_BANDS],
+    bands_l: [BiquadFilter; NUM_BANDS],
+    bands_r: [BiquadFilter; NUM_BANDS],
     gains: [f32; NUM_BANDS],
     sample_rate: f64,
 }
 
 impl Equalizer {
     pub fn new(sample_rate: f64) -> Self {
-        let mut bands = std::array::from_fn(|_| BiquadFilter::new());
+        let mut bands_l = std::array::from_fn(|_| BiquadFilter::new());
+        let mut bands_r = std::array::from_fn(|_| BiquadFilter::new());
         
-        // Initialize each band as a peaking EQ filter
-        for (i, band) in bands.iter_mut().enumerate() {
-            *band = BiquadFilter::peaking_eq(sample_rate, BAND_FREQUENCIES[i], 0.707, 0.0);
+        for (i, (bl, br)) in bands_l.iter_mut().zip(bands_r.iter_mut()).enumerate() {
+            *bl = BiquadFilter::peaking_eq(sample_rate, BAND_FREQUENCIES[i], 0.707, 0.0);
+            *br = BiquadFilter::peaking_eq(sample_rate, BAND_FREQUENCIES[i], 0.707, 0.0);
         }
         
         Self {
-            bands,
+            bands_l,
+            bands_r,
             gains: [0.0; NUM_BANDS],
             sample_rate,
         }
@@ -39,7 +42,13 @@ impl Equalizer {
     pub fn set_band(&mut self, band: usize, gain_db: f32) {
         if band < NUM_BANDS {
             self.gains[band] = gain_db;
-            self.bands[band] = BiquadFilter::peaking_eq(
+            self.bands_l[band] = BiquadFilter::peaking_eq(
+                self.sample_rate,
+                BAND_FREQUENCIES[band],
+                0.707,
+                gain_db as f64,
+            );
+            self.bands_r[band] = BiquadFilter::peaking_eq(
                 self.sample_rate,
                 BAND_FREQUENCIES[band],
                 0.707,
@@ -55,11 +64,11 @@ impl Equalizer {
         }
     }
 
-    /// Process a single sample
+    /// Process a single sample (mono, uses left channel filters)
     #[inline]
     pub fn process(&mut self, input: f64) -> f64 {
         let mut output = input;
-        for band in &mut self.bands {
+        for band in &mut self.bands_l {
             output = band.process(output);
         }
         output
@@ -67,21 +76,23 @@ impl Equalizer {
 
     /// Process a buffer of interleaved stereo samples
     pub fn process_buffer(&mut self, buffer: &mut [f32]) {
-        // Process each sample through all bands
-        for sample in buffer.iter_mut() {
-            let input = *sample as f64;
-            let mut output = input;
-            for band in &mut self.bands {
-                output = band.process(output);
+        for chunk in buffer.chunks_exact_mut(2) {
+            let mut left = chunk[0] as f64;
+            let mut right = chunk[1] as f64;
+            for (bl, br) in self.bands_l.iter_mut().zip(self.bands_r.iter_mut()) {
+                left = bl.process(left);
+                right = br.process(right);
             }
-            *sample = output as f32;
+            chunk[0] = left as f32;
+            chunk[1] = right as f32;
         }
     }
 
     /// Reset all filter states
     pub fn reset(&mut self) {
-        for band in &mut self.bands {
-            band.reset();
+        for (bl, br) in self.bands_l.iter_mut().zip(self.bands_r.iter_mut()) {
+            bl.reset();
+            br.reset();
         }
     }
 }

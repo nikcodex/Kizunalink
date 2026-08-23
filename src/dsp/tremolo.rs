@@ -41,9 +41,15 @@ impl Tremolo {
 
     /// Process stereo interleaved buffer
     pub fn process_buffer(&mut self, buffer: &mut [f32]) {
-        for sample in buffer.iter_mut() {
-            let input = *sample as f64;
-            *sample = self.process(input) as f32;
+        for chunk in buffer.chunks_exact_mut(2) {
+            let modulation = 1.0 - self.depth * (self.phase * 2.0 * std::f64::consts::PI).sin();
+            let mod_f32 = modulation as f32;
+            chunk[0] *= mod_f32;
+            chunk[1] *= mod_f32;
+            self.phase += self.frequency / self.sample_rate;
+            if self.phase >= 1.0 {
+                self.phase -= 1.0;
+            }
         }
     }
 
