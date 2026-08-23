@@ -33,6 +33,7 @@ dashmap = "5.5"
 dotenvy = "0.15"
 num_cpus = "1.16"
 rand = "0.8"
+rhai = "1.25.1"
 
 [profile.release]
 opt-level = 3

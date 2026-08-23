@@ -31,6 +31,7 @@ pub struct AppState {
     pub youtube: Arc<YouTubeSource>,
     pub spotify: Arc<SpotifySource>,
     pub soundcloud: Arc<SoundCloudSource>,
+    pub plugin_manager: Arc<plugins::PluginManager>,
     pub password: String,
     pub start_time: std::time::Instant,
     pub event_tx: broadcast::Sender<String>,
@@ -48,6 +49,7 @@ async fn main() {
     // Initialize the Cross-Platform WASM Plugin Manager
     let mut plugin_manager = plugins::PluginManager::new();
     plugin_manager.load_all();
+    let plugin_manager = Arc::new(plugin_manager);
 
     let (event_tx, _) = broadcast::channel::<String>(256);
     let password = config.server.password.clone();
@@ -63,6 +65,7 @@ async fn main() {
         youtube.clone(),
         spotify.clone(),
         soundcloud.clone(),
+        plugin_manager: plugin_manager.clone(),
     ));
 
     let state = AppState {
