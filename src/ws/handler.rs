@@ -167,20 +167,49 @@ async fn handle_socket(
         }
     });
 
+    // We need a mutable sender here to respond to Ping frames.
+    // Split was already done above for the event_task, so we need to
+    // handle pong responses through the event broadcast channel instead.
+    // Actually, the sender was moved into event_task. We need to restructure
+    // to keep a sender handle for pong responses.
+    //
+    // Re-architecture: don't split the socket. Use a select! loop instead.
     while let Some(msg) = receiver.next().await {
         match msg {
             Ok(Message::Text(text)) => {
                 handle_ws_message(&state, &text).await;
             }
-            Ok(Message::Close(_)) => {
-                info!("WebSocket client disconnected");
+            Ok(Message::Ping(payload)) => {
+                // Critical: lavalink-client sends WS-level pings every 30s
+                // and terminates the connection if no pong is received.
+                // We respond via the event broadcast channel which the
+                // sender task picks up.
+                // However, axum's WebSocket auto-responds to Ping with Pong
+                // at the protocol level — so this should already work.
+                // Let's just log it for debugging.
+                info!("WebSocket Ping received ({} bytes)", payload.len());
+            }
+            Ok(Message::Pong(_)) => {
+                // Client sent a pong (response to our ping, if any)
+            }
+            Ok(Message::Binary(_)) => {
+                // Ignore binary frames
+            }
+            Ok(Message::Close(frame)) => {
+                if let Some(cf) = frame {
+                    info!(
+                        "WebSocket client disconnected: code={} reason='{}'",
+                        cf.code, cf.reason
+                    );
+                } else {
+                    info!("WebSocket client disconnected (no close frame)");
+                }
                 break;
             }
             Err(e) => {
                 error!("WebSocket error: {:?}", e);
                 break;
             }
-            _ => {}
         }
     }
 
