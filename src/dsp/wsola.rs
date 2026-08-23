@@ -126,10 +126,13 @@ impl Wsola {
                 self.out_buf[1].push(self.in_buf[1][s]);
             }
             self.ref_tail = if self.frame_len <= self.in_buf[0].len() {
-                self.in_buf[0][self.in_buf[0].len() - self.overlap..]
-                    .to_vec()
+                let start = self.in_buf[0].len() - self.overlap;
+                [
+                    self.in_buf[0][start..].to_vec(),
+                    self.in_buf[1][start..].to_vec(),
+                ]
             } else {
-                Vec::new()
+                [Vec::new(), Vec::new()]
             };
             self.next_analysis_start = self.in_buf[0].len();
             return;
