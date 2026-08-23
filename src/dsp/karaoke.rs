@@ -67,6 +67,10 @@ impl Karaoke {
     }
 
     /// Process stereo interleaved buffer in place.
+    ///
+    /// Standard karaoke vocal removal: subtract band-passed center content
+    /// from each channel, scaled by `level`. `mono_level` blends between
+    /// the original signal (0.0) and the center-removed signal (1.0).
     pub fn process_buffer(&mut self, buffer: &mut [f32]) {
         for chunk in buffer.chunks_exact_mut(2) {
             let l = chunk[0] as f64;
@@ -74,14 +78,17 @@ impl Karaoke {
 
             let center = (l + r) / 2.0;
 
-            // Band-passed center on each channel path (keeps per-channel phase)
+            // Band-pass the center content
             let bp_l = self.lp_left.process(self.hp_left.process(center));
             let bp_r = self.lp_right.process(self.hp_right.process(center));
 
-            chunk[0] =
-                (l * (1.0 - self.mono_level) + bp_l + (center - bp_l) * self.level) as f32;
-            chunk[1] =
-                (r * (1.0 - self.mono_level) + bp_r + (center - bp_r) * self.level) as f32;
+            // Subtract band-passed center from each channel, scaled by level
+            let removed_l = l - bp_l * self.level;
+            let removed_r = r - bp_r * self.level;
+
+            // Blend between original and center-removed
+            chunk[0] = (l * (1.0 - self.mono_level) + removed_l * self.mono_level) as f32;
+            chunk[1] = (r * (1.0 - self.mono_level) + removed_r * self.mono_level) as f32;
         }
     }
 

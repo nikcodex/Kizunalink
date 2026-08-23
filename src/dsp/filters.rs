@@ -208,6 +208,9 @@ impl FilterChain {
         if let Some(ref mut tremolo) = self.tremolo {
             tremolo.process_buffer(&mut work);
         }
+        if let Some(ref mut vibrato) = self.vibrato {
+            vibrato.process_buffer(&mut work);
+        }
         if let Some(ref mut distortion) = self.distortion {
             distortion.process_buffer(&mut work);
         }

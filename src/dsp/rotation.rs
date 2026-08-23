@@ -107,9 +107,8 @@ mod tests {
         rot.process_buffer(&mut buf);
 
         // At phase ~0.25s of a 2s cycle => 45 degrees => both channels ~0.56
-        // At phase ~0.75s => 270 degrees? (0.75/2*360=135deg): R gets negative contribution...
-        let mid_left = buf[24000 * 2];
-        let mid_right = buf[24000 * 2 + 1];
+        let mid_left = buf[12000 * 2];
+        let mid_right = buf[12000 * 2 + 1];
         assert!(mid_left.abs() > 0.3 && mid_right.abs() > 0.3,
             "at quarter cycle energy should be split across channels (L={} R={})",
             mid_left, mid_right);

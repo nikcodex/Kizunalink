@@ -46,17 +46,25 @@ impl Vibrato {
 
     #[inline]
     fn read_delayed(&self, channel: usize, delay_samples: f64) -> f32 {
-        let read_pos = self.write_pos as f64 - delay_samples - 1.0;
+        // delay_samples is in frames; buffer is stereo interleaved (stride 2)
+        let delay_in_buf = delay_samples * 2.0;
+        let read_pos = self.write_pos as f64 - delay_in_buf;
         let len = self.buffer.len() as f64;
         let rp = if read_pos < 0.0 { read_pos + len } else { read_pos };
 
-        let idx0 = rp.floor() as usize % self.buffer.len();
-        let idx1 = (idx0 + 2) % self.buffer.len(); // next frame (interleaved stereo stride 2)
-        let frac = rp - rp.floor();
+        // Ensure we land on even indices (frame boundaries) before adding channel offset
+        let frame_pos = rp / 2.0;
+        let frame_idx0 = frame_pos.floor() as usize;
+        let frame_idx1 = frame_idx0 + 1;
+        let frac = (frame_pos - frame_pos.floor()) as f32;
 
-        let s0 = self.buffer[idx0 + channel];
-        let s1 = self.buffer[idx1 + channel];
-        s0 + (s1 - s0) * frac as f32
+        let buf_len_frames = self.buffer.len() / 2;
+        let idx0 = (frame_idx0 % buf_len_frames) * 2 + channel;
+        let idx1 = (frame_idx1 % buf_len_frames) * 2 + channel;
+
+        let s0 = self.buffer[idx0];
+        let s1 = self.buffer[idx1];
+        s0 + (s1 - s0) * frac
     }
 
     /// Process stereo interleaved buffer in place.

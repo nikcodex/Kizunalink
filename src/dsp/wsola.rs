@@ -181,8 +181,9 @@ impl Wsola {
                 }
 
                 for i in 0..ol {
-                    let w = self.hann[i];
-                    let inv_w = self.hann[self.hann.len() - 1 - i];
+                    // Linear crossfade (simpler and correct: always sums to 1.0)
+                    let w = (i as f32 + 0.5) / ol as f32;
+                    let inv_w = 1.0 - w;
                     let old = self.ref_tail[i];
                     for ch in 0..2 {
                         let new_s = self.in_buf[ch][seg_start + i];
@@ -232,8 +233,9 @@ impl Wsola {
             return analysis_start;
         }
 
-        let natural = analysis_start as i64 + analysis_hop - self.overlap as i64;
+        let natural = analysis_start as i64;
         let low = (natural - self.delta as i64).max(0) as usize;
+        let high = (natural + self.delta as i64) as usize;
 
         let mut best = natural.max(0) as usize;
         let mut best_score = f32::NEG_INFINITY;
@@ -241,7 +243,7 @@ impl Wsola {
         let ol = self.overlap.min(self.ref_tail.len());
 
         let mut cand = low;
-        while cand + ol <= self.in_buf[0].len() {
+        while cand + ol <= self.in_buf[0].len() && cand <= high {
             // normalized correlation on mono mixdown of both channels
             let mut dot = 0.0f32;
             let mut e_ref = 0.0f32;
