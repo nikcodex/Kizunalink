@@ -1,4 +1,5 @@
-use rhai::{Engine, EvalAltResult, Scope};
+use rhai::{Engine, Scope, AST};
+use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 use tracing::{info, warn};
@@ -6,6 +7,8 @@ use tracing::{info, warn};
 pub struct PluginManager {
     pub engine: Engine,
     pub loaded_plugins: usize,
+    /// Pre-compiled AST cache: plugin_name -> AST
+    compiled_scripts: HashMap<String, AST>,
 }
 
 impl PluginManager {
@@ -19,9 +22,28 @@ impl PluginManager {
             }
         }
 
+        let mut engine = Engine::new();
+
+        // Register HTTP GET function for plugins
+        // Uses tokio::task::block_in_place to avoid stalling the async runtime
+        engine.register_fn("fetch_json", |url: &str| -> String {
+            let url_owned = url.to_string();
+            // block_in_place tells Tokio this will block, allowing it to
+            // schedule other tasks on remaining worker threads
+            tokio::task::block_in_place(|| {
+                if let Ok(res) = reqwest::blocking::get(&url_owned) {
+                    if let Ok(text) = res.text() {
+                        return text;
+                    }
+                }
+                "{}".to_string()
+            })
+        });
+
         Self {
-            engine: Engine::new(),
+            engine,
             loaded_plugins: 0,
+            compiled_scripts: HashMap::new(),
         }
     }
 
@@ -32,18 +54,30 @@ impl PluginManager {
                 let path = entry.path();
                 if path.extension().and_then(|s| s.to_str()) == Some("rhai") {
                     if let Ok(script) = fs::read_to_string(&path) {
-                        // Compile it to make sure there are no syntax errors
-                        if let Ok(_ast) = self.engine.compile(&script) {
-                            info!("🚀 Loaded Plugin: {:?}", path.file_name().unwrap());
-                            self.loaded_plugins += 1;
-                        } else {
-                            warn!("❌ Failed to compile plugin: {:?}", path.file_name().unwrap());
+                        match self.engine.compile(&script) {
+                            Ok(ast) => {
+                                let name = path
+                                    .file_stem()
+                                    .and_then(|s| s.to_str())
+                                    .unwrap_or("unknown")
+                                    .to_string();
+                                info!("🚀 Loaded Plugin: {:?}", path.file_name().unwrap());
+                                self.compiled_scripts.insert(name, ast);
+                                self.loaded_plugins += 1;
+                            }
+                            Err(e) => {
+                                warn!(
+                                    "❌ Failed to compile plugin {:?}: {}",
+                                    path.file_name().unwrap(),
+                                    e
+                                );
+                            }
                         }
                     }
                 }
             }
         }
-        
+
         if self.loaded_plugins > 0 {
             info!("Successfully loaded {} active plugins", self.loaded_plugins);
         }
@@ -51,15 +85,16 @@ impl PluginManager {
 
     pub fn execute_search(&self, prefix: &str, query: &str) -> Option<String> {
         let plugin_name = prefix.strip_suffix("search").unwrap_or(prefix);
-        let path = format!("plugins/{}.rhai", plugin_name);
-        
-        if Path::new(&path).exists() {
-            if let Ok(script) = fs::read_to_string(&path) {
-                let mut scope = Scope::new();
-                scope.push("query", query.to_string());
-                
-                if let Ok(result) = self.engine.eval_with_scope::<String>(&mut scope, &script) {
-                    return Some(result);
+
+        // Use pre-compiled AST from cache instead of reading from disk every time
+        if let Some(ast) = self.compiled_scripts.get(plugin_name) {
+            let mut scope = Scope::new();
+            scope.push("query", query.to_string());
+
+            match self.engine.eval_ast_with_scope::<String>(&mut scope, ast) {
+                Ok(result) => return Some(result),
+                Err(e) => {
+                    warn!("Plugin '{}' execution error: {}", plugin_name, e);
                 }
             }
         }

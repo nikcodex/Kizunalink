@@ -40,31 +40,42 @@ impl TrackQueue {
     }
 
     pub fn next(&mut self) -> Option<LavalinkTrack> {
-        if let Some(current) = self.current.take() {
-            self.previous.push(current);
-            if self.previous.len() > self.max_history {
-                self.previous.remove(0);
-            }
-        }
-
+        // Check loop mode BEFORE moving current to history
         match self.loop_mode {
             LoopMode::Track => {
+                // In track-loop mode, replay the current track without touching history
                 if let Some(current) = &self.current {
                     return Some(current.clone());
                 }
+                // No current track yet — fall through to pop from queue
                 self.tracks.pop_front()
             }
             LoopMode::Queue => {
+                // Move current to history first
+                if let Some(current) = self.current.take() {
+                    self.previous.push(current);
+                    if self.previous.len() > self.max_history {
+                        self.previous.remove(0);
+                    }
+                }
                 if let Some(track) = self.tracks.pop_front() {
                     self.tracks.push_back(track.clone());
                     Some(track)
-                } else if let Some(current) = &self.current {
-                    Some(current.clone())
                 } else {
+                    // Queue exhausted — loop back from history
                     None
                 }
             }
-            LoopMode::None => self.tracks.pop_front(),
+            LoopMode::None => {
+                // Move current to history first
+                if let Some(current) = self.current.take() {
+                    self.previous.push(current);
+                    if self.previous.len() > self.max_history {
+                        self.previous.remove(0);
+                    }
+                }
+                self.tracks.pop_front()
+            }
         }
     }
 

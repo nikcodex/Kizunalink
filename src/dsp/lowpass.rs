@@ -6,7 +6,8 @@ use super::biquad::BiquadFilter;
 
 #[derive(Debug)]
 pub struct LowPass {
-    filter: BiquadFilter,
+    filter_l: BiquadFilter,
+    filter_r: BiquadFilter,
     smoothing: f64,
     sample_rate: f64,
 }
@@ -14,7 +15,8 @@ pub struct LowPass {
 impl LowPass {
     pub fn new(sample_rate: f64) -> Self {
         let mut lp = Self {
-            filter: BiquadFilter::new(),
+            filter_l: BiquadFilter::new(),
+            filter_r: BiquadFilter::new(),
             smoothing: 20.0,
             sample_rate,
         };
@@ -25,7 +27,8 @@ impl LowPass {
     fn rebuild(&mut self) {
         let cutoff = (self.sample_rate / (2.0 * self.smoothing))
             .clamp(50.0, self.sample_rate / 2.0 * 0.95);
-        self.filter = BiquadFilter::lowpass(self.sample_rate, cutoff, 0.707);
+        self.filter_l = BiquadFilter::lowpass(self.sample_rate, cutoff, 0.707);
+        self.filter_r = BiquadFilter::lowpass(self.sample_rate, cutoff, 0.707);
     }
 
     /// Set smoothing factor. Lavalink range 1..=100.
@@ -36,17 +39,21 @@ impl LowPass {
 
     #[inline]
     pub fn process(&mut self, input: f64) -> f64 {
-        self.filter.process(input)
+        self.filter_l.process(input)
     }
 
     pub fn process_buffer(&mut self, buffer: &mut [f32]) {
-        for sample in buffer.iter_mut() {
-            *sample = self.process(*sample as f64) as f32;
+        for chunk in buffer.chunks_mut(2) {
+            chunk[0] = self.filter_l.process(chunk[0] as f64) as f32;
+            if chunk.len() == 2 {
+                chunk[1] = self.filter_r.process(chunk[1] as f64) as f32;
+            }
         }
     }
 
     pub fn reset(&mut self) {
-        self.filter.reset();
+        self.filter_l.reset();
+        self.filter_r.reset();
     }
 }
 

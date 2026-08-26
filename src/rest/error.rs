@@ -3,7 +3,6 @@ use axum::{
     response::{IntoResponse, Response},
     Json,
 };
-use serde::Serialize;
 use serde_json::json;
 
 #[derive(Debug, Clone)]

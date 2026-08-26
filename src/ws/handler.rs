@@ -112,61 +112,6 @@ async fn handle_socket(
         }
     });
 
-    let stats_state = state.clone();
-    let stats_task = tokio::spawn(async move {
-        let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(60));
-        loop {
-            interval.tick().await;
-            let (total_players, playing_players) =
-                stats_state.player_manager.count_players().await;
-            let uptime = stats_state.start_time.elapsed().as_millis() as u64;
-
-            let now = std::time::Instant::now();
-            SESSION_STORE.retain(|_, last_active| {
-                now.duration_since(*last_active).as_secs() < 3600
-            });
-
-            let stats = serde_json::json!({
-                "op": "stats",
-                "players": total_players,
-                "playingPlayers": playing_players,
-                "uptime": uptime,
-                "memory": {
-                    "free": 1024 * 1024 * 512u64,
-                    "used": 1024 * 1024 * 18u64,
-                    "allocated": 1024 * 1024 * 32u64,
-                    "reservable": 1024 * 1024 * 512u64
-                },
-                "cpu": {
-                    "cores": num_cpus::get(),
-                    "systemLoad": 0.05,
-                    "lavalinkLoad": 0.01
-                },
-                "frameStats": null
-            });
-
-            let _ = stats_state.event_tx.send(stats.to_string());
-        }
-    });
-
-    let update_state = state.clone();
-    let update_task = tokio::spawn(async move {
-        let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(5));
-        loop {
-            interval.tick().await;
-            for player_response in update_state.player_manager.get_all_players().await {
-                if player_response.track.is_some() || player_response.state.connected {
-                    let msg = serde_json::json!({
-                        "op": "playerUpdate",
-                        "guildId": player_response.guild_id,
-                        "state": player_response.state,
-                    });
-                    let _ = update_state.event_tx.send(msg.to_string());
-                }
-            }
-        }
-    });
-
     // We need a mutable sender here to respond to Ping frames.
     // Split was already done above for the event_task, so we need to
     // handle pong responses through the event broadcast channel instead.
@@ -214,8 +159,6 @@ async fn handle_socket(
     }
 
     event_task.abort();
-    stats_task.abort();
-    update_task.abort();
 }
 
 async fn handle_ws_message(state: &AppState, text: &str) {

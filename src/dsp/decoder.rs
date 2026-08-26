@@ -3,7 +3,7 @@
 /// pipeline so DSP runs on decoded PCM before it reaches Songbird's mixer.
 
 use std::io::{Read, Seek, SeekFrom};
-use std::sync::{Arc, Mutex};
+use std::sync::Mutex;
 
 use rubato::{Resampler, SincFixedIn, SincInterpolationParameters, SincInterpolationType, WindowFunction};
 use symphonia::core::audio::SampleBuffer;
@@ -240,8 +240,8 @@ impl AudioDecoder {
         let resampler = self.resampler.as_mut().unwrap();
         while self.res_in[0].len() >= DECODE_CHUNK_FRAMES {
             let wave_in = vec![
-                std::mem::replace(&mut self.res_in[0], Vec::with_capacity(DECODE_CHUNK_FRAMES)),
-                std::mem::replace(&mut self.res_in[1], Vec::with_capacity(DECODE_CHUNK_FRAMES)),
+                self.res_in[0].drain(..DECODE_CHUNK_FRAMES).collect::<Vec<f32>>(),
+                self.res_in[1].drain(..DECODE_CHUNK_FRAMES).collect::<Vec<f32>>(),
             ];
             if let Ok(mut wave_out) = resampler.process(&wave_in, None) {
                 self.res_pending[0].append(&mut wave_out[0]);

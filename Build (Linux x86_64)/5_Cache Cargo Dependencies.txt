@@ -1,0 +1,57 @@
+﻿2026-08-23T10:21:48.4928573Z ##[group]Run Swatinem/rust-cache@v2
+2026-08-23T10:21:48.4928886Z with:
+2026-08-23T10:21:48.4929096Z   key: x86_64-unknown-linux-gnu
+2026-08-23T10:21:48.4929344Z   prefix-key: v0-rust
+2026-08-23T10:21:48.4929563Z   add-job-id-key: true
+2026-08-23T10:21:48.4929798Z   add-rust-environment-hash-key: true
+2026-08-23T10:21:48.4930070Z   cache-targets: true
+2026-08-23T10:21:48.4930284Z   cache-all-crates: false
+2026-08-23T10:21:48.4930523Z   cache-workspace-crates: false
+2026-08-23T10:21:48.4930766Z   save-if: true
+2026-08-23T10:21:48.4930973Z   cache-provider: github
+2026-08-23T10:21:48.4931193Z   cache-bin: true
+2026-08-23T10:21:48.4931395Z   lookup-only: false
+2026-08-23T10:21:48.4931599Z   cmd-format: {0}
+2026-08-23T10:21:48.4931800Z env:
+2026-08-23T10:21:48.4931987Z   CARGO_TERM_COLOR: always
+2026-08-23T10:21:48.4932211Z   LIBOPUS_STATIC: 1
+2026-08-23T10:21:48.4932417Z   OPUS_STATIC: 1
+2026-08-23T10:21:48.4932650Z   CARGO_HOME: /home/runner/.cargo
+2026-08-23T10:21:48.4932898Z   CARGO_INCREMENTAL: 0
+2026-08-23T10:21:48.4933144Z ##[endgroup]
+2026-08-23T10:21:48.7874331Z ##[group]Cache Configuration
+2026-08-23T10:21:48.7874826Z Cache Provider:
+2026-08-23T10:21:48.7875163Z     github
+2026-08-23T10:21:48.7875454Z Workspaces:
+2026-08-23T10:21:48.7875789Z     /home/runner/work/Kizunalink/Kizunalink
+2026-08-23T10:21:48.7876238Z Cache Paths:
+2026-08-23T10:21:48.7876557Z     /home/runner/.cargo/bin
+2026-08-23T10:21:48.7876956Z     /home/runner/.cargo/.crates.toml
+2026-08-23T10:21:48.7877398Z     /home/runner/.cargo/.crates2.json
+2026-08-23T10:21:48.7877811Z     /home/runner/.cargo/registry
+2026-08-23T10:21:48.7878097Z     /home/runner/.cargo/git
+2026-08-23T10:21:48.7878384Z     /home/runner/work/Kizunalink/Kizunalink/target
+2026-08-23T10:21:48.7878686Z Restore Key:
+2026-08-23T10:21:48.7879009Z     v0-rust-x86_64-unknown-linux-gnu-build-linux-x86_64-Linux-x64-0b9fd15e
+2026-08-23T10:21:48.7879409Z Cache Key:
+2026-08-23T10:21:48.7880105Z     v0-rust-x86_64-unknown-linux-gnu-build-linux-x86_64-Linux-x64-0b9fd15e-f4ab8221
+2026-08-23T10:21:48.7880573Z .. Prefix:
+2026-08-23T10:21:48.7880870Z   - v0-rust-x86_64-unknown-linux-gnu-build-linux-x86_64-Linux-x64
+2026-08-23T10:21:48.7881248Z .. Environment considered:
+2026-08-23T10:21:48.7881522Z   - Rust Versions:
+2026-08-23T10:21:48.7881857Z     - 1.98.0 x86_64-unknown-linux-gnu 88d9e12ae178fab0fb5cc050a94da85685d449ea
+2026-08-23T10:21:48.7882260Z   - CARGO_HOME
+2026-08-23T10:21:48.7882466Z   - CARGO_INCREMENTAL
+2026-08-23T10:21:48.7882684Z   - CARGO_TERM_COLOR
+2026-08-23T10:21:48.7882922Z .. Lockfiles considered:
+2026-08-23T10:21:48.7883204Z   - /home/runner/work/Kizunalink/Kizunalink/Cargo.toml
+2026-08-23T10:21:48.7883710Z ##[endgroup]
+2026-08-23T10:21:48.7883828Z 
+2026-08-23T10:21:48.7884136Z ... Restoring cache ...
+2026-08-23T10:21:48.8464058Z Cache hit for restore-key: v0-rust-x86_64-unknown-linux-gnu-build-linux-x86_64-Linux-x64-0b9fd15e-854d71d7
+2026-08-23T10:21:49.8935092Z Received 222298112 of 268808571 (82.7%), 211.6 MBs/sec
+2026-08-23T10:21:50.1130544Z Received 268808571 of 268808571 (100.0%), 210.0 MBs/sec
+2026-08-23T10:21:50.1132340Z Cache Size: ~256 MB (268808571 B)
+2026-08-23T10:21:50.1168035Z [command]/usr/bin/tar -xf /home/runner/work/_temp/84a80e39-4b91-4579-a858-41eb25810a17/cache.tzst -P -C /home/runner/work/Kizunalink/Kizunalink --use-compress-program unzstd
+2026-08-23T10:21:51.4517653Z Cache restored successfully
+2026-08-23T10:21:51.5521588Z Restored from cache key "v0-rust-x86_64-unknown-linux-gnu-build-linux-x86_64-Linux-x64-0b9fd15e-854d71d7" full match: false.

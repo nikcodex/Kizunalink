@@ -158,17 +158,17 @@ impl BiquadFilter {
         }
     }
 
-    /// Process stereo interleaved buffer
-    pub fn process_stereo(&mut self, buffer: &mut [f32]) {
-        // For stereo, we process each channel separately
-        // This is a simplified approach - for proper stereo processing,
-        // we'd need two separate filter instances
+    /// Process stereo interleaved buffer using separate L/R filter instances.
+    /// `filter_r` must be a second BiquadFilter with identical coefficients
+    /// but independent state. If you only have one instance, use `clone()`
+    /// before the first call to create the right-channel filter.
+    pub fn process_stereo_split(&mut self, filter_r: &mut BiquadFilter, buffer: &mut [f32]) {
         for chunk in buffer.chunks_mut(2) {
             if chunk.len() == 2 {
                 let left = chunk[0] as f64;
                 let right = chunk[1] as f64;
                 chunk[0] = self.process(left) as f32;
-                chunk[1] = self.process(right) as f32;
+                chunk[1] = filter_r.process(right) as f32;
             }
         }
     }

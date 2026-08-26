@@ -40,11 +40,30 @@ impl JioSaavnSource {
             urlencoding::encode(clean_query)
         );
 
-        let response = self.client.get(&url).send().await.map_err(|e| e.to_string())?;
-        let text = response.text().await.map_err(|e| e.to_string())?;
+        let client = self.client.clone();
+        let url_clone = url.clone();
+        let backoff_cfg = crate::sources::backoff::BackoffConfig::default();
 
-        let json_str = match text.find('{') {
-            Some(idx) => &text[idx..],
+        let raw_text = crate::sources::backoff::with_backoff(
+            &backoff_cfg,
+            "JioSaavn/search",
+            || {
+                let c = client.clone();
+                let u = url_clone.clone();
+                async move {
+                    let response = c.get(&u).send().await.map_err(|e| e.to_string())?;
+                    let status = response.status().as_u16();
+                    if crate::sources::backoff::is_retryable_status(status) {
+                        return Err(format!("JioSaavn returned HTTP {}", status));
+                    }
+                    response.text().await.map_err(|e| e.to_string())
+                }
+            },
+        )
+        .await?;
+
+        let json_str = match raw_text.find('{') {
+            Some(idx) => &raw_text[idx..],
             None => return Ok(vec![]),
         };
 
@@ -155,8 +174,28 @@ impl JioSaavnSource {
             JIOSAAVN_API_BASE, song_id
         );
 
-        let details_res = self.client.get(&details_url).send().await.map_err(|e| e.to_string())?;
-        let details_text = details_res.text().await.map_err(|e| e.to_string())?;
+        let client = self.client.clone();
+        let backoff_cfg = crate::sources::backoff::BackoffConfig::default();
+
+        // Step 1: Fetch song details with backoff
+        let details_url_clone = details_url.clone();
+        let details_text = crate::sources::backoff::with_backoff(
+            &backoff_cfg,
+            "JioSaavn/details",
+            || {
+                let c = client.clone();
+                let u = details_url_clone.clone();
+                async move {
+                    let res = c.get(&u).send().await.map_err(|e| e.to_string())?;
+                    let status = res.status().as_u16();
+                    if crate::sources::backoff::is_retryable_status(status) {
+                        return Err(format!("JioSaavn details returned HTTP {}", status));
+                    }
+                    res.text().await.map_err(|e| e.to_string())
+                }
+            },
+        )
+        .await?;
 
         let json_str = match details_text.find('{') {
             Some(idx) => &details_text[idx..],
@@ -164,8 +203,9 @@ impl JioSaavnSource {
         };
 
         let details_json: Value = serde_json::from_str(json_str).map_err(|e| e.to_string())?;
+        let song_id_owned = song_id.to_string();
         let song_obj = details_json
-            .get(song_id)
+            .get(&song_id_owned)
             .or_else(|| details_json.get("songs").and_then(|s| s.as_array()).and_then(|a| a.first()))
             .ok_or_else(|| format!("Song ID {} not found in details", song_id))?;
 
@@ -175,14 +215,32 @@ impl JioSaavnSource {
             .and_then(|v| v.as_str())
             .ok_or_else(|| "Missing encrypted_media_url in song object".to_string())?;
 
+        // Step 2: Generate auth token with backoff
         let auth_url = format!(
             "{}?__call=song.generateAuthToken&url={}&bitrate=320&_format=json&_marker=0&ctx=android&api_version=4",
             JIOSAAVN_API_BASE,
             urlencoding::encode(encrypted_url)
         );
 
-        let auth_res = self.client.get(&auth_url).send().await.map_err(|e| e.to_string())?;
-        let auth_json: Value = auth_res.json().await.map_err(|e| e.to_string())?;
+        let auth_url_clone = auth_url.clone();
+        let client2 = self.client.clone();
+        let auth_json: Value = crate::sources::backoff::with_backoff(
+            &backoff_cfg,
+            "JioSaavn/authToken",
+            || {
+                let c = client2.clone();
+                let u = auth_url_clone.clone();
+                async move {
+                    let res = c.get(&u).send().await.map_err(|e| e.to_string())?;
+                    let status = res.status().as_u16();
+                    if crate::sources::backoff::is_retryable_status(status) {
+                        return Err(format!("JioSaavn auth returned HTTP {}", status));
+                    }
+                    res.json::<Value>().await.map_err(|e| e.to_string())
+                }
+            },
+        )
+        .await?;
 
         let stream_url = auth_json
             .get("auth_url")
