@@ -144,7 +144,7 @@ fn is_private_ip(ip: IpAddr) -> bool {
             ipv6.is_loopback()
                 || ipv6.is_unspecified()
                 || ipv6.is_unique_local()
-                || ipv6.is_link_local()
+                || ipv6.is_unicast_link_local()
         }
     }
 }
