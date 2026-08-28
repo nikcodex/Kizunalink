@@ -269,18 +269,6 @@ impl GuildPlayer {
             }
         }
 
-        let _ = handle.add_event(
-            Event::Track(TrackEvent::End),
-            TrackEndNotifier {
-                guild_id: self.guild_id.clone(),
-                track_end_tx: self.track_end_tx.clone(),
-            },
-        );
-
-        if let Err(e) = handle.set_volume(self.volume as f32 / 100.0) {
-            warn!("Failed to set volume during restart: {:?}", e);
-        }
-
         let factor = self
             .shared_chain
             .lock()
@@ -369,14 +357,6 @@ impl GuildPlayer {
                 self.kizuna_track_handle = Some(k_handle);
             }
         }
-
-        let _ = handle.add_event(
-            Event::Track(TrackEvent::End),
-            TrackEndNotifier {
-                guild_id: self.guild_id.clone(),
-                track_end_tx: self.track_end_tx.clone(),
-            },
-        );
 
         if let Some(k_handle) = &self.kizuna_track_handle {
             let k = k_handle.clone();
@@ -479,7 +459,6 @@ impl GuildPlayer {
             if self.is_playing {
                 self.restart_at(position).await;
             }
-            let _ = handle.seek(Duration::from_millis(position));
             self.play_started_at = Some(Instant::now() - Duration::from_millis(position));
         }
         self.paused_position = position;
