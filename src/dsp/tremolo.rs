@@ -73,7 +73,7 @@ mod tests {
     fn test_tremolo_no_modulation() {
         let mut trem = Tremolo::new(48000.0);
         trem.set_depth(0.0); // No modulation
-        
+
         let sample_rate = 48000.0;
         let input: Vec<f32> = (0..1000)
             .map(|i| {
@@ -81,13 +81,19 @@ mod tests {
                 (2.0 * std::f64::consts::PI * 1000.0 * t).sin() as f32
             })
             .collect();
-        
+
         let mut output = input.clone();
         trem.process_buffer(&mut output);
-        
+
         // With depth=0, output should match input
         for (i, (o, e)) in output.iter().zip(input.iter()).enumerate() {
-            assert!((o - e).abs() < 0.001, "Sample {} differs: {} vs {}", i, o, e);
+            assert!(
+                (o - e).abs() < 0.001,
+                "Sample {} differs: {} vs {}",
+                i,
+                o,
+                e
+            );
         }
     }
 
@@ -96,17 +102,17 @@ mod tests {
         let mut trem = Tremolo::new(48000.0);
         trem.set_depth(0.5);
         trem.set_frequency(2.0);
-        
+
         let sample_rate = 48000.0;
         let input: Vec<f32> = vec![1.0; 1000]; // DC signal
-        
+
         let mut output = input;
         trem.process_buffer(&mut output);
-        
+
         // Output should vary (not all 1.0)
         let max = output.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
         let min = output.iter().cloned().fold(f32::INFINITY, f32::min);
-        
+
         assert!(max > min, "Tremolo should create amplitude variation");
         assert!(max <= 1.0, "Output should not exceed input level");
     }

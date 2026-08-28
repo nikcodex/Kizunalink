@@ -73,7 +73,8 @@ impl NicoNicoSource {
         .await?;
 
         let title = extract_xml_tag(&xml, "title").unwrap_or_else(|| "Unknown".to_string());
-        let author = extract_xml_tag(&xml, "uploader").unwrap_or_else(|| "Unknown Artist".to_string());
+        let author =
+            extract_xml_tag(&xml, "uploader").unwrap_or_else(|| "Unknown Artist".to_string());
         let length_str = extract_xml_tag(&xml, "length").unwrap_or_else(|| "0".to_string());
         let length_ms = length_str.parse::<u64>().map(|s| s * 1000).unwrap_or(0);
         let thumb_url = extract_xml_tag(&xml, "thumbnail_url");
@@ -108,8 +109,16 @@ impl NicoNicoSource {
 
     fn parse_video(&self, item: &Value) -> Option<LavalinkTrack> {
         let id = item.get("contentId").and_then(|i| i.as_str())?.to_string();
-        let title = item.get("title").and_then(|t| t.as_str()).unwrap_or("Unknown").to_string();
-        let length_ms = item.get("lengthSeconds").and_then(|d| d.as_u64()).map(|d| d * 1000).unwrap_or(0);
+        let title = item
+            .get("title")
+            .and_then(|t| t.as_str())
+            .unwrap_or("Unknown")
+            .to_string();
+        let length_ms = item
+            .get("lengthSeconds")
+            .and_then(|d| d.as_u64())
+            .map(|d| d * 1000)
+            .unwrap_or(0);
         let uri = Some(format!("https://nicovideo.jp/watch/{}", id));
         let artwork = Some(format!("https://nicovideo.jp/watch/{}", id));
 

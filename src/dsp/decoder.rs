@@ -4,13 +4,14 @@
 ///
 /// For Opus-encoded sources, an optional passthrough mode is available that
 /// skips the decode→PCM→re-encode cycle, saving ~60% CPU.
-
 use std::io::{Read, Seek, SeekFrom};
 use std::sync::Mutex;
 
-use rubato::{Resampler, SincFixedIn, SincInterpolationParameters, SincInterpolationType, WindowFunction};
+use rubato::{
+    Resampler, SincFixedIn, SincInterpolationParameters, SincInterpolationType, WindowFunction,
+};
 use symphonia::core::audio::SampleBuffer;
-use symphonia::core::codecs::{DecoderOptions, CODEC_TYPE_NULL, CodecType};
+use symphonia::core::codecs::{CodecType, DecoderOptions, CODEC_TYPE_NULL};
 use symphonia::core::errors::Error as SymphoniaError;
 use symphonia::core::formats::FormatOptions;
 use symphonia::core::io::{MediaSource, MediaSourceStream};
@@ -68,7 +69,12 @@ impl AudioDecoder {
 
         let mss = MediaSourceStream::new(source, Default::default());
         let probed = symphonia::default::get_probe()
-            .format(&hint, mss, &FormatOptions::default(), &MetadataOptions::default())
+            .format(
+                &hint,
+                mss,
+                &FormatOptions::default(),
+                &MetadataOptions::default(),
+            )
             .map_err(|e| format!("probe failed: {}", e))?;
 
         let track = probed
@@ -184,8 +190,10 @@ impl AudioDecoder {
             };
 
             if self.sample_buf.is_none() {
-                self.sample_buf =
-                    Some(SampleBuffer::<f32>::new(decoded.capacity() as u64, decoded.spec().clone()));
+                self.sample_buf = Some(SampleBuffer::<f32>::new(
+                    decoded.capacity() as u64,
+                    decoded.spec().clone(),
+                ));
             }
             let sample_buf = self.sample_buf.as_mut().unwrap();
             sample_buf.copy_interleaved_ref(decoded);
@@ -254,8 +262,12 @@ impl AudioDecoder {
         let resampler = self.resampler.as_mut().unwrap();
         while self.res_in[0].len() >= DECODE_CHUNK_FRAMES {
             let wave_in = vec![
-                self.res_in[0].drain(..DECODE_CHUNK_FRAMES).collect::<Vec<f32>>(),
-                self.res_in[1].drain(..DECODE_CHUNK_FRAMES).collect::<Vec<f32>>(),
+                self.res_in[0]
+                    .drain(..DECODE_CHUNK_FRAMES)
+                    .collect::<Vec<f32>>(),
+                self.res_in[1]
+                    .drain(..DECODE_CHUNK_FRAMES)
+                    .collect::<Vec<f32>>(),
             ];
             if let Ok(mut wave_out) = resampler.process(&wave_in, None) {
                 self.res_pending[0].append(&mut wave_out[0]);

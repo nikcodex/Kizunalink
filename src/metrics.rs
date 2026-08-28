@@ -1,7 +1,6 @@
 use prometheus::{
-    Encoder, Gauge, IntCounter, IntGauge, Registry, TextEncoder,
-    opts, register_int_counter_with_registry, register_int_gauge_with_registry,
-    register_gauge_with_registry,
+    opts, register_gauge_with_registry, register_int_counter_with_registry,
+    register_int_gauge_with_registry, Encoder, Gauge, IntCounter, IntGauge, Registry, TextEncoder,
 };
 use std::sync::OnceLock;
 
@@ -56,152 +55,230 @@ impl Metrics {
             let players_total = register_int_gauge_with_registry!(
                 opts!("kizunalink_players_total", "Total number of players"),
                 registry
-            ).unwrap();
+            )
+            .unwrap();
 
             let players_playing = register_int_gauge_with_registry!(
-                opts!("kizunalink_players_playing", "Number of actively playing players"),
+                opts!(
+                    "kizunalink_players_playing",
+                    "Number of actively playing players"
+                ),
                 registry
-            ).unwrap();
+            )
+            .unwrap();
 
             let uptime_seconds = register_gauge_with_registry!(
                 opts!("kizunalink_uptime_seconds", "Server uptime in seconds"),
                 registry
-            ).unwrap();
+            )
+            .unwrap();
 
             let frames_sent = register_int_counter_with_registry!(
                 opts!("kizunalink_frames_sent_total", "Total audio frames sent"),
                 registry
-            ).unwrap();
+            )
+            .unwrap();
 
             let frames_nulled = register_int_counter_with_registry!(
                 opts!("kizunalink_frames_nulled_total", "Total null frames sent"),
                 registry
-            ).unwrap();
+            )
+            .unwrap();
 
             let frames_deficit = register_int_counter_with_registry!(
-                opts!("kizunalink_frames_deficit_total", "Total frame deficit events"),
+                opts!(
+                    "kizunalink_frames_deficit_total",
+                    "Total frame deficit events"
+                ),
                 registry
-            ).unwrap();
+            )
+            .unwrap();
 
             let bytes_sent = register_int_counter_with_registry!(
                 opts!("kizunalink_bytes_sent_total", "Total bytes sent to voice"),
                 registry
-            ).unwrap();
+            )
+            .unwrap();
 
             let tracks_loaded = register_int_counter_with_registry!(
-                opts!("kizunalink_tracks_loaded_total", "Total tracks successfully loaded"),
+                opts!(
+                    "kizunalink_tracks_loaded_total",
+                    "Total tracks successfully loaded"
+                ),
                 registry
-            ).unwrap();
+            )
+            .unwrap();
 
             let tracks_failed = register_int_counter_with_registry!(
-                opts!("kizunalink_tracks_failed_total", "Total track load failures"),
+                opts!(
+                    "kizunalink_tracks_failed_total",
+                    "Total track load failures"
+                ),
                 registry
-            ).unwrap();
+            )
+            .unwrap();
 
             let ws_connections = register_int_gauge_with_registry!(
                 opts!("kizunalink_ws_connections", "Current WebSocket connections"),
                 registry
-            ).unwrap();
+            )
+            .unwrap();
 
             let memory_used_bytes = register_gauge_with_registry!(
                 opts!("kizunalink_memory_used_bytes", "Memory usage in bytes"),
                 registry
-            ).unwrap();
+            )
+            .unwrap();
 
             let cpu_usage = register_gauge_with_registry!(
                 opts!("kizunalink_cpu_usage", "CPU usage ratio (0.0-1.0)"),
                 registry
-            ).unwrap();
+            )
+            .unwrap();
 
             let source_requests = register_int_counter_with_registry!(
-                opts!("kizunalink_source_requests_total", "Total source API requests"),
+                opts!(
+                    "kizunalink_source_requests_total",
+                    "Total source API requests"
+                ),
                 registry
-            ).unwrap();
+            )
+            .unwrap();
 
             let active_sessions = register_int_gauge_with_registry!(
-                opts!("kizunalink_active_sessions", "Number of active WebSocket sessions"),
+                opts!(
+                    "kizunalink_active_sessions",
+                    "Number of active WebSocket sessions"
+                ),
                 registry
-            ).unwrap();
+            )
+            .unwrap();
 
             let source_youtube = register_int_counter_with_registry!(
                 opts!("kizunalink_source_youtube_total", "YouTube source requests"),
                 registry
-            ).unwrap();
+            )
+            .unwrap();
             let source_spotify = register_int_counter_with_registry!(
                 opts!("kizunalink_source_spotify_total", "Spotify source requests"),
                 registry
-            ).unwrap();
+            )
+            .unwrap();
             let source_soundcloud = register_int_counter_with_registry!(
-                opts!("kizunalink_source_soundcloud_total", "SoundCloud source requests"),
+                opts!(
+                    "kizunalink_source_soundcloud_total",
+                    "SoundCloud source requests"
+                ),
                 registry
-            ).unwrap();
+            )
+            .unwrap();
             let source_jiosaavn = register_int_counter_with_registry!(
-                opts!("kizunalink_source_jiosaavn_total", "JioSaavn source requests"),
+                opts!(
+                    "kizunalink_source_jiosaavn_total",
+                    "JioSaavn source requests"
+                ),
                 registry
-            ).unwrap();
+            )
+            .unwrap();
             let source_deezer = register_int_counter_with_registry!(
                 opts!("kizunalink_source_deezer_total", "Deezer source requests"),
                 registry
-            ).unwrap();
+            )
+            .unwrap();
             let source_applemusic = register_int_counter_with_registry!(
-                opts!("kizunalink_source_applemusic_total", "Apple Music source requests"),
+                opts!(
+                    "kizunalink_source_applemusic_total",
+                    "Apple Music source requests"
+                ),
                 registry
-            ).unwrap();
+            )
+            .unwrap();
             let source_bandcamp = register_int_counter_with_registry!(
-                opts!("kizunalink_source_bandcamp_total", "Bandcamp source requests"),
+                opts!(
+                    "kizunalink_source_bandcamp_total",
+                    "Bandcamp source requests"
+                ),
                 registry
-            ).unwrap();
+            )
+            .unwrap();
             let source_twitch = register_int_counter_with_registry!(
                 opts!("kizunalink_source_twitch_total", "Twitch source requests"),
                 registry
-            ).unwrap();
+            )
+            .unwrap();
             let source_vimeo = register_int_counter_with_registry!(
                 opts!("kizunalink_source_vimeo_total", "Vimeo source requests"),
                 registry
-            ).unwrap();
+            )
+            .unwrap();
             let source_niconico = register_int_counter_with_registry!(
-                opts!("kizunalink_source_niconico_total", "NicoNico source requests"),
+                opts!(
+                    "kizunalink_source_niconico_total",
+                    "NicoNico source requests"
+                ),
                 registry
-            ).unwrap();
+            )
+            .unwrap();
             let source_http = register_int_counter_with_registry!(
                 opts!("kizunalink_source_http_total", "HTTP source requests"),
                 registry
-            ).unwrap();
+            )
+            .unwrap();
 
             let mirror_youtube = register_int_counter_with_registry!(
-                opts!("kizunalink_mirror_youtube_total", "Tracks mirrored to YouTube"),
+                opts!(
+                    "kizunalink_mirror_youtube_total",
+                    "Tracks mirrored to YouTube"
+                ),
                 registry
-            ).unwrap();
+            )
+            .unwrap();
             let mirror_jiosaavn = register_int_counter_with_registry!(
-                opts!("kizunalink_mirror_jiosaavn_total", "Tracks mirrored to JioSaavn"),
+                opts!(
+                    "kizunalink_mirror_jiosaavn_total",
+                    "Tracks mirrored to JioSaavn"
+                ),
                 registry
-            ).unwrap();
+            )
+            .unwrap();
 
             let errors_auth = register_int_counter_with_registry!(
                 opts!("kizunalink_errors_auth_total", "Authentication failures"),
                 registry
-            ).unwrap();
+            )
+            .unwrap();
             let errors_rate_limit = register_int_counter_with_registry!(
-                opts!("kizunalink_errors_rate_limit_total", "Rate limit rejections"),
+                opts!(
+                    "kizunalink_errors_rate_limit_total",
+                    "Rate limit rejections"
+                ),
                 registry
-            ).unwrap();
+            )
+            .unwrap();
             let errors_not_found = register_int_counter_with_registry!(
                 opts!("kizunalink_errors_not_found_total", "404 errors"),
                 registry
-            ).unwrap();
+            )
+            .unwrap();
             let errors_internal = register_int_counter_with_registry!(
                 opts!("kizunalink_errors_internal_total", "500 errors"),
                 registry
-            ).unwrap();
+            )
+            .unwrap();
 
             let requests_total = register_int_counter_with_registry!(
                 opts!("kizunalink_requests_total", "Total HTTP requests"),
                 registry
-            ).unwrap();
+            )
+            .unwrap();
             let requests_latency_ms = register_int_counter_with_registry!(
-                opts!("kizunalink_requests_latency_ms_total", "Total request latency in ms"),
+                opts!(
+                    "kizunalink_requests_latency_ms_total",
+                    "Total request latency in ms"
+                ),
                 registry
-            ).unwrap();
+            )
+            .unwrap();
 
             Metrics {
                 registry,
@@ -250,7 +327,14 @@ impl Metrics {
         String::from_utf8(buffer).unwrap()
     }
 
-    pub fn update_from_stats(&self, players: usize, playing: usize, uptime_ms: u64, mem_used: u64, cpu: f64) {
+    pub fn update_from_stats(
+        &self,
+        players: usize,
+        playing: usize,
+        uptime_ms: u64,
+        mem_used: u64,
+        cpu: f64,
+    ) {
         self.players_total.set(players as i64);
         self.players_playing.set(playing as i64);
         self.uptime_seconds.set(uptime_ms as f64 / 1000.0);

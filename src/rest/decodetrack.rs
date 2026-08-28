@@ -69,7 +69,11 @@ pub async fn decode_tracks(
     if track_strings.len() > MAX_DECODE_BATCH_SIZE {
         return Err(LavalinkError::new(
             StatusCode::BAD_REQUEST,
-            format!("Batch size {} exceeds maximum of {}", track_strings.len(), MAX_DECODE_BATCH_SIZE),
+            format!(
+                "Batch size {} exceeds maximum of {}",
+                track_strings.len(),
+                MAX_DECODE_BATCH_SIZE
+            ),
             "/v4/decodetracks",
         ));
     }

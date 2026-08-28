@@ -13,7 +13,6 @@
 ///
 /// Net: duration / (speed * rate), pitch * (pitch * speed). Correct for any
 /// combination, including defaults (all 1.0 => bit-identical passthrough).
-
 use super::wsola::Wsola;
 use rubato::{
     Resampler, SincFixedIn, SincInterpolationParameters, SincInterpolationType, WindowFunction,
@@ -191,10 +190,8 @@ impl Timescale {
                 }
             }
             for i in 0..self.res_out_pending[0].len() {
-                self.wsola.push(&[
-                    self.res_out_pending[0][i],
-                    self.res_out_pending[1][i],
-                ]);
+                self.wsola
+                    .push(&[self.res_out_pending[0][i], self.res_out_pending[1][i]]);
             }
             self.res_out_pending[0].clear();
             self.res_out_pending[1].clear();

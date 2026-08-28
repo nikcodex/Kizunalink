@@ -9,7 +9,6 @@
 /// it receives has already been through the DSP chain - true pre-mixer filtering.
 ///
 /// The same chain code path is exercised by offline verification tests.
-
 use std::io::{Read, Seek, SeekFrom};
 use std::sync::{Arc, Mutex};
 
@@ -123,8 +122,8 @@ impl Read for FilteredAudioReader {
                 let mut core = self.core.lock().unwrap();
                 let available_bytes = core.out_fifo.len() * std::mem::size_of::<f32>();
                 if available_bytes >= buf.len().min(BYTES_PER_FRAME) || core.eof {
-                    let take_samples = (buf.len() / std::mem::size_of::<f32>())
-                        .min(core.out_fifo.len());
+                    let take_samples =
+                        (buf.len() / std::mem::size_of::<f32>()).min(core.out_fifo.len());
                     let take_bytes = take_samples * std::mem::size_of::<f32>();
                     for (i, s) in core.out_fifo.drain(..take_samples).enumerate() {
                         buf[i * 4..i * 4 + 4].copy_from_slice(&s.to_le_bytes());
@@ -180,9 +179,7 @@ pub async fn create_filtered_input(
 ) -> Result<songbird::input::Input, String> {
     // Fast path: Opus passthrough — skip the entire decode+filter pipeline
     if opus_passthrough && !shared_chain.lock().unwrap().is_active() {
-        return Ok(
-            songbird::input::HttpRequest::new(http, stream_url).into(),
-        );
+        return Ok(songbird::input::HttpRequest::new(http, stream_url).into());
     }
 
     let (tx, rx) = std::sync::mpsc::sync_channel::<Vec<u8>>(256);
@@ -216,7 +213,11 @@ pub async fn create_filtered_input(
     let byte_source = ChannelByteSource::new(rx);
     let decoder = tokio::task::spawn_blocking(move || {
         let hint_ext: Option<&str> = extension_hint.as_deref();
-        AudioDecoder::open(Box::new(byte_source) as Box<dyn MediaSource>, hint_ext, skip_frames)
+        AudioDecoder::open(
+            Box::new(byte_source) as Box<dyn MediaSource>,
+            hint_ext,
+            skip_frames,
+        )
     })
     .await
     .map_err(|e| format!("decoder task panicked: {}", e))??;

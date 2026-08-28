@@ -1,7 +1,6 @@
 /// Low-pass filter - attenuates high frequency content.
 /// `smoothing` maps to cutoff: cutoff = sample_rate / (2 * smoothing),
 /// so higher smoothing = duller sound (lavaplayer-style behavior).
-
 use super::biquad::BiquadFilter;
 
 #[derive(Debug)]
@@ -25,8 +24,8 @@ impl LowPass {
     }
 
     fn rebuild(&mut self) {
-        let cutoff = (self.sample_rate / (2.0 * self.smoothing))
-            .clamp(50.0, self.sample_rate / 2.0 * 0.95);
+        let cutoff =
+            (self.sample_rate / (2.0 * self.smoothing)).clamp(50.0, self.sample_rate / 2.0 * 0.95);
         self.filter_l = BiquadFilter::lowpass(self.sample_rate, cutoff, 0.707);
         self.filter_r = BiquadFilter::lowpass(self.sample_rate, cutoff, 0.707);
     }
@@ -102,7 +101,11 @@ mod tests {
         let low_amp = tone_energy(&buf, 100.0, 48000.0);
         let high_amp = tone_energy(&buf, 10000.0, 48000.0);
 
-        assert!(low_amp > 0.4, "low freq should pass through (amp={})", low_amp);
+        assert!(
+            low_amp > 0.4,
+            "low freq should pass through (amp={})",
+            low_amp
+        );
         assert!(
             high_amp < low_amp * 0.25,
             "high freq should be strongly attenuated (high={} low={})",

@@ -87,8 +87,9 @@ impl NativePlugin {
 
         // Free the allocated string if the plugin provides a free function
         if let Some(free_fn_addr) = self.free_fn {
-            let free_fn =
-                unsafe { std::mem::transmute::<usize, unsafe extern "C" fn(*mut u8)>(free_fn_addr) };
+            let free_fn = unsafe {
+                std::mem::transmute::<usize, unsafe extern "C" fn(*mut u8)>(free_fn_addr)
+            };
             unsafe { free_fn(result_ptr) };
         }
 

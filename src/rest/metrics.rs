@@ -1,8 +1,4 @@
-use axum::{
-    extract::State,
-    http::HeaderMap,
-    response::Response,
-};
+use axum::{extract::State, http::HeaderMap, response::Response};
 
 use crate::metrics::Metrics;
 use crate::rest::auth::require_auth;

@@ -1,7 +1,7 @@
 use crate::models::track::LavalinkTrack;
 use crate::sources::jiosaavn::JioSaavnSource;
-use crate::sources::youtube::YouTubeSource;
 use crate::sources::spotify::SpotifySource;
+use crate::sources::youtube::YouTubeSource;
 use std::collections::{HashSet, VecDeque};
 use tracing::info;
 
@@ -38,7 +38,11 @@ impl AutoplayEngine {
     }
 
     pub fn record_track(&mut self, track: &LavalinkTrack) {
-        let title_lower = format!("{} {}", track.info.title.to_lowercase(), track.info.author.to_lowercase());
+        let title_lower = format!(
+            "{} {}",
+            track.info.title.to_lowercase(),
+            track.info.author.to_lowercase()
+        );
         self.recent_tracks.push_back(title_lower);
         if self.recent_tracks.len() > self.max_history {
             self.recent_tracks.pop_front();
@@ -83,7 +87,8 @@ impl AutoplayEngine {
                     continue;
                 }
 
-                let normalized = normalize_title(&format!("{} {}", track.info.title, track.info.author));
+                let normalized =
+                    normalize_title(&format!("{} {}", track.info.title, track.info.author));
                 if self.is_duplicate(&normalized) {
                     continue;
                 }
@@ -108,7 +113,8 @@ impl AutoplayEngine {
             );
             Some(best)
         } else {
-            self.fallback_search(jiosaavn, youtube, spotify, artist).await
+            self.fallback_search(jiosaavn, youtube, spotify, artist)
+                .await
         }
     }
 
@@ -125,7 +131,13 @@ impl AutoplayEngine {
         ]
     }
 
-    fn score_track(&self, track: &LavalinkTrack, original_artist: &str, original_duration: u64, original_source: &str) -> f64 {
+    fn score_track(
+        &self,
+        track: &LavalinkTrack,
+        original_artist: &str,
+        original_duration: u64,
+        original_source: &str,
+    ) -> f64 {
         let mut score = 0.0f64;
 
         if are_artists_related(&track.info.author, original_artist) {
@@ -181,7 +193,8 @@ impl AutoplayEngine {
 
         for track in tracks {
             if !self.played_ids.contains(&track.info.identifier) {
-                let normalized = normalize_title(&format!("{} {}", track.info.title, track.info.author));
+                let normalized =
+                    normalize_title(&format!("{} {}", track.info.title, track.info.author));
                 if !self.is_duplicate(&normalized) {
                     return Some(track);
                 }
@@ -199,7 +212,19 @@ fn normalize_title(title: &str) -> String {
         .filter(|c| c.is_alphanumeric() || c.is_whitespace())
         .collect();
 
-    let stops = ["official", "music video", "audio", "lyrics", "hd", "4k", "remix", "feat", "ft", "explicit", "clean"];
+    let stops = [
+        "official",
+        "music video",
+        "audio",
+        "lyrics",
+        "hd",
+        "4k",
+        "remix",
+        "feat",
+        "ft",
+        "explicit",
+        "clean",
+    ];
     let mut result = cleaned.clone();
     for stop in &stops {
         result = result.replace(stop, "");
@@ -253,7 +278,11 @@ fn levenshtein_ratio(a: &str, b: &str) -> f64 {
 
     for i in 1..=a_len {
         for j in 1..=b_len {
-            let cost = if a_chars[i - 1] == b_chars[j - 1] { 0 } else { 1 };
+            let cost = if a_chars[i - 1] == b_chars[j - 1] {
+                0
+            } else {
+                1
+            };
             matrix[i][j] = (matrix[i - 1][j] + 1)
                 .min(matrix[i][j - 1] + 1)
                 .min(matrix[i - 1][j - 1] + cost);

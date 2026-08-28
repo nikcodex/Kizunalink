@@ -1,18 +1,18 @@
-mod plugins;
 mod config;
-pub mod dsp;
 mod dave;
+pub mod dsp;
+pub mod metrics;
 mod models;
 mod player;
-pub mod metrics;
+mod plugins;
+pub mod ratelimit;
 mod rest;
+pub mod security;
 mod sources;
 mod stats;
 mod track_encoding;
 pub mod util;
 mod ws;
-pub mod ratelimit;
-pub mod security;
 
 use axum::{
     routing::{get, patch, post},
@@ -24,12 +24,12 @@ use tower_http::cors::{Any, CorsLayer};
 use tracing::{info, warn};
 
 use player::manager::PlayerManager;
-use ratelimit::{RateLimiter, RateLimitConfig};
+use ratelimit::{RateLimitConfig, RateLimiter};
 use sources::{
     apple_music::AppleMusicSource, bandcamp::BandcampSource, deezer::DeezerSource,
     jiosaavn::JioSaavnSource, niconico::NicoNicoSource, route_planner::RoutePlanner,
-    soundcloud::SoundCloudSource, spotify::SpotifySource, twitch::TwitchSource,
-    vimeo::VimeoSource, youtube::YouTubeSource,
+    soundcloud::SoundCloudSource, spotify::SpotifySource, twitch::TwitchSource, vimeo::VimeoSource,
+    youtube::YouTubeSource,
 };
 
 #[derive(Clone)]
@@ -67,8 +67,7 @@ async fn main() {
     let config = config::AppConfig::load();
 
     // Initialize structured logging from config
-    let log_level = std::env::var("RUST_LOG")
-        .unwrap_or_else(|_| config.logging.level.clone());
+    let log_level = std::env::var("RUST_LOG").unwrap_or_else(|_| config.logging.level.clone());
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
@@ -163,7 +162,10 @@ async fn main() {
         .route("/v4/loadtracks", get(rest::loadtracks::load_tracks))
         .route("/v4/decodetrack", get(rest::decodetrack::decode_track))
         .route("/v4/decodetracks", post(rest::decodetrack::decode_tracks))
-        .route("/v4/sessions/:session_id", patch(rest::session::update_session))
+        .route(
+            "/v4/sessions/:session_id",
+            patch(rest::session::update_session),
+        )
         .route("/v4/players/all", get(rest::players::get_all_players))
         .route(
             "/v4/sessions/:session_id/players",
@@ -194,9 +196,9 @@ async fn main() {
         )
         .route("/", get(|| async { "4.2.1" }))
         .route("/v4/websocket", get(ws::handler::ws_handler))
-        .layer(
-            tower_http::limit::RequestBodyLimitLayer::new(config.security.max_body_size),
-        )
+        .layer(tower_http::limit::RequestBodyLimitLayer::new(
+            config.security.max_body_size,
+        ))
         .layer(
             CorsLayer::new()
                 .allow_origin(Any)
@@ -215,8 +217,7 @@ async fn main() {
         loop {
             interval.tick().await;
             system_stats.refresh().await;
-            let (total_players, playing_players) =
-                stats_state.player_manager.count_players().await;
+            let (total_players, playing_players) = stats_state.player_manager.count_players().await;
             let uptime = stats_state.start_time.elapsed().as_millis() as u64;
             let memory = system_stats.get_memory_stats().await;
             let cpu = system_stats.get_cpu_stats().await;
@@ -247,7 +248,6 @@ async fn main() {
             let _ = stats_state.event_tx.send(stats.to_string());
         }
     });
-
 
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(5));

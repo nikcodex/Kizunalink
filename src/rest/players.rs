@@ -119,11 +119,7 @@ pub async fn update_player(
 
     // Validate guild ID
     if let Err(e) = security::validate_guild_id(&guild_id) {
-        return Err(LavalinkError::new(
-            StatusCode::BAD_REQUEST,
-            e,
-            &path,
-        ));
+        return Err(LavalinkError::new(StatusCode::BAD_REQUEST, e, &path));
     }
 
     let no_replace = query.no_replace.unwrap_or(false);

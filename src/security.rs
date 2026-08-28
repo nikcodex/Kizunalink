@@ -12,11 +12,11 @@ pub const MAX_QUERY_LENGTH: usize = 512;
 
 /// Blocked IP ranges (localhost, private networks) for SSRF protection.
 const BLOCKED_RANGES: &[(u8, u8, u8, u8)] = &[
-    (10, 0, 0, 0),     // 10.0.0.0/8
-    (172, 16, 0, 0),   // 172.16.0.0/12
-    (192, 168, 0, 0),  // 192.168.0.0/16
-    (127, 0, 0, 0),    // 127.0.0.0/8 (localhost)
-    (169, 254, 0, 0),  // 169.254.0.0/16 (link-local)
+    (10, 0, 0, 0),    // 10.0.0.0/8
+    (172, 16, 0, 0),  // 172.16.0.0/12
+    (192, 168, 0, 0), // 192.168.0.0/16
+    (127, 0, 0, 0),   // 127.0.0.0/8 (localhost)
+    (169, 254, 0, 0), // 169.254.0.0/16 (link-local)
 ];
 
 /// Validate a URL for SSRF protection.

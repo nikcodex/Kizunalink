@@ -19,11 +19,9 @@ use crate::AppState;
 
 const MAX_WS_MESSAGE_SIZE: usize = 65536;
 
-static SESSION_STORE: LazyLock<DashMap<String, std::time::Instant>> =
-    LazyLock::new(DashMap::new);
+static SESSION_STORE: LazyLock<DashMap<String, std::time::Instant>> = LazyLock::new(DashMap::new);
 
-static SESSION_STATE: LazyLock<DashMap<String, SessionState>> =
-    LazyLock::new(DashMap::new);
+static SESSION_STATE: LazyLock<DashMap<String, SessionState>> = LazyLock::new(DashMap::new);
 
 struct SessionState {
     resuming: bool,
@@ -45,7 +43,11 @@ pub fn get_session_state(session_id: &str) -> Option<(bool, u64)> {
         .map(|s| (s.resuming, s.timeout))
 }
 
-pub fn update_session_state(session_id: &str, resuming: Option<bool>, timeout: Option<u64>) -> (bool, u64) {
+pub fn update_session_state(
+    session_id: &str,
+    resuming: Option<bool>,
+    timeout: Option<u64>,
+) -> (bool, u64) {
     let mut entry = SESSION_STATE
         .entry(session_id.to_string())
         .or_insert_with(SessionState::default);
@@ -60,7 +62,10 @@ pub fn update_session_state(session_id: &str, resuming: Option<bool>, timeout: O
 
 /// Returns all active session IDs.
 pub fn get_session_ids() -> Vec<String> {
-    SESSION_STORE.iter().map(|entry| entry.key().clone()).collect()
+    SESSION_STORE
+        .iter()
+        .map(|entry| entry.key().clone())
+        .collect()
 }
 
 pub async fn ws_handler(
@@ -112,11 +117,7 @@ pub async fn ws_handler(
     ws.on_upgrade(move |socket| handle_socket(socket, state, session_id))
 }
 
-async fn handle_socket(
-    mut socket: WebSocket,
-    state: AppState,
-    resume_session_id: Option<String>,
-) {
+async fn handle_socket(mut socket: WebSocket, state: AppState, resume_session_id: Option<String>) {
     let (session_id, is_resumed) = if let Some(resume_id) = resume_session_id {
         if SESSION_STORE.contains_key(&resume_id) {
             (resume_id, true)
@@ -175,7 +176,10 @@ async fn handle_socket(
         match msg {
             Ok(Message::Text(text)) => {
                 if text.len() > MAX_WS_MESSAGE_SIZE {
-                    warn!("WebSocket message too large ({} bytes), dropping", text.len());
+                    warn!(
+                        "WebSocket message too large ({} bytes), dropping",
+                        text.len()
+                    );
                     continue;
                 }
                 handle_ws_message(&state, &text).await;
@@ -324,27 +328,36 @@ async fn handle_ws_message(state: &AppState, text: &str) {
         }
         "queueTrack" => {
             if let Some(encoded) = msg.get("encoded").and_then(|e| e.as_str()) {
-                let _ = state.player_manager.queue_track(guild_id, encoded).await
+                let _ = state
+                    .player_manager
+                    .queue_track(guild_id, encoded)
+                    .await
                     .map_err(|e| warn!("WS queueTrack failed for guild {}: {}", guild_id, e));
             }
         }
         "skipTrack" => {
-            let _ = state.player_manager.skip_track(guild_id).await
+            let _ = state
+                .player_manager
+                .skip_track(guild_id)
+                .await
                 .map_err(|e| warn!("WS skipTrack failed for guild {}: {}", guild_id, e));
         }
         "previousTrack" => {
-            let _ = state.player_manager.previous_track(guild_id).await
+            let _ = state
+                .player_manager
+                .previous_track(guild_id)
+                .await
                 .map_err(|e| warn!("WS previousTrack failed for guild {}: {}", guild_id, e));
         }
         "autoplay" => {
-            let _ = state.player_manager.toggle_autoplay(guild_id).await
+            let _ = state
+                .player_manager
+                .toggle_autoplay(guild_id)
+                .await
                 .map_err(|e| warn!("WS autoplay failed for guild {}: {}", guild_id, e));
         }
         "loop" => {
-            let mode = msg
-                .get("mode")
-                .and_then(|m| m.as_str())
-                .unwrap_or("none");
+            let mode = msg.get("mode").and_then(|m| m.as_str()).unwrap_or("none");
             let loop_mode = match mode {
                 "track" => crate::player::queue::LoopMode::Track,
                 "queue" => crate::player::queue::LoopMode::Queue,
@@ -357,11 +370,17 @@ async fn handle_ws_message(state: &AppState, text: &str) {
                 .map_err(|e| warn!("WS loop failed for guild {}: {}", guild_id, e));
         }
         "shuffleQueue" => {
-            let _ = state.player_manager.shuffle_queue(guild_id).await
+            let _ = state
+                .player_manager
+                .shuffle_queue(guild_id)
+                .await
                 .map_err(|e| warn!("WS shuffleQueue failed for guild {}: {}", guild_id, e));
         }
         "clearQueue" => {
-            let _ = state.player_manager.clear_queue(guild_id).await
+            let _ = state
+                .player_manager
+                .clear_queue(guild_id)
+                .await
                 .map_err(|e| warn!("WS clearQueue failed for guild {}: {}", guild_id, e));
         }
         "destroyPlayer" => {

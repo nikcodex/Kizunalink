@@ -1,8 +1,4 @@
-use axum::{
-    extract::State,
-    http::HeaderMap,
-    response::Json,
-};
+use axum::{extract::State, http::HeaderMap, response::Json};
 
 use crate::rest::auth::require_auth;
 use crate::rest::error::LavalinkError;
@@ -16,9 +12,7 @@ pub async fn list_sessions(
 ) -> Result<Json<serde_json::Value>, LavalinkError> {
     require_auth(&headers, &state.password, "/v4/sessions")?;
 
-    let sessions: Vec<String> = get_session_ids()
-        .into_iter()
-        .collect();
+    let sessions: Vec<String> = get_session_ids().into_iter().collect();
 
     Ok(Json(serde_json::json!({
         "sessions": sessions,

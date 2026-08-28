@@ -28,14 +28,30 @@ impl Distortion {
         }
     }
 
-    pub fn set_sin_offset(&mut self, v: f64) { self.sin_offset = v; }
-    pub fn set_sin_scale(&mut self, v: f64) { self.sin_scale = v; }
-    pub fn set_cos_offset(&mut self, v: f64) { self.cos_offset = v; }
-    pub fn set_cos_scale(&mut self, v: f64) { self.cos_scale = v; }
-    pub fn set_tan_offset(&mut self, v: f64) { self.tan_offset = v; }
-    pub fn set_tan_scale(&mut self, v: f64) { self.tan_scale = v; }
-    pub fn set_offset(&mut self, v: f64) { self.offset = v; }
-    pub fn set_scale(&mut self, v: f64) { self.scale = v; }
+    pub fn set_sin_offset(&mut self, v: f64) {
+        self.sin_offset = v;
+    }
+    pub fn set_sin_scale(&mut self, v: f64) {
+        self.sin_scale = v;
+    }
+    pub fn set_cos_offset(&mut self, v: f64) {
+        self.cos_offset = v;
+    }
+    pub fn set_cos_scale(&mut self, v: f64) {
+        self.cos_scale = v;
+    }
+    pub fn set_tan_offset(&mut self, v: f64) {
+        self.tan_offset = v;
+    }
+    pub fn set_tan_scale(&mut self, v: f64) {
+        self.tan_scale = v;
+    }
+    pub fn set_offset(&mut self, v: f64) {
+        self.offset = v;
+    }
+    pub fn set_scale(&mut self, v: f64) {
+        self.scale = v;
+    }
 
     /// Wrap x into (-pi/2, pi/2) so tan stays finite.
     #[inline]

@@ -107,11 +107,7 @@ impl YouTubeSource {
     }
 
     /// Try InnerTube clients in order until one succeeds
-    async fn innertube_request(
-        &self,
-        endpoint: &str,
-        payload: &Value,
-    ) -> Result<Value, String> {
+    async fn innertube_request(&self, endpoint: &str, payload: &Value) -> Result<Value, String> {
         let (client, bound_ip) = self.get_http_client();
 
         for it_client in INNERTUBE_CLIENTS {
@@ -121,10 +117,7 @@ impl YouTubeSource {
             );
 
             let mut headers = HeaderMap::new();
-            headers.insert(
-                USER_AGENT,
-                HeaderValue::from_static(it_client.user_agent),
-            );
+            headers.insert(USER_AGENT, HeaderValue::from_static(it_client.user_agent));
             headers.insert(
                 "X-YouTube-Client-Name",
                 HeaderValue::from_str(&it_client.client_id.to_string()).unwrap(),
@@ -281,8 +274,8 @@ impl YouTubeSource {
                     .map(|s| s.to_string())
             });
 
-        let stream_url = audio_url
-            .unwrap_or_else(|| format!("https://www.youtube.com/watch?v={}", video_id));
+        let stream_url =
+            audio_url.unwrap_or_else(|| format!("https://www.youtube.com/watch?v={}", video_id));
 
         let mut track = LavalinkTrack {
             encoded: String::new(),

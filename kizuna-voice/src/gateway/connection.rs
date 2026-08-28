@@ -10,6 +10,7 @@ use tokio_tungstenite::{
 use tracing::{debug, error, info, warn};
 
 use super::payload::{Identify, Ready, SessionDescription, VoicePayload};
+use crate::dave::protocol::{DaveClientMessage, DaveGatewayMessage};
 use crate::error::{Error, Result};
 
 #[derive(Debug)]
@@ -19,6 +20,7 @@ pub enum GatewayEvent {
     Resumed,
     HeartbeatAck,
     Hello(f64),
+    DaveMessage(DaveGatewayMessage),
     Unknown(VoicePayload),
 }
 
@@ -87,6 +89,20 @@ impl VoiceGatewayClient {
         self.send_payload(&payload).await
     }
 
+    pub async fn send_dave_message(&mut self, message: DaveClientMessage) -> Result<()> {
+        let payload = match message {
+            DaveClientMessage::KeyPackage(kp) => VoicePayload {
+                op: 26,
+                d: json!({"key_package": kp}),
+            },
+            DaveClientMessage::MlsMessage(mls) => VoicePayload {
+                op: 24, // Assuming 24 is proposal
+                d: json!({"data": mls}),
+            },
+        };
+        self.send_payload(&payload).await
+    }
+
     pub async fn send_payload(&mut self, payload: &VoicePayload) -> Result<()> {
         let msg = serde_json::to_string(payload).unwrap();
         debug!("Sending payload: {}", msg);
@@ -126,6 +142,62 @@ impl VoiceGatewayClient {
                             Ok(GatewayEvent::Hello(interval))
                         }
                         9 => Ok(GatewayEvent::Resumed),
+                        21 => {
+                            let transition_id = payload
+                                .d
+                                .get("transition_id")
+                                .and_then(Value::as_u64)
+                                .unwrap_or(0) as u8;
+                            let protocol_version = payload
+                                .d
+                                .get("protocol_version")
+                                .and_then(Value::as_u64)
+                                .unwrap_or(0)
+                                as u32;
+                            Ok(GatewayEvent::DaveMessage(
+                                DaveGatewayMessage::PrepareTransition {
+                                    transition_id,
+                                    protocol_version,
+                                },
+                            ))
+                        }
+                        22 => {
+                            let transition_id = payload
+                                .d
+                                .get("transition_id")
+                                .and_then(Value::as_u64)
+                                .unwrap_or(0) as u8;
+                            Ok(GatewayEvent::DaveMessage(
+                                DaveGatewayMessage::ExecuteTransition { transition_id },
+                            ))
+                        }
+                        24 => {
+                            let epoch_id = payload
+                                .d
+                                .get("epoch_id")
+                                .and_then(Value::as_u64)
+                                .unwrap_or(0);
+                            Ok(GatewayEvent::DaveMessage(
+                                DaveGatewayMessage::PrepareEpoch { epoch_id },
+                            ))
+                        }
+                        25 => {
+                            // Stub parse logic
+                            let credential = vec![];
+                            let signature_key = vec![];
+                            Ok(GatewayEvent::DaveMessage(
+                                DaveGatewayMessage::MlsExternalSenderPackage {
+                                    credential,
+                                    signature_key,
+                                },
+                            ))
+                        }
+                        26 => {
+                            let key_package = vec![];
+                            Ok(GatewayEvent::DaveMessage(
+                                DaveGatewayMessage::MlsKeyPackage { key_package },
+                            ))
+                        }
                         _ => Ok(GatewayEvent::Unknown(payload)),
                     };
                 }

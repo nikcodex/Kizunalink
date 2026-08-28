@@ -122,11 +122,7 @@ impl IpBlock {
             IpBlock::Ipv6Subnet {
                 base, mask, size, ..
             } => {
-                let host = if *size == 0 {
-                    0
-                } else {
-                    index % size
-                };
+                let host = if *size == 0 { 0 } else { index % size };
                 let addr_u128 = (base & mask) | (host & !mask);
                 IpAddr::V6(Ipv6Addr::from(addr_u128))
             }
@@ -146,9 +142,7 @@ impl Strategy {
     pub fn parse(s: &str) -> Self {
         match s.to_ascii_lowercase().as_str() {
             "nano" | "nanoiprouteplanner" => Strategy::NanoIpRoutePlanner,
-            "rotatingnano" | "rotatingnanoiprouteplanner" => {
-                Strategy::RotatingNanoIpRoutePlanner
-            }
+            "rotatingnano" | "rotatingnanoiprouteplanner" => Strategy::RotatingNanoIpRoutePlanner,
             "balancing" | "balancingiprouteplanner" => Strategy::BalancingIpRoutePlanner,
             _ => Strategy::RotatingIpRoutePlanner,
         }
@@ -176,11 +170,7 @@ pub struct RoutePlanner {
 }
 
 impl RoutePlanner {
-    pub fn new(
-        ip_blocks: &[String],
-        strategy_str: &str,
-        excluded_ips: &[String],
-    ) -> Option<Self> {
+    pub fn new(ip_blocks: &[String], strategy_str: &str, excluded_ips: &[String]) -> Option<Self> {
         let mut blocks = Vec::new();
         for s in ip_blocks {
             if let Some(block) = IpBlock::parse(s) {
@@ -251,12 +241,10 @@ impl RoutePlanner {
                 Strategy::RotatingIpRoutePlanner => {
                     self.rotate_index.fetch_add(1, Ordering::Relaxed) as u128
                 }
-                Strategy::NanoIpRoutePlanner => {
-                    SystemTime::now()
-                        .duration_since(UNIX_EPOCH)
-                        .unwrap_or_default()
-                        .as_nanos()
-                }
+                Strategy::NanoIpRoutePlanner => SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_nanos(),
                 Strategy::RotatingNanoIpRoutePlanner => {
                     let r = self.rotate_index.fetch_add(1, Ordering::Relaxed) as u128;
                     let nanos = SystemTime::now()
@@ -355,7 +343,10 @@ impl RoutePlanner {
             })
             .or_insert((now_ms, 1));
 
-        warn!("⚠️ RoutePlanner: Marked {} as failing at {}ms", addr, now_ms);
+        warn!(
+            "⚠️ RoutePlanner: Marked {} as failing at {}ms",
+            addr, now_ms
+        );
     }
 
     /// Unmark a specific failing address (Lavalink REST endpoint).
@@ -375,9 +366,11 @@ impl RoutePlanner {
 
     /// Generate the Lavalink v4 JSON status response.
     pub fn status_json(&self) -> serde_json::Value {
-        let primary_block = self.blocks.first().cloned().unwrap_or(IpBlock::Single(
-            IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
-        ));
+        let primary_block = self
+            .blocks
+            .first()
+            .cloned()
+            .unwrap_or(IpBlock::Single(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))));
 
         let failing: Vec<serde_json::Value> = self
             .failing_addresses

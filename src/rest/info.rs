@@ -1,5 +1,5 @@
-use axum::response::Json;
 use crate::models::protocol::{GitInfo, ServerInfo, VersionInfo};
+use axum::response::Json;
 
 pub async fn get_version() -> &'static str {
     "4.2.1"

@@ -25,14 +25,7 @@ pub async fn update_session(
         return Err(LavalinkError::new(StatusCode::BAD_REQUEST, e, path));
     }
 
-    let (resuming, timeout) = update_session_state(
-        &session_id,
-        payload.resuming,
-        payload.timeout,
-    );
+    let (resuming, timeout) = update_session_state(&session_id, payload.resuming, payload.timeout);
 
-    Ok(Json(SessionResponse {
-        resuming,
-        timeout,
-    }))
+    Ok(Json(SessionResponse { resuming, timeout }))
 }

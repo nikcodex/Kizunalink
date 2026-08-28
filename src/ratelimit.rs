@@ -105,9 +105,10 @@ impl RateLimiter {
         if let Some(&limit) = self.config.source_limits.get(source) {
             let key = format!("{}:{}", ip, source);
             let rate = limit as f64 / self.config.window.as_secs() as f64;
-            let mut bucket = self.buckets.entry(key).or_insert_with(|| {
-                TokenBucket::new(limit as f64, rate)
-            });
+            let mut bucket = self
+                .buckets
+                .entry(key)
+                .or_insert_with(|| TokenBucket::new(limit as f64, rate));
             bucket.try_consume(1.0)
         } else {
             true

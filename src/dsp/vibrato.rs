@@ -50,7 +50,11 @@ impl Vibrato {
         let delay_in_buf = delay_samples * 2.0;
         let read_pos = self.write_pos as f64 - delay_in_buf;
         let len = self.buffer.len() as f64;
-        let rp = if read_pos < 0.0 { read_pos + len } else { read_pos };
+        let rp = if read_pos < 0.0 {
+            read_pos + len
+        } else {
+            read_pos
+        };
 
         // Ensure we land on even indices (frame boundaries) before adding channel offset
         let frame_pos = rp / 2.0;
@@ -127,7 +131,11 @@ mod tests {
         // After ~6ms (base delay) the output must be the delayed DC = same value
         let tail = &buf[96000 - 200..];
         for s in tail {
-            assert!((s - 0.75).abs() < 1e-3, "expected passthrough after delay, got {}", s);
+            assert!(
+                (s - 0.75).abs() < 1e-3,
+                "expected passthrough after delay, got {}",
+                s
+            );
         }
     }
 
@@ -164,7 +172,8 @@ mod tests {
         assert!(
             max as f32 / min as f32 > 1.05,
             "zero-crossing intervals should vary under vibrato (min={} max={})",
-            min, max
+            min,
+            max
         );
     }
 }

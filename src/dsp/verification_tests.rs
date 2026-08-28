@@ -40,7 +40,11 @@ fn analyze_chord(samples: &[f32]) -> RefAnalysis {
     // Use middle section to avoid resampler/edge transients
     let start = SAMPLE_RATE as usize; // skip first second
     let end = samples.len().saturating_sub(SAMPLE_RATE as usize / 2);
-    let mid = if end > start { &samples[start..end] } else { samples };
+    let mid = if end > start {
+        &samples[start..end]
+    } else {
+        samples
+    };
 
     let mono: Vec<f32> = mid.chunks(2).map(|c| c[0]).collect();
     RefAnalysis {
@@ -58,17 +62,16 @@ fn verify_all_filters_offline() {
     let input_stereo = generate_chord(DURATION_S, SAMPLE_RATE);
 
     println!("\n=== KizunaLink offline DSP verification ===");
-    println!("input: {} s chord (100 Hz + 1 kHz + 10 kHz), 48 kHz stereo", DURATION_S);
+    println!(
+        "input: {} s chord (100 Hz + 1 kHz + 10 kHz), 48 kHz stereo",
+        DURATION_S
+    );
     println!("output dir: {}", dir.display());
     println!();
 
     let mut results: Vec<(String, bool)> = Vec::new();
     let mut check = |name: &str, ok: bool| {
-        println!(
-            "[{}] {}",
-            if ok { "PASS" } else { "FAIL" },
-            name
-        );
+        println!("[{}] {}", if ok { "PASS" } else { "FAIL" }, name);
         results.push((name.to_string(), ok));
     };
 
@@ -108,17 +111,26 @@ fn verify_all_filters_offline() {
     let gain_1k = db(a.amp1k / refa.amp1k);
     let gain_10k = db(a.amp10k / refa.amp10k);
     check(
-        &format!("eq boost band8: +{:.1} dB @1kHz (expected >= +0.5 dB)", gain_1k),
+        &format!(
+            "eq boost band8: +{:.1} dB @1kHz (expected >= +0.5 dB)",
+            gain_1k
+        ),
         gain_1k >= 0.5,
     );
     check(
-        &format!("eq boost band8 leaves 10kHz mostly unchanged ({:+.1} dB)", gain_10k),
+        &format!(
+            "eq boost band8 leaves 10kHz mostly unchanged ({:+.1} dB)",
+            gain_10k
+        ),
         gain_10k < 4.0,
     );
 
     // ---------- 3. Equalizer cut @10kHz ----------
     let filters = Filters {
-        equalizer: Some(vec![Band { band: 14, gain: -0.25 }]),
+        equalizer: Some(vec![Band {
+            band: 14,
+            gain: -0.25,
+        }]),
         ..Default::default()
     };
     let (out, _) = run_through_pipeline(&input_stereo, &filters, SAMPLE_RATE, false);
@@ -127,7 +139,10 @@ fn verify_all_filters_offline() {
     let cut_10k = db(a.amp10k / refa.amp10k);
     let keep_100 = db(a.amp100 / refa.amp100);
     check(
-        &format!("eq cut band14: {:.1} dB @10kHz (expected <= 0.0 dB)", cut_10k),
+        &format!(
+            "eq cut band14: {:.1} dB @10kHz (expected <= 0.0 dB)",
+            cut_10k
+        ),
         cut_10k <= 0.5,
     );
     check(
@@ -238,7 +253,10 @@ fn verify_all_filters_offline() {
         ),
         (duration_ratio - 1.0).abs() < 0.08,
     );
-    let mid: Vec<f32> = out[(SAMPLE_RATE as usize)..].chunks(2).map(|c| c[0]).collect();
+    let mid: Vec<f32> = out[(SAMPLE_RATE as usize)..]
+        .chunks(2)
+        .map(|c| c[0])
+        .collect();
     let at1500 = goertzel(&mid, 1500.0, SAMPLE_RATE);
     let at1000 = goertzel(&mid, 1000.0, SAMPLE_RATE);
     check(
@@ -251,7 +269,10 @@ fn verify_all_filters_offline() {
 
     // ---------- 5d. Speed raises pitch (varispeed semantics) ----------
     let (out, _) = run_through_pipeline(&tone, &filters_speed_only(), SAMPLE_RATE, false);
-    let mid: Vec<f32> = out[(SAMPLE_RATE as usize / 2)..].chunks(2).map(|c| c[0]).collect();
+    let mid: Vec<f32> = out[(SAMPLE_RATE as usize / 2)..]
+        .chunks(2)
+        .map(|c| c[0])
+        .collect();
     let at1500 = goertzel(&mid, 1500.0, SAMPLE_RATE);
     let at1000 = goertzel(&mid, 1000.0, SAMPLE_RATE);
     check(
@@ -280,7 +301,10 @@ fn verify_all_filters_offline() {
     let cv = var.sqrt() / mean;
     // depth .8 => amplitude swings between ~0.2 and 1.0 => high CV
     check(
-        &format!("tremolo 5Hz depth 0.8 produces amplitude oscillation (CV={:.3})", cv),
+        &format!(
+            "tremolo 5Hz depth 0.8 produces amplitude oscillation (CV={:.3})",
+            cv
+        ),
         cv > 0.30,
     );
     // Oscillation frequency ~5 Hz: count envelope minima over time
@@ -293,7 +317,10 @@ fn verify_all_filters_offline() {
     }
     let osc_freq = peaks as f64 * env_sr / env.len() as f64;
     check(
-        &format!("tremolo oscillation frequency ~{:.1} Hz (expected ~5)", osc_freq),
+        &format!(
+            "tremolo oscillation frequency ~{:.1} Hz (expected ~5)",
+            osc_freq
+        ),
         (osc_freq - 5.0).abs() < 1.5,
     );
 
@@ -307,7 +334,10 @@ fn verify_all_filters_offline() {
     };
     let (out, _) = run_through_pipeline(&tone, &filters, SAMPLE_RATE, false);
     write_wav_i16(&dir.join("vibrato_5hz_tone1k.wav"), &out, 48000, 2);
-    let mid: Vec<f32> = out[(SAMPLE_RATE as usize)..].chunks(2).map(|c| c[0]).collect();
+    let mid: Vec<f32> = out[(SAMPLE_RATE as usize)..]
+        .chunks(2)
+        .map(|c| c[0])
+        .collect();
     // Measure instantaneous frequency spread via short-window zero crossing
     let win = 960usize; // 20 ms
     let mut freqs = Vec::new();
@@ -342,7 +372,11 @@ fn verify_all_filters_offline() {
     };
     let (out, _) = run_through_pipeline(&tone, &filters, SAMPLE_RATE, false);
     write_wav_i16(&dir.join("distortion_drive.wav"), &out, 48000, 2);
-    let mid: Vec<f32> = out[(SAMPLE_RATE as usize)..].to_vec().chunks(2).map(|c| c[0]).collect();
+    let mid: Vec<f32> = out[(SAMPLE_RATE as usize)..]
+        .to_vec()
+        .chunks(2)
+        .map(|c| c[0])
+        .collect();
     let fund = goertzel(&mid, 1000.0, SAMPLE_RATE);
     let h2 = goertzel(&mid, 2000.0, SAMPLE_RATE);
     let h3 = goertzel(&mid, 3000.0, SAMPLE_RATE);
@@ -406,8 +440,14 @@ fn verify_all_filters_offline() {
     let (out, _) = run_through_pipeline(&panned, &filters, SAMPLE_RATE, false);
     write_wav_i16(&dir.join("channelmix_mono_panned.wav"), &out, 48000, 2);
     // After mix both channels contain both tones
-    let l_mid: Vec<f32> = out[(SAMPLE_RATE as usize)..].chunks(2).map(|c| c[0]).collect();
-    let r_mid: Vec<f32> = out[(SAMPLE_RATE as usize)..].chunks(2).map(|c| c[1]).collect();
+    let l_mid: Vec<f32> = out[(SAMPLE_RATE as usize)..]
+        .chunks(2)
+        .map(|c| c[0])
+        .collect();
+    let r_mid: Vec<f32> = out[(SAMPLE_RATE as usize)..]
+        .chunks(2)
+        .map(|c| c[1])
+        .collect();
     let l_has_both =
         goertzel(&l_mid, 600.0, SAMPLE_RATE) > 0.1 && goertzel(&l_mid, 900.0, SAMPLE_RATE) > 0.1;
     let r_has_both =
@@ -439,8 +479,17 @@ fn verify_all_filters_offline() {
     );
 
     // ---------- Summary ----------
-    let failed: Vec<&String> = results.iter().filter(|(_, ok)| !ok).map(|(n, _)| n).collect();
-    println!("\n=== SUMMARY: {}/{} checks passed ===", results.iter().filter(|(_, ok)| *ok).count(), results.len());    if !failed.is_empty() {
+    let failed: Vec<&String> = results
+        .iter()
+        .filter(|(_, ok)| !ok)
+        .map(|(n, _)| n)
+        .collect();
+    println!(
+        "\n=== SUMMARY: {}/{} checks passed ===",
+        results.iter().filter(|(_, ok)| *ok).count(),
+        results.len()
+    );
+    if !failed.is_empty() {
         for f in &failed {
             println!("FAILED: {}", f);
         }

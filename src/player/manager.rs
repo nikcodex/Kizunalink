@@ -1,12 +1,12 @@
 use crate::models::protocol::{PlayerResponse, PlayerUpdatePayload};
 use crate::player::guild_player::GuildPlayer;
 use crate::player::queue::LoopMode;
+use crate::sources::apple_music::AppleMusicSource;
+use crate::sources::deezer::DeezerSource;
 use crate::sources::jiosaavn::JioSaavnSource;
 use crate::sources::soundcloud::SoundCloudSource;
 use crate::sources::spotify::SpotifySource;
 use crate::sources::youtube::YouTubeSource;
-use crate::sources::deezer::DeezerSource;
-use crate::sources::apple_music::AppleMusicSource;
 use dashmap::DashMap;
 use std::sync::Arc;
 use tokio::sync::{broadcast, mpsc, RwLock};
@@ -203,7 +203,8 @@ impl PlayerManager {
                     player.play_track(track, stream_url).await;
                 } else {
                     warn!("Failed to resolve stream URL for guild {}", guild_id);
-                    player.emit_track_load_failed(&track, "Failed to resolve playable audio stream");
+                    player
+                        .emit_track_load_failed(&track, "Failed to resolve playable audio stream");
                 }
             }
         }
@@ -215,29 +216,49 @@ impl PlayerManager {
         let clean = id.trim();
         if clean.starts_with("http://") || clean.starts_with("https://") {
             if clean.contains("spotify.com") {
-                if let Some(track_id) = clean.split("/track/").nth(1).and_then(|s| s.split('?').next()) {
+                if let Some(track_id) = clean
+                    .split("/track/")
+                    .nth(1)
+                    .and_then(|s| s.split('?').next())
+                {
                     return self.spotify.resolve_track(track_id).await.ok().flatten();
                 }
             } else if clean.contains("youtube.com") || clean.contains("youtu.be") {
-                let vid = if let Some(v) = clean.split("v=").nth(1).and_then(|s| s.split('&').next()) {
-                    v
-                } else if let Some(v) = clean.split("youtu.be/").nth(1).and_then(|s| s.split('?').next()) {
-                    v
-                } else {
-                    clean
-                };
+                let vid =
+                    if let Some(v) = clean.split("v=").nth(1).and_then(|s| s.split('&').next()) {
+                        v
+                    } else if let Some(v) = clean
+                        .split("youtu.be/")
+                        .nth(1)
+                        .and_then(|s| s.split('?').next())
+                    {
+                        v
+                    } else {
+                        clean
+                    };
                 return self.youtube.resolve_video(vid).await.ok().flatten();
             } else if clean.contains("deezer.com/") {
-                if let Some(track_id) = clean.split("/track/").nth(1).and_then(|s| s.split('?').next()) {
+                if let Some(track_id) = clean
+                    .split("/track/")
+                    .nth(1)
+                    .and_then(|s| s.split('?').next())
+                {
                     return self.deezer.resolve_track(track_id).await.ok().flatten();
                 }
             } else if clean.contains("music.apple.com/") {
-                let track_id = if let Some(i_param) = clean.split("i=").nth(1).and_then(|s| s.split('&').next()) {
+                let track_id = if let Some(i_param) =
+                    clean.split("i=").nth(1).and_then(|s| s.split('&').next())
+                {
                     i_param.to_string()
                 } else {
                     clean.rsplit('/').next()?.split('?').next()?.to_string()
                 };
-                return self.apple_music.resolve_track(&track_id).await.ok().flatten();
+                return self
+                    .apple_music
+                    .resolve_track(&track_id)
+                    .await
+                    .ok()
+                    .flatten();
             }
             // SSRF protection: validate URL before creating HTTP track
             if let Err(e) = crate::security::validate_url(clean) {
@@ -256,7 +277,10 @@ impl PlayerManager {
             .or_else(|| None)
     }
 
-    pub async fn resolve_stream_url(&self, track: &crate::models::track::LavalinkTrack) -> Option<String> {
+    pub async fn resolve_stream_url(
+        &self,
+        track: &crate::models::track::LavalinkTrack,
+    ) -> Option<String> {
         let source = &track.info.source_name;
         let identifier = &track.info.identifier;
 
@@ -264,7 +288,10 @@ impl PlayerManager {
             "jiosaavn" => self.jiosaavn.resolve_stream_url(identifier).await.ok(),
             "youtube" => {
                 if let Some(url) = &track.info.uri {
-                    if url.starts_with("http") && !url.contains("youtube.com") && !url.contains("youtu.be") {
+                    if url.starts_with("http")
+                        && !url.contains("youtube.com")
+                        && !url.contains("youtu.be")
+                    {
                         return Some(url.clone());
                     }
                 }
@@ -276,22 +303,19 @@ impl PlayerManager {
                     .and_then(|t| t.info.uri)
             }
             "soundcloud" => self.soundcloud.resolve_stream(identifier).await.ok(),
-            "spotify" => {
-                self.resolve_spotify_mirror(track).await
-            }
-            "deezer" => {
-                self.resolve_deezer_mirror(track).await
-            }
-            "applemusic" => {
-                self.resolve_apple_music_mirror(track).await
-            }
+            "spotify" => self.resolve_spotify_mirror(track).await,
+            "deezer" => self.resolve_deezer_mirror(track).await,
+            "applemusic" => self.resolve_apple_music_mirror(track).await,
             "http" => track.info.uri.clone(),
             _ => track.info.uri.clone(),
         }
     }
 
     /// Mirror Spotify track to JioSaavn (320kbps) or YouTube via ISRC/title matching.
-    async fn resolve_spotify_mirror(&self, track: &crate::models::track::LavalinkTrack) -> Option<String> {
+    async fn resolve_spotify_mirror(
+        &self,
+        track: &crate::models::track::LavalinkTrack,
+    ) -> Option<String> {
         let query = format!("{} {}", track.info.title, track.info.author);
 
         // 1. Try ISRC-based YouTube search for exact match
@@ -299,9 +323,14 @@ impl PlayerManager {
             let isrc_query = format!("isrc:{}", isrc);
             if let Ok(yt_tracks) = self.youtube.search(&isrc_query, 1).await {
                 if let Some(yt_track) = yt_tracks.into_iter().next() {
-                    if let Ok(Some(yt_res)) = self.youtube.resolve_video(&yt_track.info.identifier).await {
+                    if let Ok(Some(yt_res)) =
+                        self.youtube.resolve_video(&yt_track.info.identifier).await
+                    {
                         if let Some(url) = &yt_res.info.uri {
-                            info!("⚡ Spotify->YouTube via ISRC: '{}' for '{}'", isrc, track.info.title);
+                            info!(
+                                "⚡ Spotify->YouTube via ISRC: '{}' for '{}'",
+                                isrc, track.info.title
+                            );
                             return Some(url.clone());
                         }
                     }
@@ -312,7 +341,11 @@ impl PlayerManager {
         // 2. Try JioSaavn for 320kbps
         if let Ok(js_tracks) = self.jiosaavn.search(&query, 1).await {
             if let Some(first_js) = js_tracks.into_iter().next() {
-                if let Ok(url) = self.jiosaavn.resolve_stream_url(&first_js.info.identifier).await {
+                if let Ok(url) = self
+                    .jiosaavn
+                    .resolve_stream_url(&first_js.info.identifier)
+                    .await
+                {
                     info!("⚡ Spotify->JioSaavn 320kbps for '{}'", track.info.title);
                     return Some(url);
                 }
@@ -322,7 +355,9 @@ impl PlayerManager {
         // 3. Fallback to YouTube title/artist search
         if let Ok(yt_tracks) = self.youtube.search(&query, 1).await {
             if let Some(first_yt) = yt_tracks.into_iter().next() {
-                if let Ok(Some(yt_res)) = self.youtube.resolve_video(&first_yt.info.identifier).await {
+                if let Ok(Some(yt_res)) =
+                    self.youtube.resolve_video(&first_yt.info.identifier).await
+                {
                     if let Some(url) = yt_res.info.uri {
                         info!("⚡ Spotify->YouTube for '{}'", track.info.title);
                         return Some(url);
@@ -335,7 +370,10 @@ impl PlayerManager {
     }
 
     /// Mirror Deezer track to YouTube via ISRC/title matching (full track, not 30s preview).
-    async fn resolve_deezer_mirror(&self, track: &crate::models::track::LavalinkTrack) -> Option<String> {
+    async fn resolve_deezer_mirror(
+        &self,
+        track: &crate::models::track::LavalinkTrack,
+    ) -> Option<String> {
         let query = format!("{} {}", track.info.title, track.info.author);
 
         // 1. Try ISRC-based YouTube search for exact match
@@ -343,7 +381,9 @@ impl PlayerManager {
             let isrc_query = format!("isrc:{}", isrc);
             if let Ok(yt_tracks) = self.youtube.search(&isrc_query, 1).await {
                 if let Some(yt_track) = yt_tracks.into_iter().next() {
-                    if let Ok(Some(yt_res)) = self.youtube.resolve_video(&yt_track.info.identifier).await {
+                    if let Ok(Some(yt_res)) =
+                        self.youtube.resolve_video(&yt_track.info.identifier).await
+                    {
                         if let Some(url) = &yt_res.info.uri {
                             info!("⚡ Deezer->YouTube via ISRC for '{}'", track.info.title);
                             return Some(url.clone());
@@ -356,7 +396,11 @@ impl PlayerManager {
         // 2. Try JioSaavn
         if let Ok(js_tracks) = self.jiosaavn.search(&query, 1).await {
             if let Some(first_js) = js_tracks.into_iter().next() {
-                if let Ok(url) = self.jiosaavn.resolve_stream_url(&first_js.info.identifier).await {
+                if let Ok(url) = self
+                    .jiosaavn
+                    .resolve_stream_url(&first_js.info.identifier)
+                    .await
+                {
                     info!("⚡ Deezer->JioSaavn for '{}'", track.info.title);
                     return Some(url);
                 }
@@ -366,7 +410,9 @@ impl PlayerManager {
         // 3. Fallback to YouTube title/artist search
         if let Ok(yt_tracks) = self.youtube.search(&query, 1).await {
             if let Some(first_yt) = yt_tracks.into_iter().next() {
-                if let Ok(Some(yt_res)) = self.youtube.resolve_video(&first_yt.info.identifier).await {
+                if let Ok(Some(yt_res)) =
+                    self.youtube.resolve_video(&first_yt.info.identifier).await
+                {
                     if let Some(url) = yt_res.info.uri {
                         info!("⚡ Deezer->YouTube for '{}'", track.info.title);
                         return Some(url);
@@ -378,7 +424,10 @@ impl PlayerManager {
         // 4. Last resort: use Deezer preview URL (30 seconds)
         if let Some(url) = &track.info.uri {
             if url.contains("preview") {
-                warn!("Using Deezer 30s preview for '{}' (full track unavailable)", track.info.title);
+                warn!(
+                    "Using Deezer 30s preview for '{}' (full track unavailable)",
+                    track.info.title
+                );
                 return Some(url.clone());
             }
         }
@@ -387,7 +436,10 @@ impl PlayerManager {
     }
 
     /// Mirror Apple Music track to YouTube via ISRC/title matching.
-    async fn resolve_apple_music_mirror(&self, track: &crate::models::track::LavalinkTrack) -> Option<String> {
+    async fn resolve_apple_music_mirror(
+        &self,
+        track: &crate::models::track::LavalinkTrack,
+    ) -> Option<String> {
         let query = format!("{} {}", track.info.title, track.info.author);
 
         // 1. Try ISRC-based YouTube search for exact match
@@ -395,7 +447,9 @@ impl PlayerManager {
             let isrc_query = format!("isrc:{}", isrc);
             if let Ok(yt_tracks) = self.youtube.search(&isrc_query, 1).await {
                 if let Some(yt_track) = yt_tracks.into_iter().next() {
-                    if let Ok(Some(yt_res)) = self.youtube.resolve_video(&yt_track.info.identifier).await {
+                    if let Ok(Some(yt_res)) =
+                        self.youtube.resolve_video(&yt_track.info.identifier).await
+                    {
                         if let Some(url) = &yt_res.info.uri {
                             info!("⚡ AppleMusic->YouTube via ISRC for '{}'", track.info.title);
                             return Some(url.clone());
@@ -408,7 +462,11 @@ impl PlayerManager {
         // 2. Try JioSaavn
         if let Ok(js_tracks) = self.jiosaavn.search(&query, 1).await {
             if let Some(first_js) = js_tracks.into_iter().next() {
-                if let Ok(url) = self.jiosaavn.resolve_stream_url(&first_js.info.identifier).await {
+                if let Ok(url) = self
+                    .jiosaavn
+                    .resolve_stream_url(&first_js.info.identifier)
+                    .await
+                {
                     info!("⚡ AppleMusic->JioSaavn for '{}'", track.info.title);
                     return Some(url);
                 }
@@ -418,7 +476,9 @@ impl PlayerManager {
         // 3. Fallback to YouTube title/artist search
         if let Ok(yt_tracks) = self.youtube.search(&query, 1).await {
             if let Some(first_yt) = yt_tracks.into_iter().next() {
-                if let Ok(Some(yt_res)) = self.youtube.resolve_video(&first_yt.info.identifier).await {
+                if let Ok(Some(yt_res)) =
+                    self.youtube.resolve_video(&first_yt.info.identifier).await
+                {
                     if let Some(url) = yt_res.info.uri {
                         info!("⚡ AppleMusic->YouTube for '{}'", track.info.title);
                         return Some(url);
@@ -430,7 +490,10 @@ impl PlayerManager {
         // 4. Last resort: use Apple Music preview URL
         if let Some(url) = &track.info.uri {
             if url.contains("preview") {
-                warn!("Using Apple Music preview for '{}' (full track unavailable)", track.info.title);
+                warn!(
+                    "Using Apple Music preview for '{}' (full track unavailable)",
+                    track.info.title
+                );
                 return Some(url.clone());
             }
         }
@@ -438,7 +501,11 @@ impl PlayerManager {
         None
     }
 
-    pub async fn queue_track(&self, guild_id: &str, encoded: &str) -> Result<PlayerResponse, String> {
+    pub async fn queue_track(
+        &self,
+        guild_id: &str,
+        encoded: &str,
+    ) -> Result<PlayerResponse, String> {
         let player_arc = if let Some(p) = self.players.get(guild_id) {
             p.clone()
         } else {
@@ -602,12 +669,7 @@ impl PlayerManager {
                     let player = player_arc.read().await;
                     player
                         .autoplay
-                        .get_recommendation(
-                            track,
-                            &self.jiosaavn,
-                            &self.youtube,
-                            &self.spotify,
-                        )
+                        .get_recommendation(track, &self.jiosaavn, &self.youtube, &self.spotify)
                         .await
                 };
 

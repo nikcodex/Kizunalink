@@ -7,10 +7,10 @@ use serde::Deserialize;
 use tracing::{info, warn};
 
 use crate::models::track::LoadResult;
+use crate::ratelimit::extract_ip;
 use crate::rest::auth::require_auth;
 use crate::rest::error::LavalinkError;
 use crate::security;
-use crate::ratelimit::extract_ip;
 use crate::AppState;
 
 #[derive(Deserialize)]
@@ -69,9 +69,9 @@ pub async fn load_tracks(
         let m = crate::metrics::Metrics::global();
         m.inc_source("http");
         m.tracks_loaded.inc();
-        return Ok(Json(LoadResult::Track(
-            crate::util::create_http_track(&identifier),
-        )));
+        return Ok(Json(LoadResult::Track(crate::util::create_http_track(
+            &identifier,
+        ))));
     }
 
     // Bandcamp URLs
@@ -119,7 +119,8 @@ pub async fn load_tracks(
     // NicoNico URLs
     if identifier.contains("nicovideo.jp/") || identifier.contains("nico.ms/") {
         let video_id = identifier
-            .split("nicovideo.jp/watch/").nth(1)
+            .split("nicovideo.jp/watch/")
+            .nth(1)
             .or_else(|| identifier.split("nico.ms/").nth(1))
             .and_then(|s| s.split('?').next())
             .unwrap_or(&identifier);
@@ -293,7 +294,10 @@ pub async fn load_tracks(
     }
 
     // JioSaavn search or generic query fallback
-    let search_term = identifier.strip_prefix("jssearch:").unwrap_or(&identifier).trim();
+    let search_term = identifier
+        .strip_prefix("jssearch:")
+        .unwrap_or(&identifier)
+        .trim();
 
     match state.jiosaavn.search(search_term, 10).await {
         Ok(tracks) if !tracks.is_empty() => {
@@ -352,9 +356,17 @@ fn is_youtube_url(url: &str) -> bool {
 fn extract_youtube_id(url: &str) -> String {
     if let Some(id) = url.split("v=").nth(1).and_then(|s| s.split('&').next()) {
         id.to_string()
-    } else if let Some(id) = url.split("youtu.be/").nth(1).and_then(|s| s.split(['?', '&']).next()) {
+    } else if let Some(id) = url
+        .split("youtu.be/")
+        .nth(1)
+        .and_then(|s| s.split(['?', '&']).next())
+    {
         id.to_string()
-    } else if let Some(id) = url.split("/shorts/").nth(1).and_then(|s| s.split(['?', '&']).next()) {
+    } else if let Some(id) = url
+        .split("/shorts/")
+        .nth(1)
+        .and_then(|s| s.split(['?', '&']).next())
+    {
         id.to_string()
     } else {
         url.to_string()
@@ -363,7 +375,10 @@ fn extract_youtube_id(url: &str) -> String {
 
 fn extract_spotify_id(url: &str, entity_type: &str) -> Option<String> {
     let pattern = format!("/{}/", entity_type);
-    url.split(&pattern).nth(1).and_then(|s| s.split('?').next()).map(|s| s.to_string())
+    url.split(&pattern)
+        .nth(1)
+        .and_then(|s| s.split('?').next())
+        .map(|s| s.to_string())
 }
 
 fn extract_apple_music_id(url: &str) -> Option<String> {
@@ -372,10 +387,16 @@ fn extract_apple_music_id(url: &str) -> Option<String> {
     if let Some(i_param) = url.split("i=").nth(1).and_then(|s| s.split('&').next()) {
         return Some(i_param.to_string());
     }
-    url.rsplit('/').next().and_then(|s| s.split('?').next()).map(|s| s.to_string())
+    url.rsplit('/')
+        .next()
+        .and_then(|s| s.split('?').next())
+        .map(|s| s.to_string())
 }
 
 fn extract_deezer_id(url: &str, entity_type: &str) -> Option<String> {
     let pattern = format!("/{}/", entity_type);
-    url.split(&pattern).nth(1).and_then(|s| s.split('?').next()).map(|s| s.to_string())
+    url.split(&pattern)
+        .nth(1)
+        .and_then(|s| s.split('?').next())
+        .map(|s| s.to_string())
 }

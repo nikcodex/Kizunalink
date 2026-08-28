@@ -37,7 +37,12 @@ impl DeezerSource {
             limit
         );
 
-        let res = self.client.get(&url).send().await.map_err(|e| e.to_string())?;
+        let res = self
+            .client
+            .get(&url)
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
         let json: Value = res.json().await.map_err(|e| e.to_string())?;
 
         let data = json
@@ -58,7 +63,12 @@ impl DeezerSource {
     pub async fn resolve_track(&self, track_id: &str) -> Result<Option<LavalinkTrack>, String> {
         let url = format!("{}/track/{}", DEEZER_API_BASE, track_id);
 
-        let res = self.client.get(&url).send().await.map_err(|e| e.to_string())?;
+        let res = self
+            .client
+            .get(&url)
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
 
         if res.status() == 404 {
             return Ok(None);
@@ -80,7 +90,12 @@ impl DeezerSource {
     ) -> Result<Option<crate::models::track::PlaylistData>, String> {
         let url = format!("{}/playlist/{}", DEEZER_API_BASE, playlist_id);
 
-        let res = self.client.get(&url).send().await.map_err(|e| e.to_string())?;
+        let res = self
+            .client
+            .get(&url)
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
 
         if res.status() == 404 {
             return Ok(None);
@@ -99,7 +114,11 @@ impl DeezerSource {
             .to_string();
 
         let mut tracks = Vec::new();
-        if let Some(items) = json.get("tracks").and_then(|t| t.get("data")).and_then(|d| d.as_array()) {
+        if let Some(items) = json
+            .get("tracks")
+            .and_then(|t| t.get("data"))
+            .and_then(|d| d.as_array())
+        {
             for item in items {
                 if let Some(track) = self.parse_track(item) {
                     tracks.push(track);

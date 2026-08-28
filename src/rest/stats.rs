@@ -1,8 +1,4 @@
-use axum::{
-    extract::State,
-    http::HeaderMap,
-    response::Json,
-};
+use axum::{extract::State, http::HeaderMap, response::Json};
 
 use crate::models::protocol::StatsPayload;
 use crate::rest::auth::require_auth;

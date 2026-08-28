@@ -109,9 +109,12 @@ mod tests {
         // At phase ~0.25s of a 2s cycle => 45 degrees => both channels ~0.56
         let mid_left = buf[12000 * 2];
         let mid_right = buf[12000 * 2 + 1];
-        assert!(mid_left.abs() > 0.3 && mid_right.abs() > 0.3,
+        assert!(
+            mid_left.abs() > 0.3 && mid_right.abs() > 0.3,
             "at quarter cycle energy should be split across channels (L={} R={})",
-            mid_left, mid_right);
+            mid_left,
+            mid_right
+        );
     }
 
     #[test]

@@ -1,7 +1,6 @@
 /// Karaoke filter - attenuates band-limited center-channel content.
 /// Center = (L+R)/2 is band-passed around filterBand with the given width,
 /// then subtracted from both channels scaled by `level`.
-
 use super::biquad::BiquadFilter;
 
 #[derive(Debug)]

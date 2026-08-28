@@ -119,7 +119,9 @@ impl Wsola {
         let alpha = self.alpha;
         if alpha == 1.0 {
             // passthrough: move everything through
-            let n = self.in_buf[0].len().saturating_sub(self.next_analysis_start);
+            let n = self.in_buf[0]
+                .len()
+                .saturating_sub(self.next_analysis_start);
             for i in 0..n {
                 let s = self.next_analysis_start + i;
                 self.out_buf[0].push(self.in_buf[0][s]);
@@ -170,7 +172,7 @@ impl Wsola {
                         self.out_buf[ch].push(s);
                     }
                 }
-                
+
                 let tail_start = end;
                 let tail_end = (tail_start + self.overlap).min(self.in_buf[0].len());
                 self.ref_tail[0] = self.in_buf[0][tail_start..tail_end].to_vec();
@@ -268,14 +270,15 @@ mod tests {
     fn sine(freq: f64, seconds: f64, sample_rate: f64) -> Vec<f32> {
         let n = (seconds * sample_rate) as usize;
         (0..n)
-            .map(|i| {
-                (2.0 * std::f64::consts::PI * freq * i as f64 / sample_rate).sin() as f32
-            })
+            .map(|i| (2.0 * std::f64::consts::PI * freq * i as f64 / sample_rate).sin() as f32)
             .collect()
     }
 
     fn interleave(l: &[f32], r: &[f32]) -> Vec<f32> {
-        l.iter().zip(r.iter()).flat_map(|(a, b)| vec![*a, *b]).collect()
+        l.iter()
+            .zip(r.iter())
+            .flat_map(|(a, b)| vec![*a, *b])
+            .collect()
     }
 
     #[test]

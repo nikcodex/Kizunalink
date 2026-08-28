@@ -30,7 +30,6 @@
 ///
 /// This module provides the complete DAVE crypto stack. The caller is responsible
 /// for wiring it to the voice gateway.
-
 use aes_gcm::{aead::Aead, Aes128Gcm, KeyInit, Nonce};
 use hkdf::Hkdf;
 use openmls::prelude::*;
@@ -75,7 +74,10 @@ pub enum DaveGatewayMessage {
     /// Opcode 24: Prepare a new epoch (participant list change)
     PrepareEpoch { epoch_id: u64 },
     /// Opcode 25: External sender package (gateway's MLS credential + pubkey)
-    MlsExternalSenderPackage { credential: Vec<u8>, signature_key: Vec<u8> },
+    MlsExternalSenderPackage {
+        credential: Vec<u8>,
+        signature_key: Vec<u8>,
+    },
     /// Opcode 26: Client's MLS key package
     MlsKeyPackage { key_package: Vec<u8> },
 }
@@ -155,7 +157,9 @@ impl SenderRatchet {
     }
 
     fn evict_old_keys(&mut self) {
-        let cutoff = self.current_generation.saturating_sub(KEY_RETENTION_GENERATIONS);
+        let cutoff = self
+            .current_generation
+            .saturating_sub(KEY_RETENTION_GENERATIONS);
         self.keys.retain(|k| k.generation >= cutoff);
     }
 }
@@ -220,10 +224,7 @@ impl DaveSession {
 
     /// Process a DAVE message from the voice gateway.
     /// Returns any messages that should be sent back to the gateway.
-    pub fn handle_gateway_message(
-        &mut self,
-        msg: DaveGatewayMessage,
-    ) -> Vec<DaveClientMessage> {
+    pub fn handle_gateway_message(&mut self, msg: DaveGatewayMessage) -> Vec<DaveClientMessage> {
         match msg {
             DaveGatewayMessage::MlsExternalSenderPackage {
                 credential,
@@ -245,7 +246,10 @@ impl DaveSession {
             }
             DaveGatewayMessage::MlsKeyPackage { key_package: _ } => {
                 // This is an outgoing message from us, not incoming
-                debug!("DAVE: Ignoring outgoing key package message for guild {}", self.guild_id);
+                debug!(
+                    "DAVE: Ignoring outgoing key package message for guild {}",
+                    self.guild_id
+                );
             }
         }
 
@@ -280,7 +284,10 @@ impl DaveSession {
                 self.generate_key_package();
             }
             Err(e) => {
-                error!("DAVE: Failed to create MLS group for guild {}: {:?}", self.guild_id, e);
+                error!(
+                    "DAVE: Failed to create MLS group for guild {}: {:?}",
+                    self.guild_id, e
+                );
             }
         }
     }
@@ -295,7 +302,10 @@ impl DaveSession {
         ) {
             Ok(kpb) => kpb,
             Err(e) => {
-                error!("DAVE: Failed to build key package for guild {}: {:?}", self.guild_id, e);
+                error!(
+                    "DAVE: Failed to build key package for guild {}: {:?}",
+                    self.guild_id, e
+                );
                 return;
             }
         };
@@ -306,13 +316,17 @@ impl DaveSession {
             Ok(serialized) => {
                 debug!(
                     "DAVE: Generated key package ({} bytes) for guild {}",
-                    serialized.len(), self.guild_id
+                    serialized.len(),
+                    self.guild_id
                 );
                 self.pending_messages
                     .push(DaveClientMessage::KeyPackage(serialized));
             }
             Err(e) => {
-                error!("DAVE: Failed to serialize key package for guild {}: {:?}", self.guild_id, e);
+                error!(
+                    "DAVE: Failed to serialize key package for guild {}: {:?}",
+                    self.guild_id, e
+                );
             }
         }
     }
@@ -348,7 +362,9 @@ impl DaveSession {
                     self.active = true;
                     info!(
                         "DAVE: Exported MLS secret ({} bytes) for guild {} epoch {}",
-                        self.exporter_secret.len(), self.guild_id, self.epoch_id
+                        self.exporter_secret.len(),
+                        self.guild_id,
+                        self.epoch_id
                     );
 
                     // Ratchet all sender keys with the new secret
@@ -358,7 +374,10 @@ impl DaveSession {
                     }
                 }
                 Err(e) => {
-                    error!("DAVE: Failed to export MLS secret for guild {}: {:?}", self.guild_id, e);
+                    error!(
+                        "DAVE: Failed to export MLS secret for guild {}: {:?}",
+                        self.guild_id, e
+                    );
                 }
             }
         }
@@ -388,7 +407,10 @@ impl DaveSession {
     /// Remove a sender from the session
     pub fn remove_sender(&mut self, user_id: &str) {
         self.sender_ratchets.remove(user_id);
-        debug!("DAVE: Removed sender {} from guild {}", user_id, self.guild_id);
+        debug!(
+            "DAVE: Removed sender {} from guild {}",
+            user_id, self.guild_id
+        );
     }
 
     /// Encrypt an Opus frame for sending
@@ -438,8 +460,7 @@ impl DaveSession {
 
         let _version = frame[0];
         let _flags = frame[1];
-        let nonce_counter =
-            u32::from_le_bytes([frame[2], frame[3], frame[4], frame[5]]);
+        let nonce_counter = u32::from_le_bytes([frame[2], frame[3], frame[4], frame[5]]);
         let ciphertext = &frame[FRAME_HEADER_SIZE..];
 
         let uid: u64 = sender_id.parse().unwrap_or(0);

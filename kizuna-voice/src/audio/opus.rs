@@ -1,13 +1,13 @@
-use super::packet::AudioPacket;
+use super::packet::AudioFrame;
 use crate::error::{Error, Result};
 
 pub enum OpusSource {
     Encoded(Vec<u8>),
-    Pcm(Vec<f32>), // Example for PCM
+    Pcm(Vec<i16>),
 }
 
 pub struct OpusEncoder {
-    // We would wrap an actual opus encoder here
+    // Wrap real encoder later
 }
 
 impl OpusEncoder {
@@ -15,19 +15,12 @@ impl OpusEncoder {
         Ok(Self {})
     }
 
-    pub fn encode(&mut self, source: OpusSource) -> Result<AudioPacket> {
+    pub fn encode(&mut self, source: OpusSource) -> Result<AudioFrame> {
         match source {
-            OpusSource::Encoded(data) => Ok(AudioPacket {
-                data,
-                is_opus: true,
-            }),
+            OpusSource::Encoded(data) => Ok(AudioFrame::Opus(data)),
             OpusSource::Pcm(_pcm_data) => {
-                // Here we would encode PCM to Opus
-                // Stub for now
-                Ok(AudioPacket {
-                    data: vec![],
-                    is_opus: true,
-                })
+                // Here we would encode PCM to Opus (Phase 5)
+                Ok(AudioFrame::Opus(vec![])) // Stub
             }
         }
     }

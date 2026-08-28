@@ -45,7 +45,11 @@ impl BandcampSource {
 
         let mut tracks = Vec::new();
 
-        if let Some(results) = json.get("results").and_then(|r| r.get("auto")).and_then(|a| a.as_array()) {
+        if let Some(results) = json
+            .get("results")
+            .and_then(|r| r.get("auto"))
+            .and_then(|a| a.as_array())
+        {
             for item in results.iter().take(limit) {
                 if let Some(track) = self.parse_search_item(item) {
                     tracks.push(track);
@@ -53,7 +57,11 @@ impl BandcampSource {
             }
         }
 
-        if let Some(results) = json.get("results").and_then(|r| r.get("bulk")).and_then(|a| a.as_array()) {
+        if let Some(results) = json
+            .get("results")
+            .and_then(|r| r.get("bulk"))
+            .and_then(|a| a.as_array())
+        {
             for item in results.iter().take(limit.saturating_sub(tracks.len())) {
                 if let Some(track) = self.parse_search_item(item) {
                     tracks.push(track);
@@ -93,9 +101,20 @@ impl BandcampSource {
 
     fn parse_search_item(&self, item: &Value) -> Option<LavalinkTrack> {
         let title = item.get("title").and_then(|t| t.as_str())?.to_string();
-        let artist = item.get("artist").and_then(|a| a.as_str()).unwrap_or("Unknown Artist").to_string();
-        let url = item.get("url").and_then(|u| u.as_str()).map(|s| s.to_string());
-        let id = item.get("id").and_then(|i| i.as_u64()).unwrap_or(0).to_string();
+        let artist = item
+            .get("artist")
+            .and_then(|a| a.as_str())
+            .unwrap_or("Unknown Artist")
+            .to_string();
+        let url = item
+            .get("url")
+            .and_then(|u| u.as_str())
+            .map(|s| s.to_string());
+        let id = item
+            .get("id")
+            .and_then(|i| i.as_u64())
+            .unwrap_or(0)
+            .to_string();
 
         let mut track = LavalinkTrack {
             encoded: String::new(),
@@ -124,10 +143,27 @@ impl BandcampSource {
     }
 
     fn parse_tralbum(&self, tralbum: &Value) -> Option<LavalinkTrack> {
-        let title = tralbum.get("current").and_then(|c| c.get("title")).and_then(|t| t.as_str()).unwrap_or("Unknown").to_string();
-        let artist = tralbum.get("artist").and_then(|a| a.as_str()).unwrap_or("Unknown Artist").to_string();
-        let duration_ms = tralbum.get("current").and_then(|c| c.get("duration")).and_then(|d| d.as_u64()).map(|d| d * 1000).unwrap_or(0);
-        let artwork = tralbum.get("art_fullsize_url").and_then(|a| a.as_str()).map(|s| s.to_string());
+        let title = tralbum
+            .get("current")
+            .and_then(|c| c.get("title"))
+            .and_then(|t| t.as_str())
+            .unwrap_or("Unknown")
+            .to_string();
+        let artist = tralbum
+            .get("artist")
+            .and_then(|a| a.as_str())
+            .unwrap_or("Unknown Artist")
+            .to_string();
+        let duration_ms = tralbum
+            .get("current")
+            .and_then(|c| c.get("duration"))
+            .and_then(|d| d.as_u64())
+            .map(|d| d * 1000)
+            .unwrap_or(0);
+        let artwork = tralbum
+            .get("art_fullsize_url")
+            .and_then(|a| a.as_str())
+            .map(|s| s.to_string());
 
         let mut stream_url = None;
         if let Some(url) = tralbum.get("free_download_url").and_then(|u| u.as_str()) {
@@ -137,12 +173,16 @@ impl BandcampSource {
         }
 
         let url = stream_url.clone().or_else(|| {
-            tralbum.get("track_submission_url").and_then(|u| u.as_str()).map(|s| s.to_string())
+            tralbum
+                .get("track_submission_url")
+                .and_then(|u| u.as_str())
+                .map(|s| s.to_string())
         });
 
-        let id = url.as_deref().and_then(|u| {
-            u.rsplit('/').next().map(|s| s.to_string())
-        }).unwrap_or_else(|| title.clone());
+        let id = url
+            .as_deref()
+            .and_then(|u| u.rsplit('/').next().map(|s| s.to_string()))
+            .unwrap_or_else(|| title.clone());
 
         let mut track = LavalinkTrack {
             encoded: String::new(),

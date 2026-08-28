@@ -10,12 +10,15 @@ async fn build_test_app() -> Router {
     axum::Router::new()
         .route("/", axum::routing::get(|| async { "4.2.1" }))
         .route("/version", axum::routing::get(|| async { "4.2.1" }))
-        .route("/health", axum::routing::get(|| async {
-            axum::Json(serde_json::json!({
-                "status": "ok",
-                "version": "4.2.1",
-            }))
-        }))
+        .route(
+            "/health",
+            axum::routing::get(|| async {
+                axum::Json(serde_json::json!({
+                    "status": "ok",
+                    "version": "4.2.1",
+                }))
+            }),
+        )
 }
 
 #[tokio::test]
@@ -61,12 +64,7 @@ async fn test_version_endpoint() {
 async fn test_root_endpoint() {
     let app = build_test_app().await;
     let response = app
-        .oneshot(
-            Request::builder()
-                .uri("/")
-                .body(Body::empty())
-                .unwrap(),
-        )
+        .oneshot(Request::builder().uri("/").body(Body::empty()).unwrap())
         .await
         .unwrap();
 

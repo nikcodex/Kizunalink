@@ -5,7 +5,8 @@ use std::sync::Arc;
 use tracing::info;
 
 const JIOSAAVN_API_BASE: &str = "https://www.jiosaavn.com/api.php";
-const ANDROID_USER_AGENT: &str = "JioSaavn/9.5.0 (Linux; Android 13; SM-S908B Build/TP1A.220624.014; wv) AppleWebKit/537.36";
+const ANDROID_USER_AGENT: &str =
+    "JioSaavn/9.5.0 (Linux; Android 13; SM-S908B Build/TP1A.220624.014; wv) AppleWebKit/537.36";
 
 #[derive(Clone)]
 pub struct JioSaavnSource {
@@ -16,8 +17,14 @@ impl JioSaavnSource {
     pub fn new() -> Arc<Self> {
         let mut headers = HeaderMap::new();
         headers.insert(USER_AGENT, HeaderValue::from_static(ANDROID_USER_AGENT));
-        headers.insert(ACCEPT, HeaderValue::from_static("application/json, text/plain, */*"));
-        headers.insert(REFERER, HeaderValue::from_static("https://www.jiosaavn.com/"));
+        headers.insert(
+            ACCEPT,
+            HeaderValue::from_static("application/json, text/plain, */*"),
+        );
+        headers.insert(
+            REFERER,
+            HeaderValue::from_static("https://www.jiosaavn.com/"),
+        );
 
         let client = crate::config::global_proxy()
             .apply_to_builder(reqwest::Client::builder())
@@ -45,10 +52,8 @@ impl JioSaavnSource {
         let url_clone = url.clone();
         let backoff_cfg = crate::sources::backoff::BackoffConfig::default();
 
-        let raw_text = crate::sources::backoff::with_backoff(
-            &backoff_cfg,
-            "JioSaavn/search",
-            || {
+        let raw_text =
+            crate::sources::backoff::with_backoff(&backoff_cfg, "JioSaavn/search", || {
                 let c = client.clone();
                 let u = url_clone.clone();
                 async move {
@@ -59,9 +64,8 @@ impl JioSaavnSource {
                     }
                     response.text().await.map_err(|e| e.to_string())
                 }
-            },
-        )
-        .await?;
+            })
+            .await?;
 
         let json_str = match raw_text.find('{') {
             Some(idx) => &raw_text[idx..],
@@ -87,7 +91,11 @@ impl JioSaavnSource {
         let mut tracks = Vec::new();
 
         for song in songs_array.iter() {
-            let id = song.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let id = song
+                .get("id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
             if id.is_empty() {
                 continue;
             }
@@ -120,10 +128,10 @@ impl JioSaavnSource {
                 })
                 .unwrap_or(210);
 
-            let artwork = song
-                .get("image")
-                .and_then(|v| v.as_str())
-                .map(|img| img.replace("50x50", "500x500").replace("150x150", "500x500"));
+            let artwork = song.get("image").and_then(|v| v.as_str()).map(|img| {
+                img.replace("50x50", "500x500")
+                    .replace("150x150", "500x500")
+            });
 
             let url = song
                 .get("perma_url")
@@ -180,10 +188,8 @@ impl JioSaavnSource {
 
         // Step 1: Fetch song details with backoff
         let details_url_clone = details_url.clone();
-        let details_text = crate::sources::backoff::with_backoff(
-            &backoff_cfg,
-            "JioSaavn/details",
-            || {
+        let details_text =
+            crate::sources::backoff::with_backoff(&backoff_cfg, "JioSaavn/details", || {
                 let c = client.clone();
                 let u = details_url_clone.clone();
                 async move {
@@ -194,9 +200,8 @@ impl JioSaavnSource {
                     }
                     res.text().await.map_err(|e| e.to_string())
                 }
-            },
-        )
-        .await?;
+            })
+            .await?;
 
         let json_str = match details_text.find('{') {
             Some(idx) => &details_text[idx..],
@@ -207,12 +212,21 @@ impl JioSaavnSource {
         let song_id_owned = song_id.to_string();
         let song_obj = details_json
             .get(&song_id_owned)
-            .or_else(|| details_json.get("songs").and_then(|s| s.as_array()).and_then(|a| a.first()))
+            .or_else(|| {
+                details_json
+                    .get("songs")
+                    .and_then(|s| s.as_array())
+                    .and_then(|a| a.first())
+            })
             .ok_or_else(|| format!("Song ID {} not found in details", song_id))?;
 
         let encrypted_url = song_obj
             .get("encrypted_media_url")
-            .or_else(|| song_obj.get("more_info").and_then(|m| m.get("encrypted_media_url")))
+            .or_else(|| {
+                song_obj
+                    .get("more_info")
+                    .and_then(|m| m.get("encrypted_media_url"))
+            })
             .and_then(|v| v.as_str())
             .ok_or_else(|| "Missing encrypted_media_url in song object".to_string())?;
 
@@ -225,10 +239,8 @@ impl JioSaavnSource {
 
         let auth_url_clone = auth_url.clone();
         let client2 = self.client.clone();
-        let auth_json: Value = crate::sources::backoff::with_backoff(
-            &backoff_cfg,
-            "JioSaavn/authToken",
-            || {
+        let auth_json: Value =
+            crate::sources::backoff::with_backoff(&backoff_cfg, "JioSaavn/authToken", || {
                 let c = client2.clone();
                 let u = auth_url_clone.clone();
                 async move {
@@ -239,16 +251,18 @@ impl JioSaavnSource {
                     }
                     res.json::<Value>().await.map_err(|e| e.to_string())
                 }
-            },
-        )
-        .await?;
+            })
+            .await?;
 
         let stream_url = auth_json
             .get("auth_url")
             .and_then(|v| v.as_str())
             .ok_or_else(|| "Failed to generate signed CDN stream URL".to_string())?;
 
-        info!("⚡ Resolved 320kbps JioSaavn stream for song ID: {}", song_id);
+        info!(
+            "⚡ Resolved 320kbps JioSaavn stream for song ID: {}",
+            song_id
+        );
         Ok(stream_url.to_string())
     }
 
@@ -258,7 +272,12 @@ impl JioSaavnSource {
             JIOSAAVN_API_BASE, song_id
         );
 
-        let res = self.client.get(&lyrics_url).send().await.map_err(|e| e.to_string())?;
+        let res = self
+            .client
+            .get(&lyrics_url)
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
         let json: Value = res.json().await.map_err(|e| e.to_string())?;
 
         if let Some(lyrics_raw) = json.get("lyrics").and_then(|l| l.as_str()) {
@@ -273,7 +292,11 @@ impl JioSaavnSource {
     }
 
     pub async fn get_recommendations(&self, query: &str) -> Result<Vec<LavalinkTrack>, String> {
-        let song_id = if query.chars().all(|c| c.is_alphanumeric() || c == '_' || c == '-') && query.len() < 20 {
+        let song_id = if query
+            .chars()
+            .all(|c| c.is_alphanumeric() || c == '_' || c == '-')
+            && query.len() < 20
+        {
             query.to_string()
         } else {
             let search_results = self.search(query, 1).await?;

@@ -12,7 +12,9 @@ pub fn decode_track(encoded: &str) -> Result<LavalinkTrack, TrackDecodeError> {
         .map_err(|e| TrackDecodeError::Base64Error(e.to_string()))?;
 
     if data.len() < 4 {
-        return Err(TrackDecodeError::IoError("Track data too short".to_string()));
+        return Err(TrackDecodeError::IoError(
+            "Track data too short".to_string(),
+        ));
     }
 
     let mut cursor = Cursor::new(&data);
@@ -287,7 +289,9 @@ mod tests {
                 position: 15000,
                 title: "Never Gonna Give You Up".to_string(),
                 uri: Some("https://open.spotify.com/track/4cOdK2wGLETKBW3PvgPWqT".to_string()),
-                artwork_url: Some("https://i.scdn.co/image/ab67616d0000b2735755e164993798e0c9ef7d7a".to_string()),
+                artwork_url: Some(
+                    "https://i.scdn.co/image/ab67616d0000b2735755e164993798e0c9ef7d7a".to_string(),
+                ),
                 isrc: Some("GBARL8700014".to_string()),
                 source_name: "spotify".to_string(),
             },

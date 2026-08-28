@@ -70,7 +70,11 @@ impl SoundCloudSource {
     }
 
     /// Try a request with automatic client_id rotation on 401/403/429
-    async fn request_with_retry<F, T>(&self, build_url: impl Fn(&str) -> String, parse: F) -> Result<T, String>
+    async fn request_with_retry<F, T>(
+        &self,
+        build_url: impl Fn(&str) -> String,
+        parse: F,
+    ) -> Result<T, String>
     where
         F: Fn(Value) -> Option<T>,
     {
@@ -158,24 +162,21 @@ impl SoundCloudSource {
 
         // Re-fetch to get the actual streaming URL
         self.request_with_retry(
-            |cid| {
-                format!(
-                    "{}/tracks/{}?client_id={}",
-                    SOUNDCLOUD_API, track_id, cid
-                )
-            },
+            |cid| format!("{}/tracks/{}?client_id={}", SOUNDCLOUD_API, track_id, cid),
             |json| {
                 let stream_url = json.get("stream_url").and_then(|u| u.as_str())?;
-                let mut params: Vec<(String, String)> =
-                    url::form_urlencoded::parse(stream_url.split('?').nth(1).unwrap_or("").as_bytes())
-                        .map(|(k, v)| (k.into_owned(), v.into_owned()))
-                        .collect();
+                let mut params: Vec<(String, String)> = url::form_urlencoded::parse(
+                    stream_url.split('?').nth(1).unwrap_or("").as_bytes(),
+                )
+                .map(|(k, v)| (k.into_owned(), v.into_owned()))
+                .collect();
                 params.push(("client_id".to_string(), client_id_clone.clone()));
 
                 let redirect_url = format!(
                     "{}?{}",
                     stream_url.split('?').next().unwrap_or(stream_url),
-                    params.iter()
+                    params
+                        .iter()
                         .map(|(k, v)| format!("{}={}", k, v))
                         .collect::<Vec<_>>()
                         .join("&")

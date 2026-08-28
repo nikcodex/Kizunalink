@@ -8,5 +8,5 @@ pub mod metrics;
 pub mod players;
 pub mod routeplanner;
 pub mod session;
-pub mod stats;
 pub mod sessions;
+pub mod stats;

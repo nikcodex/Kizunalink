@@ -7,7 +7,6 @@
 /// chunks into [`FilterChain::process`]; returned audio may differ in length
 /// when Timescale is active. This is the single code path used both by the
 /// live Songbird pipeline and by offline verification.
-
 use super::channel_mix::ChannelMix;
 use super::distortion::Distortion;
 use super::equalizer::Equalizer;
@@ -72,7 +71,10 @@ impl FilterChain {
             }
         }
 
-        let new_ts_sig = filters.timescale.as_ref().map(|t| TimescaleSignature(t.speed, t.pitch, t.rate));
+        let new_ts_sig = filters
+            .timescale
+            .as_ref()
+            .map(|t| TimescaleSignature(t.speed, t.pitch, t.rate));
 
         self.karaoke = filters.karaoke.as_ref().map(|k| {
             let mut karaoke = Karaoke::new(self.sample_rate);
@@ -260,12 +262,24 @@ impl FilterChain {
     /// Reset transient filter state (keeps parameters).
     pub fn reset(&mut self) {
         self.equalizer.reset();
-        if let Some(ref mut k) = self.karaoke { k.reset(); }
-        if let Some(ref mut t) = self.timescale { t.reset(); }
-        if let Some(ref mut t) = self.tremolo { t.reset(); }
-        if let Some(ref mut v) = self.vibrato { v.reset(); }
-        if let Some(ref mut r) = self.rotation { r.reset(); }
-        if let Some(ref mut lp) = self.low_pass { lp.reset(); }
+        if let Some(ref mut k) = self.karaoke {
+            k.reset();
+        }
+        if let Some(ref mut t) = self.timescale {
+            t.reset();
+        }
+        if let Some(ref mut t) = self.tremolo {
+            t.reset();
+        }
+        if let Some(ref mut v) = self.vibrato {
+            v.reset();
+        }
+        if let Some(ref mut r) = self.rotation {
+            r.reset();
+        }
+        if let Some(ref mut lp) = self.low_pass {
+            lp.reset();
+        }
     }
 }
 

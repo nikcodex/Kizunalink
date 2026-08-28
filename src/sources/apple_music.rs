@@ -29,7 +29,12 @@ impl AppleMusicSource {
             limit
         );
 
-        let res = self.client.get(&url).send().await.map_err(|e| e.to_string())?;
+        let res = self
+            .client
+            .get(&url)
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
         let json: Value = res.json().await.map_err(|e| e.to_string())?;
 
         let results = json
@@ -50,7 +55,12 @@ impl AppleMusicSource {
     pub async fn resolve_track(&self, track_id: &str) -> Result<Option<LavalinkTrack>, String> {
         let url = format!("{}?id={}", ITUNES_LOOKUP_URL, track_id);
 
-        let res = self.client.get(&url).send().await.map_err(|e| e.to_string())?;
+        let res = self
+            .client
+            .get(&url)
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
         let json: Value = res.json().await.map_err(|e| e.to_string())?;
 
         let results = json
@@ -76,7 +86,10 @@ impl AppleMusicSource {
             .and_then(|a| a.as_str())
             .unwrap_or("Unknown Artist")
             .to_string();
-        let duration_ms = item.get("trackTimeMillis").and_then(|d| d.as_u64()).unwrap_or(0);
+        let duration_ms = item
+            .get("trackTimeMillis")
+            .and_then(|d| d.as_u64())
+            .unwrap_or(0);
         let artwork = item
             .get("artworkUrl100")
             .and_then(|u| u.as_str())

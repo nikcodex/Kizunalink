@@ -9,7 +9,7 @@ pub struct BiquadFilter {
     b2: f64,
     a1: f64,
     a2: f64,
-    
+
     // State
     x1: f64,
     x2: f64,
@@ -37,14 +37,14 @@ impl BiquadFilter {
         let w0 = 2.0 * std::f64::consts::PI * frequency / sample_rate;
         let alpha = w0.sin() / (2.0 * q);
         let cos_w0 = w0.cos();
-        
+
         let b0 = (1.0 - cos_w0) / 2.0;
         let b1 = 1.0 - cos_w0;
         let b2 = (1.0 - cos_w0) / 2.0;
         let a0 = 1.0 + alpha;
         let a1 = -2.0 * cos_w0;
         let a2 = 1.0 - alpha;
-        
+
         Self {
             b0: b0 / a0,
             b1: b1 / a0,
@@ -63,14 +63,14 @@ impl BiquadFilter {
         let w0 = 2.0 * std::f64::consts::PI * frequency / sample_rate;
         let alpha = w0.sin() / (2.0 * q);
         let cos_w0 = w0.cos();
-        
+
         let b0 = (1.0 + cos_w0) / 2.0;
         let b1 = -(1.0 + cos_w0);
         let b2 = (1.0 + cos_w0) / 2.0;
         let a0 = 1.0 + alpha;
         let a1 = -2.0 * cos_w0;
         let a2 = 1.0 - alpha;
-        
+
         Self {
             b0: b0 / a0,
             b1: b1 / a0,
@@ -89,14 +89,14 @@ impl BiquadFilter {
         let w0 = 2.0 * std::f64::consts::PI * frequency / sample_rate;
         let alpha = w0.sin() / (2.0 * q);
         let cos_w0 = w0.cos();
-        
+
         let b0 = alpha;
         let b1 = 0.0;
         let b2 = -alpha;
         let a0 = 1.0 + alpha;
         let a1 = -2.0 * cos_w0;
         let a2 = 1.0 - alpha;
-        
+
         Self {
             b0: b0 / a0,
             b1: b1 / a0,
@@ -116,14 +116,14 @@ impl BiquadFilter {
         let alpha = w0.sin() / (2.0 * q);
         let cos_w0 = w0.cos();
         let a = 10.0_f64.powf(gain_db / 40.0);
-        
+
         let b0 = 1.0 + alpha * a;
         let b1 = -2.0 * cos_w0;
         let b2 = 1.0 - alpha * a;
         let a0 = 1.0 + alpha / a;
         let a1 = -2.0 * cos_w0;
         let a2 = 1.0 - alpha / a;
-        
+
         Self {
             b0: b0 / a0,
             b1: b1 / a0,
@@ -143,14 +143,14 @@ impl BiquadFilter {
         let alpha = w0.sin() / (2.0 * q);
         let cos_w0 = w0.cos();
         let a = 10.0_f64.powf(gain_db / 40.0);
-        
+
         let b0 = 1.0 + alpha * a;
         let b1 = -2.0 * cos_w0;
         let b2 = 1.0 - alpha * a;
         let a0 = 1.0 + alpha / a;
         let a1 = -2.0 * cos_w0;
         let a2 = 1.0 - alpha / a;
-        
+
         self.b0 = b0 / a0;
         self.b1 = b1 / a0;
         self.b2 = b2 / a0;
@@ -162,13 +162,14 @@ impl BiquadFilter {
     #[inline]
     pub fn process(&mut self, input: f64) -> f64 {
         let output = self.b0 * input + self.b1 * self.x1 + self.b2 * self.x2
-            - self.a1 * self.y1 - self.a2 * self.y2;
-        
+            - self.a1 * self.y1
+            - self.a2 * self.y2;
+
         self.x2 = self.x1;
         self.x1 = input;
         self.y2 = self.y1;
         self.y1 = output;
-        
+
         output
     }
 
@@ -218,9 +219,9 @@ mod tests {
         let sample_rate = 48000.0;
         let frequency = 1000.0;
         let q = 0.707;
-        
+
         let mut filter = BiquadFilter::lowpass(sample_rate, frequency, q);
-        
+
         // Generate a 100 Hz sine wave (should pass through)
         let mut sum = 0.0;
         let num_samples = 1000;
@@ -231,9 +232,12 @@ mod tests {
             sum += output * output;
         }
         let rms = (sum / num_samples as f64).sqrt();
-        
+
         // RMS should be close to 0.707 for a sine wave
-        assert!(rms > 0.5, "Low frequencies should pass through lowpass filter");
+        assert!(
+            rms > 0.5,
+            "Low frequencies should pass through lowpass filter"
+        );
     }
 
     #[test]
@@ -241,9 +245,9 @@ mod tests {
         let sample_rate = 48000.0;
         let frequency = 1000.0;
         let q = 0.707;
-        
+
         let mut filter = BiquadFilter::lowpass(sample_rate, frequency, q);
-        
+
         // Generate a 10000 Hz sine wave (should be attenuated)
         let mut sum = 0.0;
         let num_samples = 1000;
@@ -254,8 +258,11 @@ mod tests {
             sum += output * output;
         }
         let rms = (sum / num_samples as f64).sqrt();
-        
+
         // RMS should be much lower than 0.707
-        assert!(rms < 0.1, "High frequencies should be attenuated by lowpass filter");
+        assert!(
+            rms < 0.1,
+            "High frequencies should be attenuated by lowpass filter"
+        );
     }
 }

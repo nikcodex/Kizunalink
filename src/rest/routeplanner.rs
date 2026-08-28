@@ -34,7 +34,11 @@ pub async fn free_routeplanner_address(
     require_auth(&headers, &state.password, "/v4/routeplanner/free/address")?;
 
     if let Some(rp) = &state.route_planner {
-        let clean = body.address.strip_prefix('/').unwrap_or(&body.address).trim();
+        let clean = body
+            .address
+            .strip_prefix('/')
+            .unwrap_or(&body.address)
+            .trim();
         if let Ok(addr) = clean.parse() {
             rp.unmark(addr);
         }

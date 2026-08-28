@@ -44,19 +44,13 @@ fn describe_close_code(code: u16) -> &'static str {
     }
 }
 
-fn classify_disconnect(
-    reason: &Option<context_data::DisconnectReason>,
-) -> (u16, String, bool) {
+fn classify_disconnect(reason: &Option<context_data::DisconnectReason>) -> (u16, String, bool) {
     use context_data::DisconnectReason as DR;
 
     match reason {
         None => (1000, "Voice channel left or changed".to_string(), false),
         Some(DR::Requested) => (1000, "Requested".to_string(), false),
-        Some(DR::AttemptDiscarded) => (
-            1000,
-            "Connection attempt discarded".to_string(),
-            false,
-        ),
+        Some(DR::AttemptDiscarded) => (1000, "Connection attempt discarded".to_string(), false),
         Some(DR::WsClosed(Some(close_code))) => {
             let code = *close_code as u16;
             (code, describe_close_code(code).to_string(), true)
@@ -109,10 +103,7 @@ impl EventHandler for DisconnectHandler {
     async fn act(&self, ctx: &EventContext<'_>) -> Option<Event> {
         if let EventContext::DriverDisconnect(data) = ctx {
             let json = self.handle_disconnect(&data.reason);
-            info!(
-                "Voice disconnected for guild {}: {}",
-                self.guild_id, json
-            );
+            info!("Voice disconnected for guild {}: {}", self.guild_id, json);
         }
         None
     }
@@ -154,6 +145,7 @@ pub struct GuildPlayer {
     pub filters: Filters,
     pub last_update: u64,
     pub driver: Arc<Mutex<Driver>>,
+    pub kizuna_voice_adapter: Option<Arc<Mutex<crate::player::kizuna_adapter::KizunaVoiceAdapter>>>,
     pub track_handle: Option<TrackHandle>,
     pub is_playing: bool,
     pub queue: TrackQueue,
@@ -187,6 +179,7 @@ impl GuildPlayer {
             filters: Filters::default(),
             last_update: util::current_timestamp(),
             driver: Arc::new(Mutex::new(driver)),
+            kizuna_voice_adapter: None,
             track_handle: None,
             is_playing: false,
             queue: TrackQueue::new(),
@@ -291,7 +284,10 @@ impl GuildPlayer {
         let guild_nz = NonZeroU64::new(guild_num).unwrap_or(NonZeroU64::new(1).unwrap());
         let user_nz = NonZeroU64::new(user_num).unwrap_or(NonZeroU64::new(1).unwrap());
 
-        let channel_id_val = merged.channel_id.as_deref().and_then(|c| c.parse::<u64>().ok());
+        let channel_id_val = merged
+            .channel_id
+            .as_deref()
+            .and_then(|c| c.parse::<u64>().ok());
 
         let info = ConnectionInfo {
             endpoint,
@@ -305,9 +301,24 @@ impl GuildPlayer {
             user_id: UserId::from(user_nz),
         };
 
+        let mut adapter = crate::player::kizuna_adapter::KizunaVoiceAdapter::new(
+            merged.session_id.clone(),
+            merged.token.clone(),
+            merged.endpoint.clone(),
+            self.guild_id.clone(),
+        );
+        if std::env::var("KIZUNA_VOICE").unwrap_or_default() == "1" {
+            let _ = adapter
+                .connect(self.guild_id.clone(), self.user_id.clone())
+                .await;
+            self.kizuna_voice_adapter = Some(Arc::new(Mutex::new(adapter)));
+        }
         let mut driver_lock = self.driver.lock().await;
         if let Err(e) = driver_lock.connect(info).await {
-            error!("Voice connection failed for guild {}: {:?}", self.guild_id, e);
+            error!(
+                "Voice connection failed for guild {}: {:?}",
+                self.guild_id, e
+            );
             self.voice = Some(merged);
             self.last_update = util::current_timestamp();
             return false;
@@ -321,10 +332,7 @@ impl GuildPlayer {
         };
         {
             let mut driver_lock = self.driver.lock().await;
-            driver_lock.add_global_event(
-                CoreEvent::DriverDisconnect.into(),
-                disconnect_handler,
-            );
+            driver_lock.add_global_event(CoreEvent::DriverDisconnect.into(), disconnect_handler);
         }
 
         self.voice = Some(merged);
@@ -340,9 +348,7 @@ impl GuildPlayer {
         let ext = &name[dot + 1..];
         let ext = ext.to_ascii_lowercase();
         match ext.as_str() {
-            "mp3" | "m4a" | "mp4" | "aac" | "ogg" | "opus" | "webm" | "flac" | "wav" => {
-                Some(ext)
-            }
+            "mp3" | "m4a" | "mp4" | "aac" | "ogg" | "opus" | "webm" | "flac" | "wav" => Some(ext),
             _ => None,
         }
     }
@@ -425,7 +431,12 @@ impl GuildPlayer {
             warn!("Failed to set volume during restart: {:?}", e);
         }
 
-        let factor = self.shared_chain.lock().unwrap().duration_factor().max(1e-6);
+        let factor = self
+            .shared_chain
+            .lock()
+            .unwrap()
+            .duration_factor()
+            .max(1e-6);
         let wall_offset_ms = (position_ms as f64 / factor) as u64;
 
         if was_paused {
@@ -434,8 +445,7 @@ impl GuildPlayer {
             self.paused_position = position_ms;
             self.play_started_at = None;
         } else {
-            self.play_started_at =
-                Some(Instant::now() - Duration::from_millis(wall_offset_ms));
+            self.play_started_at = Some(Instant::now() - Duration::from_millis(wall_offset_ms));
             self.paused_at = None;
             self.paused_position = 0;
         }
@@ -540,9 +550,8 @@ impl GuildPlayer {
             } else {
                 let _ = handle.play();
                 self.paused_at = None;
-                self.play_started_at = Some(
-                    Instant::now() - Duration::from_millis(self.paused_position),
-                );
+                self.play_started_at =
+                    Some(Instant::now() - Duration::from_millis(self.paused_position));
             }
         }
         self.paused = paused;
@@ -596,8 +605,7 @@ impl GuildPlayer {
             }
         } else if let Some(handle) = &self.track_handle {
             let _ = handle.seek(Duration::from_millis(position));
-            self.play_started_at =
-                Some(Instant::now() - Duration::from_millis(position));
+            self.play_started_at = Some(Instant::now() - Duration::from_millis(position));
         }
         self.paused_position = position;
         self.last_update = util::current_timestamp();

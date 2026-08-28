@@ -42,7 +42,11 @@ impl VimeoSource {
         let json: Value = serde_json::from_str(&json).map_err(|e| e.to_string())?;
 
         let mut tracks = Vec::new();
-        if let Some(videos) = json.get("videos").and_then(|v| v.get("video")).and_then(|v| v.as_array()) {
+        if let Some(videos) = json
+            .get("videos")
+            .and_then(|v| v.get("video"))
+            .and_then(|v| v.as_array())
+        {
             for video in videos.iter().take(limit) {
                 if let Some(track) = self.parse_video(video) {
                     tracks.push(track);
@@ -54,7 +58,10 @@ impl VimeoSource {
     }
 
     pub async fn resolve_video(&self, video_id: &str) -> Result<Option<LavalinkTrack>, String> {
-        let url = format!("https://vimeo.com/api/oembed.json?url=https://vimeo.com/{}", video_id);
+        let url = format!(
+            "https://vimeo.com/api/oembed.json?url=https://vimeo.com/{}",
+            video_id
+        );
         let client = self.client.clone();
         let cfg = BackoffConfig::default();
 
@@ -71,10 +78,25 @@ impl VimeoSource {
 
         let json: Value = serde_json::from_str(&json).map_err(|e| e.to_string())?;
 
-        let title = json.get("title").and_then(|t| t.as_str()).unwrap_or("Unknown").to_string();
-        let author_name = json.get("author_name").and_then(|a| a.as_str()).unwrap_or("Unknown Artist").to_string();
-        let duration = json.get("duration").and_then(|d| d.as_u64()).map(|d| d * 1000).unwrap_or(0);
-        let thumbnail = json.get("thumbnail_url").and_then(|t| t.as_str()).map(|s| s.to_string());
+        let title = json
+            .get("title")
+            .and_then(|t| t.as_str())
+            .unwrap_or("Unknown")
+            .to_string();
+        let author_name = json
+            .get("author_name")
+            .and_then(|a| a.as_str())
+            .unwrap_or("Unknown Artist")
+            .to_string();
+        let duration = json
+            .get("duration")
+            .and_then(|d| d.as_u64())
+            .map(|d| d * 1000)
+            .unwrap_or(0);
+        let thumbnail = json
+            .get("thumbnail_url")
+            .and_then(|t| t.as_str())
+            .map(|s| s.to_string());
 
         let page_url = format!("https://vimeo.com/{}", video_id);
         let page_client = self.client.clone();
@@ -131,10 +153,27 @@ impl VimeoSource {
 
     fn parse_video(&self, video: &Value) -> Option<LavalinkTrack> {
         let id = video.get("id").and_then(|i| i.as_u64())?.to_string();
-        let title = video.get("title").and_then(|t| t.as_str()).unwrap_or("Unknown").to_string();
-        let author = video.get("user").and_then(|u| u.get("display_name")).and_then(|n| n.as_str()).unwrap_or("Unknown Artist").to_string();
-        let duration = video.get("duration").and_then(|d| d.as_u64()).map(|d| d * 1000).unwrap_or(0);
-        let thumbnail = video.get("thumbs").and_then(|t| t.get("large")).and_then(|l| l.as_str()).map(|s| s.to_string());
+        let title = video
+            .get("title")
+            .and_then(|t| t.as_str())
+            .unwrap_or("Unknown")
+            .to_string();
+        let author = video
+            .get("user")
+            .and_then(|u| u.get("display_name"))
+            .and_then(|n| n.as_str())
+            .unwrap_or("Unknown Artist")
+            .to_string();
+        let duration = video
+            .get("duration")
+            .and_then(|d| d.as_u64())
+            .map(|d| d * 1000)
+            .unwrap_or(0);
+        let thumbnail = video
+            .get("thumbs")
+            .and_then(|t| t.get("large"))
+            .and_then(|l| l.as_str())
+            .map(|s| s.to_string());
         let uri = Some(format!("https://vimeo.com/{}", id));
 
         let mut track = LavalinkTrack {

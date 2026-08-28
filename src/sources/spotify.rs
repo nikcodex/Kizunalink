@@ -1,5 +1,5 @@
 use crate::models::track::{LavalinkTrack, PlaylistData, PlaylistInfo, TrackInfo};
-use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION, ACCEPT, USER_AGENT};
+use reqwest::header::{HeaderMap, HeaderValue, ACCEPT, AUTHORIZATION, USER_AGENT};
 use serde::Deserialize;
 use serde_json::Value;
 use std::sync::Arc;
@@ -90,7 +90,10 @@ impl SpotifySource {
 
         // Try client_credentials flow first (more reliable)
         if let (Some(client_id), Some(client_secret)) = (&self.client_id, &self.client_secret) {
-            match self.fetch_client_credentials_token(client_id, client_secret).await {
+            match self
+                .fetch_client_credentials_token(client_id, client_secret)
+                .await
+            {
                 Ok(creds) => {
                     let expires_at = now + (creds.expires_in * 1000);
                     *write = Some((creds.access_token.clone(), expires_at));
@@ -98,7 +101,10 @@ impl SpotifySource {
                     return Ok(creds.access_token);
                 }
                 Err(e) => {
-                    warn!("Spotify: client_credentials failed ({}), trying anonymous...", e);
+                    warn!(
+                        "Spotify: client_credentials failed ({}), trying anonymous...",
+                        e
+                    );
                 }
             }
         }
@@ -136,7 +142,8 @@ impl SpotifySource {
     }
 
     async fn fetch_anonymous_token(&self) -> Result<(String, u64), String> {
-        let url = "https://open.spotify.com/get_access_token?reason=transport&productType=web_player";
+        let url =
+            "https://open.spotify.com/get_access_token?reason=transport&productType=web_player";
 
         let res = self
             .client
@@ -296,7 +303,11 @@ impl SpotifySource {
         self.parse_playlist_response(&json, &token).await
     }
 
-    async fn parse_playlist_response(&self, json: &Value, token: &str) -> Result<Option<PlaylistData>, String> {
+    async fn parse_playlist_response(
+        &self,
+        json: &Value,
+        token: &str,
+    ) -> Result<Option<PlaylistData>, String> {
         let pl_name = json
             .get("name")
             .and_then(|n| n.as_str())
@@ -381,7 +392,10 @@ impl SpotifySource {
             })
             .unwrap_or_else(|| "Unknown Artist".to_string());
 
-        let duration_ms = item.get("duration_ms").and_then(|d| d.as_u64()).unwrap_or(0);
+        let duration_ms = item
+            .get("duration_ms")
+            .and_then(|d| d.as_u64())
+            .unwrap_or(0);
 
         let artwork = item
             .get("album")

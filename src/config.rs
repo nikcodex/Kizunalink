@@ -314,11 +314,16 @@ impl AppConfig {
             .ok()
             .and_then(|p| p.parse().ok())
             .unwrap_or(2333);
-        let password = std::env::var("KIZUNA_PASSWORD").unwrap_or_else(|_| "youshallnotpass".to_string());
+        let password =
+            std::env::var("KIZUNA_PASSWORD").unwrap_or_else(|_| "youshallnotpass".to_string());
 
         let mut ratelimit = RatelimitConfig::default();
         if let Ok(blocks) = std::env::var("KIZUNA_IP_BLOCKS") {
-            ratelimit.ip_blocks = blocks.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect();
+            ratelimit.ip_blocks = blocks
+                .split(',')
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect();
         }
         if let Ok(strategy) = std::env::var("KIZUNA_ROUTEPLANNER_STRATEGY") {
             ratelimit.strategy = strategy;

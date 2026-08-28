@@ -86,7 +86,9 @@ where
                 let final_delay_ms = if jitter_range > 0 {
                     let mut rng = rand::thread_rng();
                     let jitter = rng.gen_range(0..=(jitter_range * 2));
-                    capped_delay_ms.saturating_sub(jitter_range).saturating_add(jitter)
+                    capped_delay_ms
+                        .saturating_sub(jitter_range)
+                        .saturating_add(jitter)
                 } else {
                     capped_delay_ms
                 };
@@ -119,10 +121,7 @@ mod tests {
     #[tokio::test]
     async fn test_succeeds_first_try() {
         let cfg = BackoffConfig::default();
-        let result = with_backoff(&cfg, "test_first_try", || async {
-            Ok::<i32, String>(42)
-        })
-        .await;
+        let result = with_backoff(&cfg, "test_first_try", || async { Ok::<i32, String>(42) }).await;
         assert_eq!(result.unwrap(), 42);
     }
 
