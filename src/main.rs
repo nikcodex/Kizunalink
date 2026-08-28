@@ -64,7 +64,17 @@ async fn health_check() -> axum::Json<serde_json::Value> {
 
 #[tokio::main]
 async fn main() {
-    tracing_subscriber::fmt::init();
+    // Initialize structured logging from config
+    let log_filter = std::env::var("RUST_LOG")
+        .unwrap_or_else(|_| config.logging.level.clone());
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new(&log_filter)),
+        )
+        .with_target(true)
+        .with_thread_ids(false)
+        .init();
     let config = config::AppConfig::load();
     info!(
         "Loaded config: host={}, port={}",

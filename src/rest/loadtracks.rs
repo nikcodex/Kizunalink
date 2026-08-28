@@ -4,7 +4,7 @@ use axum::{
     response::Json,
 };
 use serde::Deserialize;
-use tracing::info;
+use tracing::{info, warn};
 
 use crate::models::track::LoadResult;
 use crate::rest::auth::require_auth;
@@ -55,6 +55,17 @@ pub async fn load_tracks(
     if (identifier.starts_with("http://") || identifier.starts_with("https://"))
         && is_direct_audio_url(&identifier)
     {
+        // SSRF protection: validate URL before fetching
+        if let Err(e) = security::validate_url(&identifier) {
+            warn!("SSRF blocked for '{}': {}", identifier, e);
+            crate::metrics::Metrics::global().errors_auth.inc();
+            return Ok(Json(LoadResult::Error(crate::models::track::ErrorInfo {
+                message: Some(format!("URL rejected: {}", e)),
+                severity: "fault".to_string(),
+                cause: "SSRF protection".to_string(),
+                cause_stack_trace: String::new(),
+            })));
+        }
         return Ok(Json(LoadResult::Track(
             crate::util::create_http_track(&identifier),
         )));

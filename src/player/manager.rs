@@ -218,6 +218,11 @@ impl PlayerManager {
                 };
                 return self.youtube.resolve_video(vid).await.ok().flatten();
             }
+            // SSRF protection: validate URL before creating HTTP track
+            if let Err(e) = crate::security::validate_url(clean) {
+                warn!("SSRF blocked in resolve_identifier for '{}': {}", clean, e);
+                return None;
+            }
             return Some(crate::util::create_http_track(clean));
         }
 
