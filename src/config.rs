@@ -220,8 +220,7 @@ impl ProxyConfig {
         if let Some(ref url) = self.url {
             let mut proxy = reqwest::Proxy::all(url).expect("Invalid proxy URL");
             if let (Some(ref user), Some(ref pass)) = (&self.username, &self.password) {
-                let auth = reqwest::Authentication::basic(user, pass);
-                proxy = proxy.basic_auth(auth);
+                proxy = proxy.basic_auth(user.as_str(), pass.as_str());
             }
             builder.proxy(proxy)
         } else {

@@ -76,6 +76,8 @@ impl PlayerManager {
             youtube: self.youtube.clone(),
             spotify: self.spotify.clone(),
             soundcloud: self.soundcloud.clone(),
+            deezer: self.deezer.clone(),
+            apple_music: self.apple_music.clone(),
         }
     }
 
