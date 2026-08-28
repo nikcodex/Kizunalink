@@ -54,8 +54,8 @@ const SENDER_KEY_LABEL: &[u8] = b"Discord Secure Frames v0";
 /// How many generations to retain old keys (for out-of-order frames)
 const KEY_RETENTION_GENERATIONS: u64 = 10;
 
-/// DAVE frame header: version (1 byte) + flags (1 byte) + trunc_nonce (2 bytes)
-const FRAME_HEADER_SIZE: usize = 4;
+/// DAVE frame header: version (1 byte) + flags (1 byte) + nonce (4 bytes)
+const FRAME_HEADER_SIZE: usize = 6;
 const FRAME_NONCE_SIZE: usize = 12;
 
 // ---------------------------------------------------------------------------
@@ -424,7 +424,7 @@ impl DaveSession {
         let mut frame = Vec::with_capacity(FRAME_HEADER_SIZE + ciphertext.len());
         frame.push(1); // version
         frame.push(0); // flags (audio)
-        frame.extend_from_slice(&(nonce_counter as u16).to_le_bytes());
+        frame.extend_from_slice(&nonce_counter.to_le_bytes());
         frame.extend_from_slice(&ciphertext);
 
         Ok(frame)
@@ -438,11 +438,12 @@ impl DaveSession {
 
         let _version = frame[0];
         let _flags = frame[1];
-        let trunc_nonce = u16::from_le_bytes([frame[2], frame[3]]) as u32;
+        let nonce_counter =
+            u32::from_le_bytes([frame[2], frame[3], frame[4], frame[5]]);
         let ciphertext = &frame[FRAME_HEADER_SIZE..];
 
         let uid: u64 = sender_id.parse().unwrap_or(0);
-        let generation = (trunc_nonce as u64 >> 24) & 0xFF;
+        let generation = (nonce_counter >> 24) & 0xFF;
 
         let ratchet = self
             .sender_ratchets
@@ -457,7 +458,7 @@ impl DaveSession {
             Aes128Gcm::new_from_slice(&key).map_err(|e| format!("AES init failed: {}", e))?;
 
         let mut nonce_bytes = [0u8; FRAME_NONCE_SIZE];
-        nonce_bytes[8..12].copy_from_slice(&trunc_nonce.to_le_bytes());
+        nonce_bytes[8..12].copy_from_slice(&nonce_counter.to_le_bytes());
         let nonce = Nonce::from_slice(&nonce_bytes);
 
         cipher
