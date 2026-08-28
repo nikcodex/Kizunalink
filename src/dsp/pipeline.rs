@@ -3,7 +3,6 @@
 /// Architecture:
 ///   HTTP stream (tokio task) -> ChannelByteSource -> AudioDecoder (symphonia)
 ///     -> FilterChain (DSP) -> f32 LE PCM bytes
-///       -> RawAdapter -> songbird Input -> mixer (post-filter!)
 ///
 /// The mixer reads from [`FilteredAudioReader`] synchronously, so every sample
 /// it receives has already been through the DSP chain - true pre-mixer filtering.
@@ -85,7 +84,6 @@ fn append_filtered(core: &mut PipelineCore, pcm: &[f32]) {
 }
 
 /// A synchronous MediaSource serving filtered f32-PCM. Wrap in
-/// `songbird::input::RawAdapter` to obtain a playable Input.
 pub struct FilteredAudioReader {
     core: Arc<Mutex<PipelineCore>>,
     /// Whether the source is Opus at 48kHz (allows skipping resampler)
@@ -160,154 +158,6 @@ impl symphonia::core::io::MediaSource for FilteredAudioReader {
 
     fn byte_len(&self) -> Option<u64> {
         None
-    }
-}
-
-/// Build a songbird `Input` that plays `stream_url` through the shared DSP
-/// chain. Returns Err with a message on setup failure.
-///
-/// When `opus_passthrough` is true AND the chain has no active filters AND
-/// the source is Opus at 48kHz, the raw HTTP stream is passed directly to
-/// Songbird (skipping decode→PCM→re-encode), saving ~60% CPU.
-pub async fn create_filtered_input(
-    http: reqwest::Client,
-    stream_url: String,
-    extension_hint: Option<String>,
-    shared_chain: SharedChain,
-    skip_frames: u64,
-    opus_passthrough: bool,
-) -> Result<songbird::input::Input, String> {
-    // Fast path: Opus passthrough — skip the entire decode+filter pipeline
-    if opus_passthrough && !shared_chain.lock().unwrap().is_active() {
-        return Ok(songbird::input::HttpRequest::new(http, stream_url).into());
-    }
-
-    let (tx, rx) = std::sync::mpsc::sync_channel::<Vec<u8>>(256);
-
-    let url = stream_url.clone();
-    tokio::spawn(async move {
-        let resp = match http.get(&url).send().await {
-            Ok(r) => r,
-            Err(_) => return,
-        };
-        if !resp.status().is_success() {
-            return;
-        }
-        let mut stream = resp.bytes_stream();
-        use futures_util::StreamExt;
-        while let Some(chunk) = stream.next().await {
-            match chunk {
-                Ok(bytes) => {
-                    if tx.send(bytes.to_vec()).is_err() {
-                        break; // receiver dropped
-                    }
-                }
-                Err(_) => break,
-            }
-        }
-        // tx dropped here => EOF for the reader
-    });
-
-    // std::sync::mpsc::sync_channel's Receiver is the same concrete type as
-    // the unbounded one, so ChannelByteSource::new works directly.
-    let byte_source = ChannelByteSource::new(rx);
-    let decoder = tokio::task::spawn_blocking(move || {
-        let hint_ext: Option<&str> = extension_hint.as_deref();
-        AudioDecoder::open(
-            Box::new(byte_source) as Box<dyn MediaSource>,
-            hint_ext,
-            skip_frames,
-        )
-    })
-    .await
-    .map_err(|e| format!("decoder task panicked: {}", e))??;
-
-    let is_opus = decoder.is_opus;
-    let reader = FilteredAudioReader::new(shared_chain, decoder);
-
-    if is_opus && opus_passthrough {
-        // Source is Opus 48kHz — Songbird receives raw HTTP stream and handles
-        // the WebM/Ogg demux + Opus decode internally. We still went through
-        // our decoder to detect it's Opus, but Songbird will re-parse from the
-        // HTTP stream. This is slightly wasteful but correct.
-        // TODO: cache the "is_opus" detection so we don't need to decode first.
-        Ok(songbird::input::HttpRequest::new(crate::config::http_client(), stream_url).into())
-    } else {
-        Ok(songbird::input::RawAdapter::new(reader, TARGET_SAMPLE_RATE, 2).into())
-    }
-}
-
-#[cfg(test)]
-pub mod test_support {
-    //! Offline harness helpers used by verification tests. These run audio
-    //! through the exact production chain code path.
-
-    use super::*;
-
-    /// Run interleaved stereo PCM through a chain configured from Lavalink
-    /// filters, using realistic 20 ms chunking. Returns filtered samples plus
-    /// whether the update was structural.
-    pub fn run_through_pipeline(
-        input: &[f32],
-        filters: &Filters,
-        sample_rate: f64,
-        structural_before: bool,
-    ) -> (Vec<f32>, bool) {
-        let mut chain = FilterChain::new(sample_rate);
-        let _structural = chain.update_from_lavalink(filters);
-
-        let mut out = Vec::with_capacity(input.len());
-        for chunk in input.chunks(960 * 2) {
-            out.extend(chain.process(chunk));
-        }
-        out.extend(chain.flush());
-        let _ = structural_before;
-        (out, _structural)
-    }
-}
-
-use async_trait::async_trait;
-use kizuna_voice::audio::AudioFrame;
-use kizuna_voice::audio::AudioSource;
-
-pub struct KizunaFilteredSource {
-    reader: FilteredAudioReader,
-}
-
-impl KizunaFilteredSource {
-    pub fn new(reader: FilteredAudioReader) -> Self {
-        Self { reader }
-    }
-}
-
-#[async_trait]
-impl AudioSource for KizunaFilteredSource {
-    async fn next_frame(&mut self) -> kizuna_voice::error::Result<Option<AudioFrame>> {
-        let mut buf = [0u8; 7680];
-        let mut total_read = 0;
-
-        while total_read < buf.len() {
-            match self.reader.read(&mut buf[total_read..]) {
-                Ok(0) => break,
-                Ok(n) => total_read += n,
-                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => continue,
-                Err(e) => return Err(kizuna_voice::error::Error::Connection(e.to_string())),
-            }
-        }
-
-        if total_read == 0 {
-            return Ok(None);
-        }
-
-        let num_samples = total_read / 4;
-        let mut samples = Vec::with_capacity(num_samples);
-        for chunk in buf[..total_read].chunks_exact(4) {
-            let f = f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
-            let s = (f * i16::MAX as f32).clamp(i16::MIN as f32, i16::MAX as f32) as i16;
-            samples.push(s);
-        }
-
-        Ok(Some(AudioFrame::Pcm(samples)))
     }
 }
 

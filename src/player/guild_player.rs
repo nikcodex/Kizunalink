@@ -6,12 +6,6 @@ use crate::models::{
 use crate::player::autoplay::AutoplayEngine;
 use crate::player::queue::{LoopMode, TrackQueue};
 use crate::util;
-use songbird::driver::Driver;
-use songbird::events::{context_data, CoreEvent, Event, EventContext, EventHandler, TrackEvent};
-use songbird::id::{GuildId, UserId};
-use songbird::input::HttpRequest;
-use songbird::tracks::{Track, TrackHandle};
-use songbird::ConnectionInfo;
 use std::num::NonZeroU64;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -99,38 +93,18 @@ impl DisconnectHandler {
 }
 
 #[async_trait::async_trait]
-impl EventHandler for DisconnectHandler {
-    async fn act(&self, ctx: &EventContext<'_>) -> Option<Event> {
-        if let EventContext::DriverDisconnect(data) = ctx {
-            let json = self.handle_disconnect(&data.reason);
-            info!("Voice disconnected for guild {}: {}", self.guild_id, json);
-        }
-        None
+impl DisconnectHandler {
+    fn handle_disconnect(&self, reason: &Option<String>) -> String {
+        let payload = ws_closed_event_json(&self.guild_id, reason);
+        let json = payload.to_string();
+        let _ = self.event_tx.send(json.clone());
+        json
     }
 }
 
 // ---------------------------------------------------------------------------
 // Track End Notifier
 // ---------------------------------------------------------------------------
-
-struct TrackEndNotifier {
-    guild_id: String,
-    track_end_tx: mpsc::UnboundedSender<String>,
-}
-
-#[async_trait::async_trait]
-impl EventHandler for TrackEndNotifier {
-    async fn act(&self, ctx: &EventContext<'_>) -> Option<Event> {
-        if let EventContext::Track(track_events) = ctx {
-            for (state, _) in *track_events {
-                if state.playing.is_done() {
-                    let _ = self.track_end_tx.send(self.guild_id.clone());
-                }
-            }
-        }
-        None
-    }
-}
 
 // ---------------------------------------------------------------------------
 // Guild Player
@@ -144,10 +118,8 @@ pub struct GuildPlayer {
     pub voice: Option<VoiceStateUpdate>,
     pub filters: Filters,
     pub last_update: u64,
-    pub driver: Arc<Mutex<Driver>>,
     pub kizuna_voice_adapter: Option<Arc<Mutex<crate::player::kizuna_adapter::KizunaVoiceAdapter>>>,
     pub kizuna_track_handle: Option<kizuna_voice::audio::KizunaTrackHandle>,
-    pub track_handle: Option<TrackHandle>,
     pub is_playing: bool,
     pub queue: TrackQueue,
     pub autoplay: AutoplayEngine,
@@ -170,7 +142,6 @@ impl GuildPlayer {
         event_tx: broadcast::Sender<String>,
         track_end_tx: mpsc::UnboundedSender<String>,
     ) -> Self {
-        let driver = Driver::new(Default::default());
         Self {
             guild_id,
             user_id,
@@ -179,10 +150,8 @@ impl GuildPlayer {
             voice: None,
             filters: Filters::default(),
             last_update: util::current_timestamp(),
-            driver: Arc::new(Mutex::new(driver)),
             kizuna_voice_adapter: None,
             kizuna_track_handle: None,
-            track_handle: None,
             is_playing: false,
             queue: TrackQueue::new(),
             autoplay: AutoplayEngine::new(),
@@ -281,61 +250,18 @@ impl GuildPlayer {
             .to_string();
 
         let guild_num = self.guild_id.parse::<u64>().unwrap_or(0);
-        let user_num = self.user_id.parse::<u64>().unwrap_or(0);
-
-        let guild_nz = NonZeroU64::new(guild_num).unwrap_or(NonZeroU64::new(1).unwrap());
-        let user_nz = NonZeroU64::new(user_num).unwrap_or(NonZeroU64::new(1).unwrap());
-
-        let channel_id_val = merged
-            .channel_id
-            .as_deref()
-            .and_then(|c| c.parse::<u64>().ok());
-
-        let info = ConnectionInfo {
-            endpoint,
-            guild_id: GuildId::from(guild_nz),
-            channel_id: channel_id_val.map(|id| {
-                let nz = NonZeroU64::new(id).unwrap_or(NonZeroU64::new(1).unwrap());
-                songbird::id::ChannelId::from(nz)
-            }),
-            session_id: merged.session_id.clone(),
-            token: merged.token.clone(),
-            user_id: UserId::from(user_nz),
-        };
 
         let mut adapter = crate::player::kizuna_adapter::KizunaVoiceAdapter::new(
             merged.session_id.clone(),
             merged.token.clone(),
             merged.endpoint.clone(),
-            self.guild_id.clone(),
         );
-        if std::env::var("KIZUNA_VOICE").unwrap_or_default() == "1" {
-            let _ = adapter
-                .connect(self.guild_id.clone(), self.user_id.clone())
-                .await;
-            self.kizuna_voice_adapter = Some(Arc::new(Mutex::new(adapter)));
-        }
-        let mut driver_lock = self.driver.lock().await;
-        if let Err(e) = driver_lock.connect(info).await {
-            error!(
-                "Voice connection failed for guild {}: {:?}",
-                self.guild_id, e
-            );
-            self.voice = Some(merged);
-            self.last_update = util::current_timestamp();
-            return false;
-        }
-        drop(driver_lock);
-        info!("Voice connected for guild: {}", self.guild_id);
+        let _ = adapter
+            .connect(self.guild_id.clone(), self.user_id.clone())
+            .await;
+        self.kizuna_voice_adapter = Some(std::sync::Arc::new(tokio::sync::Mutex::new(adapter)));
 
-        let disconnect_handler = DisconnectHandler {
-            guild_id: self.guild_id.clone(),
-            event_tx: self.event_tx.clone(),
-        };
-        {
-            let mut driver_lock = self.driver.lock().await;
-            driver_lock.add_global_event(CoreEvent::DriverDisconnect.into(), disconnect_handler);
-        }
+        info!("Voice connected for guild: {}", self.guild_id);
 
         self.voice = Some(merged);
         self.last_update = util::current_timestamp();
@@ -352,48 +278,6 @@ impl GuildPlayer {
         match ext.as_str() {
             "mp3" | "m4a" | "mp4" | "aac" | "ogg" | "opus" | "webm" | "flac" | "wav" => Some(ext),
             _ => None,
-        }
-    }
-
-    async fn build_input(
-        &self,
-        stream_url: &str,
-        start_offset_ms: u64,
-    ) -> (songbird::input::Input, bool) {
-        let chain_active = self.shared_chain.lock().unwrap().is_active();
-
-        // When no filters are active, use Opus passthrough — Songbird handles
-        // the raw HTTP stream (WebM/Ogg demux + Opus decode) directly, skipping
-        // our Symphonia decode→PCM→re-encode pipeline entirely.
-        if !chain_active {
-            return (
-                HttpRequest::new(crate::config::http_client(), stream_url.to_string()).into(),
-                false,
-            );
-        }
-
-        // Filters are active — must decode to PCM, apply DSP, re-encode
-        match pipeline::create_filtered_input(
-            crate::config::http_client(),
-            stream_url.to_string(),
-            Self::extension_hint(stream_url),
-            self.shared_chain.clone(),
-            start_offset_ms * (SAMPLE_RATE as u64 / 1000),
-            true, // opus_passthrough hint
-        )
-        .await
-        {
-            Ok(input) => (input, true),
-            Err(e) => {
-                warn!(
-                    "Filtered pipeline setup failed ({}), falling back to direct input",
-                    e
-                );
-                (
-                    HttpRequest::new(crate::config::http_client(), stream_url.to_string()).into(),
-                    false,
-                )
-            }
         }
     }
 
@@ -415,50 +299,48 @@ impl GuildPlayer {
         self.stop_handle_silently();
 
         let was_paused = self.paused;
-        let (input, filtered) = self.build_input(&url, position_ms).await;
+        let filtered = self.shared_chain.lock().unwrap().is_active();
 
         let mut driver_lock = self.driver.lock().await;
         let handle = driver_lock.play(Track::new(input));
         drop(driver_lock);
 
-        if std::env::var("KIZUNA_VOICE").unwrap_or_default() == "1" {
-            if let Some(adapter_arc) = &self.kizuna_voice_adapter {
-                // To prove the architecture, we rebuild the source for Kizuna
-                if let Ok(k_source) = crate::dsp::pipeline::create_kizuna_source(
-                    crate::config::http_client(),
-                    url.clone(),
-                    None,
-                    self.shared_chain.clone(),
-                    0,
-                )
-                .await
-                {
-                    use std::sync::Arc;
-                    use tokio::sync::Mutex;
-                    let k_src = Arc::new(Mutex::new(k_source));
-                    let mut adapter = adapter_arc.lock().await;
-                    let k_handle = adapter.play_source(k_src, self.user_id.clone());
+        if let Some(adapter_arc) = &self.kizuna_voice_adapter {
+            // To prove the architecture, we rebuild the source for Kizuna
+            if let Ok(k_source) = crate::dsp::pipeline::create_kizuna_source(
+                crate::config::http_client(),
+                url.clone(),
+                None,
+                self.shared_chain.clone(),
+                0,
+            )
+            .await
+            {
+                use std::sync::Arc;
+                use tokio::sync::Mutex;
+                let k_src = Arc::new(Mutex::new(k_source));
+                let mut adapter = adapter_arc.lock().await;
+                let k_handle = adapter.play_source(k_src, self.user_id.clone());
 
-                    let guild_id = self.guild_id.clone();
-                    let tx = self.track_end_tx.clone();
-                    let kh_clone = k_handle.clone();
+                let guild_id = self.guild_id.clone();
+                let tx = self.track_end_tx.clone();
+                let kh_clone = k_handle.clone();
 
-                    // TrackEndNotifier replacement loop
-                    tokio::spawn(async move {
-                        while let Ok(event) = kh_clone.next_event().await {
-                            if matches!(
-                                event,
-                                kizuna_voice::audio::TrackEvent::Ended
-                                    | kizuna_voice::audio::TrackEvent::Error(_)
-                            ) {
-                                let _ = tx.send(guild_id.clone());
-                                break;
-                            }
+                // TrackEndNotifier replacement loop
+                tokio::spawn(async move {
+                    while let Ok(event) = kh_clone.next_event().await {
+                        if matches!(
+                            event,
+                            kizuna_voice::audio::TrackEvent::Ended
+                                | kizuna_voice::audio::TrackEvent::Error(_)
+                        ) {
+                            let _ = tx.send(guild_id.clone());
+                            break;
                         }
-                    });
+                    }
+                });
 
-                    self.kizuna_track_handle = Some(k_handle);
-                }
+                self.kizuna_track_handle = Some(k_handle);
             }
         }
 
@@ -483,7 +365,6 @@ impl GuildPlayer {
         let wall_offset_ms = (position_ms as f64 / factor) as u64;
 
         if was_paused {
-            let _ = handle.pause();
             if let Some(k_handle) = &self.kizuna_track_handle {
                 let k = k_handle.clone();
                 tokio::spawn(async move {
@@ -522,50 +403,48 @@ impl GuildPlayer {
             }
         }
 
-        let (input, filtered) = self.build_input(&stream_url, 0).await;
+        let filtered = self.shared_chain.lock().unwrap().is_active();
 
         let mut driver_lock = self.driver.lock().await;
         let handle = driver_lock.play(Track::new(input));
         drop(driver_lock);
 
-        if std::env::var("KIZUNA_VOICE").unwrap_or_default() == "1" {
-            if let Some(adapter_arc) = &self.kizuna_voice_adapter {
-                // To prove the architecture, we rebuild the source for Kizuna
-                if let Ok(k_source) = crate::dsp::pipeline::create_kizuna_source(
-                    crate::config::http_client(),
-                    stream_url.clone(),
-                    None,
-                    self.shared_chain.clone(),
-                    0,
-                )
-                .await
-                {
-                    use std::sync::Arc;
-                    use tokio::sync::Mutex;
-                    let k_src = Arc::new(Mutex::new(k_source));
-                    let mut adapter = adapter_arc.lock().await;
-                    let k_handle = adapter.play_source(k_src, self.user_id.clone());
+        if let Some(adapter_arc) = &self.kizuna_voice_adapter {
+            // To prove the architecture, we rebuild the source for Kizuna
+            if let Ok(k_source) = crate::dsp::pipeline::create_kizuna_source(
+                crate::config::http_client(),
+                stream_url.clone(),
+                None,
+                self.shared_chain.clone(),
+                0,
+            )
+            .await
+            {
+                use std::sync::Arc;
+                use tokio::sync::Mutex;
+                let k_src = Arc::new(Mutex::new(k_source));
+                let mut adapter = adapter_arc.lock().await;
+                let k_handle = adapter.play_source(k_src, self.user_id.clone());
 
-                    let guild_id = self.guild_id.clone();
-                    let tx = self.track_end_tx.clone();
-                    let kh_clone = k_handle.clone();
+                let guild_id = self.guild_id.clone();
+                let tx = self.track_end_tx.clone();
+                let kh_clone = k_handle.clone();
 
-                    // TrackEndNotifier replacement loop
-                    tokio::spawn(async move {
-                        while let Ok(event) = kh_clone.next_event().await {
-                            if matches!(
-                                event,
-                                kizuna_voice::audio::TrackEvent::Ended
-                                    | kizuna_voice::audio::TrackEvent::Error(_)
-                            ) {
-                                let _ = tx.send(guild_id.clone());
-                                break;
-                            }
+                // TrackEndNotifier replacement loop
+                tokio::spawn(async move {
+                    while let Ok(event) = kh_clone.next_event().await {
+                        if matches!(
+                            event,
+                            kizuna_voice::audio::TrackEvent::Ended
+                                | kizuna_voice::audio::TrackEvent::Error(_)
+                        ) {
+                            let _ = tx.send(guild_id.clone());
+                            break;
                         }
-                    });
+                    }
+                });
 
-                    self.kizuna_track_handle = Some(k_handle);
-                }
+                self.kizuna_track_handle = Some(k_handle);
             }
         }
 
@@ -577,9 +456,6 @@ impl GuildPlayer {
             },
         );
 
-        if let Err(e) = handle.set_volume(self.volume as f32 / 100.0) {
-            warn!("Failed to set volume on handle: {:?}", e);
-        }
         if let Some(k_handle) = &self.kizuna_track_handle {
             let k = k_handle.clone();
             let vol = self.volume as f32 / 100.0;
@@ -642,7 +518,6 @@ impl GuildPlayer {
     pub fn set_paused(&mut self, paused: bool) {
         if let Some(handle) = &self.track_handle {
             if paused {
-                let _ = handle.pause();
                 self.paused_at = Some(Instant::now());
             } else {
                 let _ = handle.play();
@@ -831,8 +706,6 @@ impl GuildPlayer {
 #[cfg(test)]
 mod disconnect_tests {
     use super::*;
-    use songbird::events::context_data::DisconnectReason as DR;
-    use songbird::model::CloseCode;
 
     #[test]
     fn ws_closed_with_session_invalid_code_4006() {
