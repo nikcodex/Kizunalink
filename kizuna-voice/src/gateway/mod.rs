@@ -1,5 +1,4 @@
+pub mod connection;
 pub mod payload;
 
-pub trait VoiceGateway {
-    // Abstraction for sending/receiving gateway messages
-}
+pub use connection::VoiceGatewayClient;

@@ -4,13 +4,13 @@ use thiserror::Error;
 pub enum Error {
     #[error("Gateway error: {0}")]
     Gateway(String),
-    
+
     #[error("Transport error: {0}")]
     Transport(String),
-    
+
     #[error("Crypto/DAVE error: {0}")]
     Crypto(String),
-    
+
     #[error("Connection error: {0}")]
     Connection(String),
 }
