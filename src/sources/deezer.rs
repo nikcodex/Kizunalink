@@ -179,6 +179,25 @@ impl DeezerSource {
             .and_then(|l| l.as_str())
             .map(|s| s.to_string());
 
+        // Extract ISRC if available (Deezer provides it)
+        let isrc = item
+            .get("isrc")
+            .and_then(|i| i.as_str())
+            .map(|s| s.to_string());
+
+        let album_id = item
+            .get("album")
+            .and_then(|a| a.get("id"))
+            .and_then(|id| id.as_u64());
+
+        let mut plugin_info = serde_json::Map::new();
+        if let Some(code) = &isrc {
+            plugin_info.insert("isrc".to_string(), Value::String(code.clone()));
+        }
+        if let Some(aid) = album_id {
+            plugin_info.insert("deezerAlbumId".to_string(), Value::Number(aid.into()));
+        }
+
         let mut track = LavalinkTrack {
             encoded: String::new(),
             info: TrackInfo {
@@ -191,10 +210,10 @@ impl DeezerSource {
                 title,
                 uri: preview.or(link),
                 artwork_url: artwork,
-                isrc: None,
+                isrc,
                 source_name: "deezer".to_string(),
             },
-            plugin_info: Value::Object(Default::default()),
+            plugin_info: Value::Object(plugin_info),
             user_data: Value::Object(Default::default()),
         };
 

@@ -1,0 +1,51 @@
+version: '3.8'
+
+services:
+  kizunalink:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: kizunalink
+    restart: unless-stopped
+    ports:
+      - "2333:2333"
+    environment:
+      - KIZUNA_HOST=0.0.0.0
+      - KIZUNA_PORT=2333
+      - KIZUNA_PASSWORD=youshallnotpass
+      - KIZUNA_LOG_LEVEL=info
+      - RUST_LOG=info
+      # Spotify (optional - for higher rate limits)
+      # - SPOTIFY_CLIENT_ID=your_client_id
+      # - SPOTIFY_CLIENT_SECRET=your_client_secret
+      # Rate limiting
+      # - KIZUNA_MAX_REQUESTS=60
+      # IP rotation (optional)
+      # - KIZUNA_IP_BLOCKS=::1/128,fc00::/7
+      # - KIZUNA_ROUTEPLANNER_STRATEGY=RotatingIpRoutePlanner
+      # Proxy (optional)
+      # - KIZUNA_PROXY_URL=socks5://proxy:1080
+      # - KIZUNA_PROXY_USER=user
+      # - KIZUNA_PROXY_PASS=pass
+    volumes:
+      - ./config.toml:/app/config.toml:ro
+      - ./plugins:/app/plugins
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:2333/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '2.0'
+        reservations:
+          memory: 128M
+          cpus: '0.5'
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"

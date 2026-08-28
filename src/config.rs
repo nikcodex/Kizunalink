@@ -8,6 +8,14 @@ pub struct AppConfig {
     pub sources: SourcesConfig,
     #[serde(default)]
     pub ratelimit: RatelimitConfig,
+    #[serde(default)]
+    pub logging: LoggingConfig,
+    #[serde(default)]
+    pub metrics: MetricsConfig,
+    #[serde(default)]
+    pub security: SecurityConfig,
+    #[serde(default)]
+    pub proxy: ProxyConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -15,6 +23,18 @@ pub struct ServerConfig {
     pub host: String,
     pub port: u16,
     pub password: String,
+    #[serde(default = "default_max_connections")]
+    pub max_connections: usize,
+    #[serde(default = "default_request_timeout")]
+    pub request_timeout_secs: u64,
+}
+
+fn default_max_connections() -> usize {
+    1000
+}
+
+fn default_request_timeout() -> u64 {
+    30
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -56,6 +76,12 @@ pub struct RatelimitConfig {
     pub excluded_ips: Vec<String>,
     #[serde(default = "default_retry_limit")]
     pub retry_limit: u32,
+    #[serde(default = "default_max_requests")]
+    pub max_requests: u32,
+    #[serde(default = "default_window_secs")]
+    pub window_secs: u64,
+    #[serde(default = "default_burst")]
+    pub burst: u32,
 }
 
 fn default_strategy() -> String {
@@ -66,6 +92,18 @@ fn default_retry_limit() -> u32 {
     4
 }
 
+fn default_max_requests() -> u32 {
+    60
+}
+
+fn default_window_secs() -> u64 {
+    60
+}
+
+fn default_burst() -> u32 {
+    10
+}
+
 impl Default for RatelimitConfig {
     fn default() -> Self {
         Self {
@@ -73,6 +111,105 @@ impl Default for RatelimitConfig {
             strategy: default_strategy(),
             excluded_ips: Vec::new(),
             retry_limit: default_retry_limit(),
+            max_requests: default_max_requests(),
+            window_secs: default_window_secs(),
+            burst: default_burst(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LoggingConfig {
+    #[serde(default = "default_log_level")]
+    pub level: String,
+    #[serde(default)]
+    pub file: Option<String>,
+    #[serde(default = "default_true")]
+    pub colored: bool,
+}
+
+fn default_log_level() -> String {
+    "info".to_string()
+}
+
+impl Default for LoggingConfig {
+    fn default() -> Self {
+        Self {
+            level: default_log_level(),
+            file: None,
+            colored: true,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MetricsConfig {
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    #[serde(default = "default_metrics_port")]
+    pub port: u16,
+}
+
+fn default_metrics_port() -> u16 {
+    9090
+}
+
+impl Default for MetricsConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            port: default_metrics_port(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SecurityConfig {
+    #[serde(default = "default_max_body_size")]
+    pub max_body_size: usize,
+    #[serde(default = "default_true")]
+    pub ssrf_protection: bool,
+    #[serde(default)]
+    pub blocked_hosts: Vec<String>,
+}
+
+fn default_max_body_size() -> usize {
+    1_048_576 // 1MB
+}
+
+impl Default for SecurityConfig {
+    fn default() -> Self {
+        Self {
+            max_body_size: default_max_body_size(),
+            ssrf_protection: true,
+            blocked_hosts: Vec::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProxyConfig {
+    #[serde(default)]
+    pub url: Option<String>,
+    #[serde(default)]
+    pub username: Option<String>,
+    #[serde(default)]
+    pub password: Option<String>,
+    #[serde(default = "default_proxy_timeout")]
+    pub timeout_secs: u64,
+}
+
+fn default_proxy_timeout() -> u64 {
+    30
+}
+
+impl Default for ProxyConfig {
+    fn default() -> Self {
+        Self {
+            url: None,
+            username: None,
+            password: None,
+            timeout_secs: default_proxy_timeout(),
         }
     }
 }
@@ -84,6 +221,8 @@ impl Default for AppConfig {
                 host: "0.0.0.0".to_string(),
                 port: 2333,
                 password: "youshallnotpass".to_string(),
+                max_connections: default_max_connections(),
+                request_timeout_secs: default_request_timeout(),
             },
             sources: SourcesConfig {
                 jiosaavn: true,
@@ -100,6 +239,10 @@ impl Default for AppConfig {
                 deezer: true,
             },
             ratelimit: RatelimitConfig::default(),
+            logging: LoggingConfig::default(),
+            metrics: MetricsConfig::default(),
+            security: SecurityConfig::default(),
+            proxy: ProxyConfig::default(),
         }
     }
 }
@@ -128,9 +271,43 @@ impl AppConfig {
         if let Ok(strategy) = std::env::var("KIZUNA_ROUTEPLANNER_STRATEGY") {
             ratelimit.strategy = strategy;
         }
+        if let Ok(max_req) = std::env::var("KIZUNA_MAX_REQUESTS") {
+            if let Ok(v) = max_req.parse() {
+                ratelimit.max_requests = v;
+            }
+        }
+
+        let logging = LoggingConfig {
+            level: std::env::var("KIZUNA_LOG_LEVEL").unwrap_or_else(|_| "info".to_string()),
+            file: std::env::var("KIZUNA_LOG_FILE").ok(),
+            colored: std::env::var("KIZUNA_LOG_COLORED")
+                .map(|v| v != "false")
+                .unwrap_or(true),
+        };
+
+        let proxy = ProxyConfig {
+            url: std::env::var("KIZUNA_PROXY_URL").ok(),
+            username: std::env::var("KIZUNA_PROXY_USER").ok(),
+            password: std::env::var("KIZUNA_PROXY_PASS").ok(),
+            timeout_secs: std::env::var("KIZUNA_PROXY_TIMEOUT")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(30),
+        };
+
+        let max_connections = std::env::var("KIZUNA_MAX_CONNECTIONS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(1000);
 
         Self {
-            server: ServerConfig { host, port, password },
+            server: ServerConfig {
+                host,
+                port,
+                password,
+                max_connections,
+                request_timeout_secs: default_request_timeout(),
+            },
             sources: SourcesConfig {
                 jiosaavn: true,
                 spotify: true,
@@ -146,6 +323,10 @@ impl AppConfig {
                 deezer: true,
             },
             ratelimit,
+            logging,
+            metrics: MetricsConfig::default(),
+            security: SecurityConfig::default(),
+            proxy,
         }
     }
 }

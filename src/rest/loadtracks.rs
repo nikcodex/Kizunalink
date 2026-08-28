@@ -9,6 +9,8 @@ use tracing::info;
 use crate::models::track::LoadResult;
 use crate::rest::auth::require_auth;
 use crate::rest::error::LavalinkError;
+use crate::security;
+use crate::ratelimit::extract_ip;
 use crate::AppState;
 
 #[derive(Deserialize)]
@@ -23,10 +25,29 @@ pub async fn load_tracks(
 ) -> Result<Json<LoadResult>, LavalinkError> {
     require_auth(&headers, &state.password, "/v4/loadtracks")?;
 
+    // Rate limit check
+    let ip = extract_ip(&headers, "0.0.0.0");
+    if !state.rate_limiter.check(&ip) {
+        return Err(LavalinkError::new(
+            axum::http::StatusCode::TOO_MANY_REQUESTS,
+            "Rate limit exceeded",
+            "/v4/loadtracks",
+        ));
+    }
+
     let identifier = match query.identifier {
         Some(id) if !id.trim().is_empty() => id.trim().to_string(),
         _ => return Ok(Json(LoadResult::Empty)),
     };
+
+    // Validate identifier
+    if let Err(e) = security::validate_identifier(&identifier) {
+        return Err(LavalinkError::new(
+            axum::http::StatusCode::BAD_REQUEST,
+            e,
+            "/v4/loadtracks",
+        ));
+    }
 
     info!("Resolving track query: \"{}\"", identifier);
 

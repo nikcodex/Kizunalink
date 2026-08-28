@@ -21,7 +21,7 @@ pub async fn get_info() -> Json<ServerInfo> {
             commit_time: 1724284800000,
         },
         jvm: "Rust (Tokio)".to_string(),
-        lavaplayer: "2.2.6".to_string(),
+        lavaplayer: "symphonia-0.5".to_string(),
         source_managers: vec![
             "jiosaavn".to_string(),
             "youtube".to_string(),
@@ -32,6 +32,8 @@ pub async fn get_info() -> Json<ServerInfo> {
             "vimeo".to_string(),
             "niconico".to_string(),
             "http".to_string(),
+            "applemusic".to_string(),
+            "deezer".to_string(),
         ],
         filters: vec![
             "volume".to_string(),

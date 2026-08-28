@@ -11,6 +11,8 @@ mod stats;
 mod track_encoding;
 mod util;
 mod ws;
+mod ratelimit;
+mod security;
 
 use axum::{
     routing::{get, patch, post},
@@ -22,6 +24,7 @@ use tower_http::cors::{Any, CorsLayer};
 use tracing::{info, warn};
 
 use player::manager::PlayerManager;
+use ratelimit::{RateLimiter, RateLimitConfig};
 use sources::{
     apple_music::AppleMusicSource, bandcamp::BandcampSource, deezer::DeezerSource,
     jiosaavn::JioSaavnSource, niconico::NicoNicoSource, route_planner::RoutePlanner,
@@ -45,9 +48,18 @@ pub struct AppState {
     pub plugin_manager: Arc<plugins::PluginManager>,
     pub dave_manager: dave::DaveManager,
     pub route_planner: Option<Arc<RoutePlanner>>,
+    pub rate_limiter: Arc<RateLimiter>,
     pub password: String,
     pub start_time: std::time::Instant,
     pub event_tx: broadcast::Sender<String>,
+}
+
+async fn health_check() -> axum::Json<serde_json::Value> {
+    axum::Json(serde_json::json!({
+        "status": "ok",
+        "version": "4.2.1",
+        "timestamp": util::current_timestamp(),
+    }))
 }
 
 #[tokio::main]
@@ -95,6 +107,7 @@ async fn main() {
     ));
 
     let dave_manager = dave::DaveManager::new();
+    let rate_limiter = RateLimiter::new(RateLimitConfig::default());
 
     let state = AppState {
         player_manager,
@@ -111,6 +124,7 @@ async fn main() {
         plugin_manager,
         dave_manager,
         route_planner,
+        rate_limiter,
         password,
         start_time: std::time::Instant::now(),
         event_tx,
@@ -120,9 +134,11 @@ async fn main() {
     let stats_state = state.clone();
     let update_state = state.clone();
     let shutdown_manager = state.player_manager.clone();
+    let rate_limiter = state.rate_limiter.clone();
 
     let app = Router::new()
         .route("/version", get(|| async { "4.2.1" }))
+        .route("/health", get(health_check))
         .route("/v4/info", get(rest::info::get_info))
         .route("/v4/stats", get(rest::stats::get_stats))
         .route("/v4/loadtracks", get(rest::loadtracks::load_tracks))
@@ -225,6 +241,15 @@ async fn main() {
                     let _ = update_state.event_tx.send(msg.to_string());
                 }
             }
+        }
+    });
+
+    // Rate limiter cleanup task
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(300));
+        loop {
+            interval.tick().await;
+            rate_limiter.cleanup().await;
         }
     });
 
