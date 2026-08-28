@@ -5,6 +5,7 @@ mod models;
 mod player;
 mod rest;
 mod sources;
+mod stats;
 mod track_encoding;
 mod util;
 mod ws;
@@ -16,7 +17,7 @@ use axum::{
 use std::sync::Arc;
 use tokio::sync::broadcast;
 use tower_http::cors::{Any, CorsLayer};
-use tracing::info;
+use tracing::{info, warn};
 
 use player::manager::PlayerManager;
 use sources::{
@@ -89,9 +90,10 @@ async fn main() {
         event_tx,
     };
 
-    // Clone state for global broadcast tasks before the router consumes it
+    // Clone state for global broadcast tasks and shutdown cleanup before the router consumes it
     let stats_state = state.clone();
     let update_state = state.clone();
+    let shutdown_manager = state.player_manager.clone();
 
     let app = Router::new()
         .route("/version", get(|| async { "4.2.1" }))
@@ -113,6 +115,8 @@ async fn main() {
             "/v4/sessions/:session_id/players/:guild_id",
             patch(rest::players::update_player).delete(rest::players::destroy_player),
         )
+        .route("/v4/lyrics/:song_id", get(rest::lyrics::get_lyrics))
+        .route("/v4/sessions", get(rest::sessions::list_sessions))
         .route(
             "/v4/routeplanner/status",
             get(rest::routeplanner::get_routeplanner_status),
@@ -141,11 +145,15 @@ async fn main() {
     // Global broadcast tasks — run once for all clients (not per-connection)
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(60));
+        let system_stats = crate::stats::SystemStats::global();
         loop {
             interval.tick().await;
+            system_stats.refresh().await;
             let (total_players, playing_players) =
                 stats_state.player_manager.count_players().await;
             let uptime = stats_state.start_time.elapsed().as_millis() as u64;
+            let memory = system_stats.get_memory_stats().await;
+            let cpu = system_stats.get_cpu_stats().await;
 
             let stats = serde_json::json!({
                 "op": "stats",
@@ -153,15 +161,15 @@ async fn main() {
                 "playingPlayers": playing_players,
                 "uptime": uptime,
                 "memory": {
-                    "free": 1024 * 1024 * 512u64,
-                    "used": 1024 * 1024 * 18u64,
-                    "allocated": 1024 * 1024 * 32u64,
-                    "reservable": 1024 * 1024 * 512u64
+                    "free": memory.free,
+                    "used": memory.used,
+                    "allocated": memory.allocated,
+                    "reservable": memory.reservable
                 },
                 "cpu": {
-                    "cores": num_cpus::get(),
-                    "systemLoad": 0.05,
-                    "lavalinkLoad": 0.01
+                    "cores": cpu.cores,
+                    "systemLoad": cpu.system_load,
+                    "lavalinkLoad": cpu.lavalink_load
                 },
                 "frameStats": null
             });
@@ -189,5 +197,30 @@ async fn main() {
     });
 
     let listener = tokio::net::TcpListener::bind(&addr).await.unwrap();
-    axum::serve(listener, app).await.unwrap();
+
+    // Graceful shutdown via Ctrl+C
+    let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
+    ctrlc::set_handler(move || {
+        warn!("Received Ctrl+C, shutting down gracefully...");
+        let _ = shutdown_tx.send(true);
+    })
+    .expect("Error setting Ctrl+C handler");
+
+    let shutdown_signal = async move {
+        let _ = shutdown_rx.clone().changed().await;
+    };
+
+    info!("⛩️ KizunaLink v4.2.1 listening on {}", addr);
+
+    axum::serve(listener, app)
+        .with_graceful_shutdown(shutdown_signal)
+        .await
+        .unwrap();
+
+    // Cleanup on shutdown
+    info!("Shutting down players...");
+    for item in shutdown_manager.get_all_players().await {
+        shutdown_manager.destroy_player(&item.guild_id);
+    }
+    info!("KizunaLink shut down cleanly.");
 }

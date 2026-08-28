@@ -18,6 +18,11 @@ use crate::AppState;
 static SESSION_STORE: LazyLock<DashMap<String, std::time::Instant>> =
     LazyLock::new(DashMap::new);
 
+/// Returns all active session IDs.
+pub fn get_session_ids() -> Vec<String> {
+    SESSION_STORE.iter().map(|entry| entry.key().clone()).collect()
+}
+
 pub async fn ws_handler(
     ws: WebSocketUpgrade,
     headers: HeaderMap,
