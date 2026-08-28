@@ -443,7 +443,7 @@ impl DaveSession {
         let ciphertext = &frame[FRAME_HEADER_SIZE..];
 
         let uid: u64 = sender_id.parse().unwrap_or(0);
-        let generation = (nonce_counter >> 24) & 0xFF;
+        let generation = ((nonce_counter >> 24) & 0xFF) as u64;
 
         let ratchet = self
             .sender_ratchets
