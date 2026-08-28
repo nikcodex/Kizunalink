@@ -6,11 +6,13 @@ use crate::models::{
 use crate::player::autoplay::AutoplayEngine;
 use crate::player::queue::{LoopMode, TrackQueue};
 use crate::util;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
+use tokio::sync::Mutex;
 use tokio::sync::{broadcast, mpsc, Mutex};
 use tracing::{info, warn};
 
-use crate::dsp::pipeline;
+use crate::dsp::pipeline::{self, SharedChain};
 
 const SAMPLE_RATE: f64 = 48000.0;
 
