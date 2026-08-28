@@ -255,6 +255,7 @@ impl GuildPlayer {
             merged.session_id.clone(),
             merged.token.clone(),
             merged.endpoint.clone(),
+            self.guild_id.clone(),
         );
         let _ = adapter
             .connect(self.guild_id.clone(), self.user_id.clone())
@@ -281,12 +282,7 @@ impl GuildPlayer {
         }
     }
 
-    fn stop_handle_silently(&mut self) {
-        if let Some(handle) = &self.track_handle {
-            let _ = handle.stop();
-        }
-        self.track_handle = None;
-    }
+    fn stop_handle_silently(&mut self) {}
 
     async fn restart_at(&mut self, position_ms: u64) {
         let Some(url) = self.current_stream_url.clone() else {
@@ -300,10 +296,6 @@ impl GuildPlayer {
 
         let was_paused = self.paused;
         let filtered = self.shared_chain.lock().unwrap().is_active();
-
-        let mut driver_lock = self.driver.lock().await;
-        let handle = driver_lock.play(Track::new(input));
-        drop(driver_lock);
 
         if let Some(adapter_arc) = &self.kizuna_voice_adapter {
             // To prove the architecture, we rebuild the source for Kizuna
@@ -381,7 +373,6 @@ impl GuildPlayer {
         }
 
         self.filtered_active = filtered;
-        self.track_handle = Some(handle);
 
         info!(
             "Restarted playback at ~{} ms for guild {} (filtered={})",
@@ -390,8 +381,11 @@ impl GuildPlayer {
     }
 
     pub async fn play_track(&mut self, track: LavalinkTrack, stream_url: String) -> bool {
-        if let Some(old_handle) = &self.track_handle {
-            let _ = old_handle.stop();
+        if let Some(old_handle) = &self.kizuna_track_handle {
+            let k = old_handle.clone();
+            tokio::spawn(async move {
+                let _ = k.stop().await;
+            });
             if let Some(old_track) = self.queue.current.take() {
                 self.emit_event(
                     "TrackEndEvent",
@@ -404,10 +398,6 @@ impl GuildPlayer {
         }
 
         let filtered = self.shared_chain.lock().unwrap().is_active();
-
-        let mut driver_lock = self.driver.lock().await;
-        let handle = driver_lock.play(Track::new(input));
-        drop(driver_lock);
 
         if let Some(adapter_arc) = &self.kizuna_voice_adapter {
             // To prove the architecture, we rebuild the source for Kizuna
@@ -464,7 +454,6 @@ impl GuildPlayer {
             });
         }
 
-        self.track_handle = Some(handle);
         self.filtered_active = filtered;
         self.current_stream_url = Some(stream_url);
         self.queue.current = Some(track.clone());
@@ -516,16 +505,6 @@ impl GuildPlayer {
     }
 
     pub fn set_paused(&mut self, paused: bool) {
-        if let Some(handle) = &self.track_handle {
-            if paused {
-                self.paused_at = Some(Instant::now());
-            } else {
-                let _ = handle.play();
-                self.paused_at = None;
-                self.play_started_at =
-                    Some(Instant::now() - Duration::from_millis(self.paused_position));
-            }
-        }
         self.paused = paused;
         self.last_update = util::current_timestamp();
         self.emit_player_update();
@@ -533,9 +512,6 @@ impl GuildPlayer {
 
     pub fn set_volume(&mut self, volume: u32) {
         self.volume = volume.clamp(0, 1000);
-        if let Some(handle) = &self.track_handle {
-            let _ = handle.set_volume(self.volume as f32 / 100.0);
-        }
         self.last_update = util::current_timestamp();
         self.emit_player_update();
     }
@@ -545,10 +521,6 @@ impl GuildPlayer {
             let mut chain = self.shared_chain.lock().unwrap();
             chain.update_from_lavalink(&self.filters)
         };
-
-        if let Some(handle) = &self.track_handle {
-            let _ = handle.set_volume(self.volume as f32 / 100.0);
-        }
 
         if structural && self.is_playing && self.queue.current.is_some() {
             let pos = self.get_position();
@@ -575,7 +547,6 @@ impl GuildPlayer {
             if self.is_playing {
                 self.restart_at(position).await;
             }
-        } else if let Some(handle) = &self.track_handle {
             let _ = handle.seek(Duration::from_millis(position));
             self.play_started_at = Some(Instant::now() - Duration::from_millis(position));
         }
