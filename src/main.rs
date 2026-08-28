@@ -9,10 +9,10 @@ mod rest;
 mod sources;
 mod stats;
 mod track_encoding;
-mod util;
+pub mod util;
 mod ws;
-mod ratelimit;
-mod security;
+pub mod ratelimit;
+pub mod security;
 
 use axum::{
     routing::{get, patch, post},
