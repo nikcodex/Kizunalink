@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use crate::error::{Error, Result};
 use byteorder::{BigEndian, WriteBytesExt};
 use std::io::Cursor;

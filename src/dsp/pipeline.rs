@@ -11,7 +11,7 @@
 use std::io::{Read, Seek, SeekFrom};
 use std::sync::{Arc, Mutex};
 
-use super::decoder::{AudioDecoder, ChannelByteSource, TARGET_SAMPLE_RATE};
+use super::decoder::{AudioDecoder, ChannelByteSource};
 use super::filters::FilterChain;
 use symphonia::core::io::MediaSource;
 

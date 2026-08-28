@@ -115,7 +115,7 @@ impl FrameScheduler {
                                 break;
                             }
                             Err(e) => {
-                                state = TrackState::Error;
+                                let _ = TrackState::Error;
                                 let _ = event_tx.send(TrackEvent::Error(e.to_string()));
                                 break;
                             }

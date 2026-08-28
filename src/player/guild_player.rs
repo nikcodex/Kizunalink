@@ -6,8 +6,6 @@ use crate::models::{
 use crate::player::autoplay::AutoplayEngine;
 use crate::player::queue::{LoopMode, TrackQueue};
 use crate::util;
-use std::num::NonZeroU64;
-use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::{broadcast, mpsc, Mutex};
 use tracing::{info, warn};
@@ -37,8 +35,6 @@ fn describe_close_code(code: u16) -> &'static str {
         _ => "Voice WebSocket closed",
     }
 }
-
-#[async_trait::async_trait]
 
 // ---------------------------------------------------------------------------
 // Track End Notifier
@@ -246,7 +242,6 @@ impl GuildPlayer {
             )
             .await
             {
-                use std::sync::Arc;
                 use tokio::sync::Mutex;
                 let k_src = Arc::new(Mutex::new(k_source));
                 let mut adapter = adapter_arc.lock().await;
@@ -348,7 +343,6 @@ impl GuildPlayer {
             )
             .await
             {
-                use std::sync::Arc;
                 use tokio::sync::Mutex;
                 let k_src = Arc::new(Mutex::new(k_source));
                 let mut adapter = adapter_arc.lock().await;
