@@ -4,6 +4,7 @@ pub mod packet;
 pub mod scheduler;
 pub mod source;
 pub mod track;
+pub use scheduler::FrameScheduler;
 
 pub use demuxer::OpusDemuxer;
 pub use opus::{OpusEncoder, OpusSource};

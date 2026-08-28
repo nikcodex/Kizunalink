@@ -188,8 +188,6 @@ impl KizunaVoiceAdapter {
 }
 
 use async_trait::async_trait;
-use kizuna_voice::audio::AudioFrame;
-use kizuna_voice::audio::AudioSource;
 use kizuna_voice::error::Result as KzResult;
 use std::io::Read;
 
