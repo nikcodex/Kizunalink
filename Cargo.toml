@@ -7,6 +7,7 @@ description = "High-Performance Standalone Discord Audio Streaming Engine in Rus
 license = "MIT"
 
 [dependencies]
+kizuna-voice = { path = "kizuna-voice" }
 tokio = { version = "1.38", features = ["full"] }
 axum = { version = "0.7", features = ["ws", "macros"] }
 tower-http = { version = "0.5", features = ["cors", "trace", "limit"] }

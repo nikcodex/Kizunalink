@@ -1,5 +1,5 @@
-pub mod packet;
 pub mod opus;
+pub mod packet;
 
-pub use packet::AudioPacket;
 pub use opus::{OpusEncoder, OpusSource};
+pub use packet::AudioPacket;
