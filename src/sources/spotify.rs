@@ -37,7 +37,8 @@ impl SpotifySource {
         );
         headers.insert(ACCEPT, HeaderValue::from_static("application/json"));
 
-        let client = reqwest::Client::builder()
+        let client = crate::config::global_proxy()
+            .apply_to_builder(reqwest::Client::builder())
             .default_headers(headers)
             .timeout(Duration::from_secs(5))
             .build()

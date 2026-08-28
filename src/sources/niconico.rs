@@ -13,7 +13,8 @@ pub struct NicoNicoSource {
 impl NicoNicoSource {
     pub fn new() -> Arc<Self> {
         Arc::new(Self {
-            client: Client::builder()
+            client: crate::config::global_proxy()
+                .apply_to_builder(Client::builder())
                 .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
                 .build()
                 .unwrap_or_default(),

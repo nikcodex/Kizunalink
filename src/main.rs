@@ -99,6 +99,11 @@ async fn main() {
     let (event_tx, _) = broadcast::channel::<String>(256);
     let password = config.server.password.clone();
 
+    // Initialize global proxy config for all HTTP clients
+    config::init_proxy(config.proxy.clone());
+    // Initialize global security config
+    config::init_security(config.security.clone());
+
     let jiosaavn = JioSaavnSource::new();
     let youtube = YouTubeSource::new(route_planner.clone());
     let spotify = SpotifySource::new();
@@ -116,6 +121,8 @@ async fn main() {
         youtube.clone(),
         spotify.clone(),
         soundcloud.clone(),
+        deezer.clone(),
+        apple_music.clone(),
     ));
 
     let dave_manager = dave::DaveManager::new();
@@ -187,6 +194,9 @@ async fn main() {
         )
         .route("/", get(|| async { "4.2.1" }))
         .route("/v4/websocket", get(ws::handler::ws_handler))
+        .layer(
+            tower_http::limit::RequestBodyLimitLayer::new(config.security.max_body_size),
+        )
         .layer(
             CorsLayer::new()
                 .allow_origin(Any)

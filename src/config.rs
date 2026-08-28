@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
+use std::sync::OnceLock;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
@@ -212,6 +213,58 @@ impl Default for ProxyConfig {
             timeout_secs: default_proxy_timeout(),
         }
     }
+}
+
+impl ProxyConfig {
+    pub fn apply_to_builder(&self, builder: reqwest::ClientBuilder) -> reqwest::ClientBuilder {
+        if let Some(ref url) = self.url {
+            let mut proxy = reqwest::Proxy::all(url).expect("Invalid proxy URL");
+            if let (Some(ref user), Some(ref pass)) = (&self.username, &self.password) {
+                let auth = reqwest::Authentication::basic(user, pass);
+                proxy = proxy.basic_auth(auth);
+            }
+            builder.proxy(proxy)
+        } else {
+            builder
+        }
+    }
+}
+
+/// Create a reqwest::ClientBuilder with proxy settings from config applied.
+pub fn http_client_builder(proxy: &ProxyConfig) -> reqwest::ClientBuilder {
+    proxy.apply_to_builder(reqwest::Client::builder())
+}
+
+static GLOBAL_PROXY: OnceLock<ProxyConfig> = OnceLock::new();
+
+/// Initialize the global proxy config (call once at startup).
+pub fn init_proxy(config: ProxyConfig) {
+    let _ = GLOBAL_PROXY.set(config);
+}
+
+/// Get the global proxy config (returns default if not initialized).
+pub fn global_proxy() -> &'static ProxyConfig {
+    GLOBAL_PROXY.get_or_init(ProxyConfig::default)
+}
+
+/// Create a reqwest::Client with proxy settings from config applied.
+pub fn http_client() -> reqwest::Client {
+    global_proxy()
+        .apply_to_builder(reqwest::Client::builder())
+        .build()
+        .expect("Failed to build HTTP client")
+}
+
+static GLOBAL_SECURITY: OnceLock<SecurityConfig> = OnceLock::new();
+
+/// Initialize the global security config (call once at startup).
+pub fn init_security(config: SecurityConfig) {
+    let _ = GLOBAL_SECURITY.set(config);
+}
+
+/// Get the global security config (returns default if not initialized).
+pub fn global_security() -> &'static SecurityConfig {
+    GLOBAL_SECURITY.get_or_init(SecurityConfig::default)
 }
 
 impl Default for AppConfig {

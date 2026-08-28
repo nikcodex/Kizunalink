@@ -359,14 +359,14 @@ impl GuildPlayer {
         // our Symphonia decode→PCM→re-encode pipeline entirely.
         if !chain_active {
             return (
-                HttpRequest::new(reqwest::Client::new(), stream_url.to_string()).into(),
+                HttpRequest::new(crate::config::http_client(), stream_url.to_string()).into(),
                 false,
             );
         }
 
         // Filters are active — must decode to PCM, apply DSP, re-encode
         match pipeline::create_filtered_input(
-            reqwest::Client::new(),
+            crate::config::http_client(),
             stream_url.to_string(),
             Self::extension_hint(stream_url),
             self.shared_chain.clone(),
@@ -382,7 +382,7 @@ impl GuildPlayer {
                     e
                 );
                 (
-                    HttpRequest::new(reqwest::Client::new(), stream_url.to_string()).into(),
+                    HttpRequest::new(crate::config::http_client(), stream_url.to_string()).into(),
                     false,
                 )
             }

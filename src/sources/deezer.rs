@@ -19,7 +19,8 @@ impl DeezerSource {
             ),
         );
 
-        let client = reqwest::Client::builder()
+        let client = crate::config::global_proxy()
+            .apply_to_builder(reqwest::Client::builder())
             .default_headers(headers)
             .timeout(std::time::Duration::from_secs(10))
             .build()

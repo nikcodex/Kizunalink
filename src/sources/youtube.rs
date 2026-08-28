@@ -71,7 +71,8 @@ impl YouTubeSource {
         let mut headers = HeaderMap::new();
         headers.insert(ACCEPT, HeaderValue::from_static("application/json"));
 
-        let default_client = reqwest::Client::builder()
+        let default_client = crate::config::global_proxy()
+            .apply_to_builder(reqwest::Client::builder())
             .default_headers(headers)
             .timeout(std::time::Duration::from_secs(10))
             .build()
@@ -134,7 +135,8 @@ impl YouTubeSource {
             );
             headers.insert(ACCEPT, HeaderValue::from_static("application/json"));
 
-            let it_client_http = reqwest::Client::builder()
+            let it_client_http = crate::config::global_proxy()
+                .apply_to_builder(reqwest::Client::builder())
                 .default_headers(headers)
                 .timeout(std::time::Duration::from_secs(10))
                 .build()

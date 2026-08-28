@@ -5,6 +5,8 @@ use crate::sources::jiosaavn::JioSaavnSource;
 use crate::sources::soundcloud::SoundCloudSource;
 use crate::sources::spotify::SpotifySource;
 use crate::sources::youtube::YouTubeSource;
+use crate::sources::deezer::DeezerSource;
+use crate::sources::apple_music::AppleMusicSource;
 use dashmap::DashMap;
 use std::sync::Arc;
 use tokio::sync::{broadcast, mpsc, RwLock};
@@ -19,6 +21,8 @@ pub struct PlayerManager {
     youtube: Arc<YouTubeSource>,
     spotify: Arc<SpotifySource>,
     soundcloud: Arc<SoundCloudSource>,
+    deezer: Arc<DeezerSource>,
+    apple_music: Arc<AppleMusicSource>,
 }
 
 impl PlayerManager {
@@ -28,6 +32,8 @@ impl PlayerManager {
         youtube: Arc<YouTubeSource>,
         spotify: Arc<SpotifySource>,
         soundcloud: Arc<SoundCloudSource>,
+        deezer: Arc<DeezerSource>,
+        apple_music: Arc<AppleMusicSource>,
     ) -> Self {
         let (track_end_tx, mut track_end_rx) = mpsc::unbounded_channel::<String>();
 
@@ -40,6 +46,8 @@ impl PlayerManager {
             youtube,
             spotify,
             soundcloud,
+            deezer,
+            apple_music,
         };
 
         let manager_arc = Arc::new(manager);
@@ -217,6 +225,17 @@ impl PlayerManager {
                     clean
                 };
                 return self.youtube.resolve_video(vid).await.ok().flatten();
+            } else if clean.contains("deezer.com/") {
+                if let Some(track_id) = clean.split("/track/").nth(1).and_then(|s| s.split('?').next()) {
+                    return self.deezer.resolve_track(track_id).await.ok().flatten();
+                }
+            } else if clean.contains("music.apple.com/") {
+                let track_id = if let Some(i_param) = clean.split("i=").nth(1).and_then(|s| s.split('&').next()) {
+                    i_param.to_string()
+                } else {
+                    clean.rsplit('/').next()?.split('?').next()?.to_string()
+                };
+                return self.apple_music.resolve_track(&track_id).await.ok().flatten();
             }
             // SSRF protection: validate URL before creating HTTP track
             if let Err(e) = crate::security::validate_url(clean) {

@@ -230,7 +230,7 @@ pub async fn create_filtered_input(
         // our decoder to detect it's Opus, but Songbird will re-parse from the
         // HTTP stream. This is slightly wasteful but correct.
         // TODO: cache the "is_opus" detection so we don't need to decode first.
-        Ok(songbird::input::HttpRequest::new(reqwest::Client::new(), stream_url).into())
+        Ok(songbird::input::HttpRequest::new(crate::config::http_client(), stream_url).into())
     } else {
         Ok(songbird::input::RawAdapter::new(reader, TARGET_SAMPLE_RATE, 2).into())
     }
