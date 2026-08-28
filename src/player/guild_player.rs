@@ -38,69 +38,7 @@ fn describe_close_code(code: u16) -> &'static str {
     }
 }
 
-fn classify_disconnect(reason: &Option<context_data::DisconnectReason>) -> (u16, String, bool) {
-    use context_data::DisconnectReason as DR;
-
-    match reason {
-        None => (1000, "Voice channel left or changed".to_string(), false),
-        Some(DR::Requested) => (1000, "Requested".to_string(), false),
-        Some(DR::AttemptDiscarded) => (1000, "Connection attempt discarded".to_string(), false),
-        Some(DR::WsClosed(Some(close_code))) => {
-            let code = *close_code as u16;
-            (code, describe_close_code(code).to_string(), true)
-        }
-        Some(DR::WsClosed(None)) => (
-            1006,
-            "Voice WebSocket closed unexpectedly".to_string(),
-            true,
-        ),
-        Some(DR::TimedOut) => (1006, "Connection timed out".to_string(), true),
-        Some(DR::Io) => (1006, "I/O error".to_string(), true),
-        Some(DR::ProtocolViolation) => (1006, "Protocol violation".to_string(), true),
-        Some(DR::Internal) => (1011, "Internal driver error".to_string(), false),
-        Some(_) => (1006, "Voice connection lost".to_string(), true),
-    }
-}
-
-pub fn ws_closed_event_json(
-    guild_id: &str,
-    reason: &Option<context_data::DisconnectReason>,
-) -> serde_json::Value {
-    let (code, reason_str, by_remote) = classify_disconnect(reason);
-    serde_json::json!({
-        "op": "event",
-        "type": "WebSocketClosedEvent",
-        "guildId": guild_id,
-        "code": code,
-        "reason": reason_str,
-        "byRemote": by_remote,
-    })
-}
-
-#[derive(Clone)]
-struct DisconnectHandler {
-    guild_id: String,
-    event_tx: broadcast::Sender<String>,
-}
-
-impl DisconnectHandler {
-    fn handle_disconnect(&self, reason: &Option<context_data::DisconnectReason>) -> String {
-        let payload = ws_closed_event_json(&self.guild_id, reason);
-        let json = payload.to_string();
-        let _ = self.event_tx.send(json.clone());
-        json
-    }
-}
-
 #[async_trait::async_trait]
-impl DisconnectHandler {
-    fn handle_disconnect(&self, reason: &Option<String>) -> String {
-        let payload = ws_closed_event_json(&self.guild_id, reason);
-        let json = payload.to_string();
-        let _ = self.event_tx.send(json.clone());
-        json
-    }
-}
 
 // ---------------------------------------------------------------------------
 // Track End Notifier
