@@ -10,9 +10,9 @@ use std::num::NonZeroU64;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::{broadcast, mpsc, Mutex};
-use tracing::{error, info, warn};
+use tracing::{info, warn};
 
-use crate::dsp::pipeline::{self, SharedChain};
+use crate::dsp::pipeline;
 
 const SAMPLE_RATE: f64 = 48000.0;
 

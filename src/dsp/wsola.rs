@@ -222,7 +222,7 @@ impl Wsola {
         }
     }
 
-    fn find_best_offset(&self, analysis_start: usize, analysis_hop: i64) -> usize {
+    fn find_best_offset(&self, analysis_start: usize, _analysis_hop: i64) -> usize {
         if self.ref_tail[0].is_empty() {
             return analysis_start;
         }

@@ -1,8 +1,6 @@
 use dashmap::DashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tokio::sync::RwLock;
-use tracing::warn;
 
 /// Token bucket rate limiter per IP address.
 pub struct RateLimiter {

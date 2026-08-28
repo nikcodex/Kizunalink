@@ -2,7 +2,6 @@ use super::packet::AudioFrame;
 use super::source::AudioSource;
 use crate::error::{Error, Result};
 use async_trait::async_trait;
-use std::time::Duration;
 use symphonia::core::codecs::CODEC_TYPE_OPUS;
 use symphonia::core::formats::FormatOptions;
 use symphonia::core::formats::FormatReader;

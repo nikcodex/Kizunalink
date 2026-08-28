@@ -1,14 +1,13 @@
 use kizuna_voice::audio::{
-    AudioFrame, AudioSource, FrameScheduler, KizunaTrackHandle, OpusEncoder, OpusSource, TrackEvent,
+    AudioFrame, AudioSource, FrameScheduler, KizunaTrackHandle, OpusEncoder, OpusSource,
 };
 use kizuna_voice::connection::session::VoiceSession;
-use kizuna_voice::dave::protocol::{DaveClientMessage, DaveGatewayMessage, DaveSession};
+use kizuna_voice::dave::protocol::DaveSession;
 use kizuna_voice::gateway::{connection::GatewayEvent, VoiceGatewayClient};
 use kizuna_voice::transport::{RtpHeader, VoiceUdp};
 use std::sync::Arc;
 use tokio::sync::{broadcast, mpsc, Mutex};
-use tokio::time::Instant;
-use tracing::{error, info, warn};
+use tracing::{error, info};
 
 pub struct KizunaVoiceAdapter {
     session: VoiceSession,

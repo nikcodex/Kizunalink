@@ -5,7 +5,6 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::{broadcast, mpsc, Mutex};
 use tokio::time::{interval, MissedTickBehavior};
-use tracing::{debug, error, info};
 
 pub struct FrameScheduler {
     source: Arc<Mutex<dyn AudioSource>>,

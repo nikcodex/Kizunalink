@@ -171,7 +171,7 @@ impl Timescale {
                     self.res_in[0].drain(..CHUNK_FRAMES).collect::<Vec<f32>>(),
                     self.res_in[1].drain(..CHUNK_FRAMES).collect::<Vec<f32>>(),
                 ];
-                if let Ok(mut wave_out) = resampler.process(&wave_in, None) {
+                if let Ok(wave_out) = resampler.process(&wave_in, None) {
                     for i in 0..wave_out[0].len() {
                         self.res_out_pending[0].push(wave_out[0][i]);
                         self.res_out_pending[1].push(wave_out[1][i]);
@@ -182,7 +182,7 @@ impl Timescale {
             // A couple of chunks of pure silence to flush the sinc delay line
             let silence = vec![vec![0.0f32; CHUNK_FRAMES], vec![0.0f32; CHUNK_FRAMES]];
             for _ in 0..3 {
-                if let Ok(mut wave_out) = resampler.process(&silence, None) {
+                if let Ok(wave_out) = resampler.process(&silence, None) {
                     for i in 0..wave_out[0].len() {
                         self.res_out_pending[0].push(wave_out[0][i]);
                         self.res_out_pending[1].push(wave_out[1][i]);

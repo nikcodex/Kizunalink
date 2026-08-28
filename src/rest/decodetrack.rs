@@ -8,7 +8,6 @@ use serde::Deserialize;
 use crate::models::track::LavalinkTrack;
 use crate::rest::auth::require_auth;
 use crate::rest::error::LavalinkError;
-use crate::security;
 use crate::AppState;
 
 const MAX_DECODE_BATCH_SIZE: usize = 100;

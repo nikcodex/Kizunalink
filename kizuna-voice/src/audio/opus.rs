@@ -1,5 +1,5 @@
 use super::packet::AudioFrame;
-use crate::error::{Error, Result};
+use crate::error::Result;
 
 pub enum OpusSource {
     Encoded(Vec<u8>),
