@@ -1,13 +1,12 @@
 use kizuna_voice::audio::{
-    AudioController, AudioFrame, AudioSource, FrameScheduler, OpusEncoder, OpusSource,
-    SchedulerCommand, TrackState,
+    AudioFrame, AudioSource, FrameScheduler, KizunaTrackHandle, OpusEncoder, OpusSource, TrackEvent,
 };
 use kizuna_voice::connection::session::VoiceSession;
 use kizuna_voice::dave::protocol::{DaveClientMessage, DaveGatewayMessage, DaveSession};
 use kizuna_voice::gateway::{connection::GatewayEvent, VoiceGatewayClient};
-use kizuna_voice::transport::{RtpHeader, RtpPacket, VoiceUdp};
+use kizuna_voice::transport::{RtpHeader, VoiceUdp};
 use std::sync::Arc;
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::{broadcast, mpsc, Mutex};
 use tokio::time::Instant;
 use tracing::{error, info, warn};
 
@@ -15,7 +14,6 @@ pub struct KizunaVoiceAdapter {
     session: VoiceSession,
     udp: Option<Arc<VoiceUdp>>,
     dave: Arc<Mutex<DaveSession>>,
-    pub controller: AudioController,
     ssrc: u32,
     sequence: u16,
     timestamp: u32,
@@ -27,7 +25,6 @@ impl KizunaVoiceAdapter {
             session: VoiceSession::new(session_id, token, endpoint),
             udp: None,
             dave: Arc::new(Mutex::new(DaveSession::new(guild_id))),
-            controller: AudioController::new(),
             ssrc: 0,
             sequence: 0,
             timestamp: 0,
@@ -52,7 +49,6 @@ impl KizunaVoiceAdapter {
 
         let dave_clone = self.dave.clone();
 
-        // Wait for Ready event to get IP/Port/SSRC
         let mut ready_data = None;
         while let Ok(event) = gw.receive_event().await {
             match event {
@@ -74,7 +70,6 @@ impl KizunaVoiceAdapter {
         let ready = ready_data.ok_or("Did not receive Ready event")?;
         self.ssrc = ready.ssrc;
 
-        // Setup UDP
         let (udp, _external_ip, _external_port) =
             VoiceUdp::bind_and_discover(&ready.ip, ready.port, ready.ssrc)
                 .await
@@ -83,7 +78,6 @@ impl KizunaVoiceAdapter {
         let udp_arc = Arc::new(udp);
         self.udp = Some(udp_arc.clone());
 
-        // Protocol Select
         gw.send_select_protocol(
             "udp",
             &_external_ip,
@@ -93,7 +87,6 @@ impl KizunaVoiceAdapter {
         .await
         .map_err(|e| e.to_string())?;
 
-        // Background loop
         tokio::spawn(async move {
             loop {
                 match gw.receive_event().await {
@@ -119,9 +112,15 @@ impl KizunaVoiceAdapter {
         Ok(())
     }
 
-    pub fn play_source(&mut self, source: Arc<Mutex<dyn AudioSource>>, sender_id: String) {
-        let (tx, rx) = mpsc::channel(10);
-        self.controller.attach_scheduler(tx);
+    pub fn play_source(
+        &mut self,
+        source: Arc<Mutex<dyn AudioSource>>,
+        sender_id: String,
+    ) -> KizunaTrackHandle {
+        let (cmd_tx, cmd_rx) = mpsc::channel(32);
+        let (event_tx, event_rx) = broadcast::channel(32);
+
+        let handle = KizunaTrackHandle::new(cmd_tx, event_rx);
 
         let scheduler = FrameScheduler::new(source);
         let udp = self.udp.clone().expect("UDP not connected");
@@ -134,7 +133,7 @@ impl KizunaVoiceAdapter {
             let mut encoder = OpusEncoder::new().unwrap();
 
             scheduler
-                .run(rx, |frame| {
+                .run(cmd_rx, event_tx, |frame| {
                     let udp = udp.clone();
                     let dave = dave.clone();
                     let sender_id_clone = sender_id.clone();
@@ -165,6 +164,7 @@ impl KizunaVoiceAdapter {
                                 &sender_id_clone,
                                 &opus_data,
                                 sequence as u32,
+                                &header_buf,
                             ) {
                                 let mut packet = header_buf;
                                 packet.extend(encrypted);
@@ -179,17 +179,53 @@ impl KizunaVoiceAdapter {
                 })
                 .await;
         });
-    }
 
-    pub async fn stop(&mut self) {
-        self.controller.stop().await;
-    }
+        self.sequence = sequence;
+        self.timestamp = timestamp;
 
-    pub async fn pause(&mut self) {
-        self.controller.pause().await;
+        handle
     }
+}
 
-    pub async fn resume(&mut self) {
-        self.controller.resume().await;
+use async_trait::async_trait;
+use kizuna_voice::audio::AudioFrame;
+use kizuna_voice::audio::AudioSource;
+use kizuna_voice::error::Result as KzResult;
+use std::io::Read;
+
+pub struct PcmSourceWrapper<R: Read + Send + Sync> {
+    pub reader: R,
+}
+
+#[async_trait]
+impl<R: Read + Send + Sync> AudioSource for PcmSourceWrapper<R> {
+    async fn next_frame(&mut self) -> KzResult<Option<AudioFrame>> {
+        // Read 1920 f32 samples (7680 bytes)
+        let mut buf = [0u8; 7680];
+        let mut total_read = 0;
+
+        while total_read < buf.len() {
+            match self.reader.read(&mut buf[total_read..]) {
+                Ok(0) => break, // EOF
+                Ok(n) => total_read += n,
+                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => continue,
+                Err(e) => return Err(kizuna_voice::error::Error::Connection(e.to_string())),
+            }
+        }
+
+        if total_read == 0 {
+            return Ok(None);
+        }
+
+        let num_samples = total_read / 4;
+        let mut samples = Vec::with_capacity(num_samples);
+        for chunk in buf[..total_read].chunks_exact(4) {
+            let f = f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
+            // Convert f32 to i16
+            let s = (f * i16::MAX as f32).clamp(i16::MIN as f32, i16::MAX as f32) as i16;
+            samples.push(s);
+        }
+
+        Ok(Some(AudioFrame::Pcm(samples)))
     }
 }

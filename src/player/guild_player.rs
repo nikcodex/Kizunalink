@@ -146,6 +146,7 @@ pub struct GuildPlayer {
     pub last_update: u64,
     pub driver: Arc<Mutex<Driver>>,
     pub kizuna_voice_adapter: Option<Arc<Mutex<crate::player::kizuna_adapter::KizunaVoiceAdapter>>>,
+    pub kizuna_track_handle: Option<kizuna_voice::audio::KizunaTrackHandle>,
     pub track_handle: Option<TrackHandle>,
     pub is_playing: bool,
     pub queue: TrackQueue,
@@ -180,6 +181,7 @@ impl GuildPlayer {
             last_update: util::current_timestamp(),
             driver: Arc::new(Mutex::new(driver)),
             kizuna_voice_adapter: None,
+            kizuna_track_handle: None,
             track_handle: None,
             is_playing: false,
             queue: TrackQueue::new(),
@@ -441,6 +443,12 @@ impl GuildPlayer {
 
         if was_paused {
             let _ = handle.pause();
+            if let Some(k_handle) = &self.kizuna_track_handle {
+                let k = k_handle.clone();
+                tokio::spawn(async move {
+                    let _ = k.pause().await;
+                });
+            }
             self.paused_at = Some(Instant::now());
             self.paused_position = position_ms;
             self.play_started_at = None;
@@ -489,6 +497,13 @@ impl GuildPlayer {
 
         if let Err(e) = handle.set_volume(self.volume as f32 / 100.0) {
             warn!("Failed to set volume on handle: {:?}", e);
+        }
+        if let Some(k_handle) = &self.kizuna_track_handle {
+            let k = k_handle.clone();
+            let vol = self.volume as f32 / 100.0;
+            tokio::spawn(async move {
+                let _ = k.set_volume(vol).await;
+            });
         }
 
         self.track_handle = Some(handle);
@@ -862,3 +877,6 @@ mod disconnect_tests {
         }
     }
 }
+
+// Kizuna Integration: In `update_voice`, we connected.
+// In `play_track`, if KIZUNA_VOICE=1, we can create the Kizuna source and bypass Songbird track entirely!

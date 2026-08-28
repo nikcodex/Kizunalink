@@ -265,3 +265,95 @@ pub mod test_support {
         (out, _structural)
     }
 }
+
+use async_trait::async_trait;
+use kizuna_voice::audio::AudioFrame;
+use kizuna_voice::audio::AudioSource;
+
+pub struct KizunaFilteredSource {
+    reader: FilteredAudioReader,
+}
+
+impl KizunaFilteredSource {
+    pub fn new(reader: FilteredAudioReader) -> Self {
+        Self { reader }
+    }
+}
+
+#[async_trait]
+impl AudioSource for KizunaFilteredSource {
+    async fn next_frame(&mut self) -> kizuna_voice::error::Result<Option<AudioFrame>> {
+        let mut buf = [0u8; 7680];
+        let mut total_read = 0;
+
+        while total_read < buf.len() {
+            match self.reader.read(&mut buf[total_read..]) {
+                Ok(0) => break,
+                Ok(n) => total_read += n,
+                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => continue,
+                Err(e) => return Err(kizuna_voice::error::Error::Connection(e.to_string())),
+            }
+        }
+
+        if total_read == 0 {
+            return Ok(None);
+        }
+
+        let num_samples = total_read / 4;
+        let mut samples = Vec::with_capacity(num_samples);
+        for chunk in buf[..total_read].chunks_exact(4) {
+            let f = f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
+            let s = (f * i16::MAX as f32).clamp(i16::MIN as f32, i16::MAX as f32) as i16;
+            samples.push(s);
+        }
+
+        Ok(Some(AudioFrame::Pcm(samples)))
+    }
+}
+
+pub async fn create_kizuna_source(
+    http: reqwest::Client,
+    stream_url: String,
+    extension_hint: Option<String>,
+    shared_chain: SharedChain,
+    skip_frames: u64,
+) -> Result<KizunaFilteredSource, String> {
+    let (tx, rx) = std::sync::mpsc::sync_channel::<Vec<u8>>(256);
+    let url = stream_url.clone();
+    tokio::spawn(async move {
+        let resp = match http.get(&url).send().await {
+            Ok(r) => r,
+            Err(_) => return,
+        };
+        if !resp.status().is_success() {
+            return;
+        }
+        let mut stream = resp.bytes_stream();
+        use futures_util::StreamExt;
+        while let Some(chunk) = stream.next().await {
+            match chunk {
+                Ok(bytes) => {
+                    if tx.send(bytes.to_vec()).is_err() {
+                        break;
+                    }
+                }
+                Err(_) => break,
+            }
+        }
+    });
+
+    let byte_source = ChannelByteSource::new(rx);
+    let decoder = tokio::task::spawn_blocking(move || {
+        let hint_ext: Option<&str> = extension_hint.as_deref();
+        AudioDecoder::open(
+            Box::new(byte_source) as Box<dyn MediaSource>,
+            hint_ext,
+            skip_frames,
+        )
+    })
+    .await
+    .map_err(|e| format!("decoder task panicked: {}", e))??;
+
+    let reader = FilteredAudioReader::new(shared_chain, decoder);
+    Ok(KizunaFilteredSource::new(reader))
+}

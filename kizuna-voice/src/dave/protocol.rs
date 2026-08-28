@@ -419,6 +419,7 @@ impl DaveSession {
         sender_id: &str,
         plaintext: &[u8],
         nonce_counter: u32,
+        rtp_header: &[u8],
     ) -> Result<Vec<u8>, String> {
         let uid: u64 = sender_id.parse().unwrap_or(0);
 
@@ -439,8 +440,12 @@ impl DaveSession {
         nonce_bytes[8..12].copy_from_slice(&nonce_counter.to_le_bytes());
         let nonce = Nonce::from_slice(&nonce_bytes);
 
+        let payload = aes_gcm::aead::Payload {
+            msg: plaintext,
+            aad: rtp_header,
+        };
         let ciphertext = cipher
-            .encrypt(nonce, plaintext)
+            .encrypt(nonce, payload)
             .map_err(|e| format!("Encryption failed: {}", e))?;
 
         let mut frame = Vec::with_capacity(FRAME_HEADER_SIZE + ciphertext.len());
