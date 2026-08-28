@@ -40,7 +40,7 @@ use sha2::Sha256;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info};
 
 /// DAVE protocol version we support
 pub const DAVE_PROTOCOL_VERSION: u32 = 1;
@@ -337,7 +337,7 @@ impl DaveSession {
             // Export the MLS secret for key derivation
             match group.export_secret(
                 self.provider.crypto(),
-                SENDER_KEY_LABEL,
+                "Discord Secure Frames v0",
                 b"Discord Secure Frames v0",
                 16,
             ) {

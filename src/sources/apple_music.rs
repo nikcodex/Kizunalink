@@ -1,7 +1,6 @@
 use crate::models::track::{LavalinkTrack, TrackInfo};
 use serde_json::Value;
 use std::sync::Arc;
-use tracing::warn;
 
 const ITUNES_SEARCH_URL: &str = "https://itunes.apple.com/search";
 const ITUNES_LOOKUP_URL: &str = "https://itunes.apple.com/lookup";

@@ -1,7 +1,6 @@
 use crate::models::track::{LavalinkTrack, TrackInfo};
 use crate::sources::route_planner::RoutePlanner;
 use reqwest::header::{HeaderMap, HeaderValue, ACCEPT, USER_AGENT};
-use serde::Deserialize;
 use serde_json::Value;
 use std::sync::Arc;
 use tokio::sync::RwLock;

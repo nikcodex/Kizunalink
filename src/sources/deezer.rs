@@ -1,9 +1,7 @@
 use crate::models::track::{LavalinkTrack, TrackInfo};
 use reqwest::header::{HeaderMap, HeaderValue, USER_AGENT};
-use serde::Deserialize;
 use serde_json::Value;
 use std::sync::Arc;
-use tracing::{info, warn};
 
 const DEEZER_API_BASE: &str = "https://api.deezer.com";
 
