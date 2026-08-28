@@ -12,8 +12,12 @@ use std::sync::LazyLock;
 use tracing::{error, info, warn};
 
 use crate::models::protocol::PlayerUpdatePayload;
+use crate::ratelimit::extract_ip;
+use crate::security;
 use crate::util::constant_time_eq;
 use crate::AppState;
+
+const MAX_WS_MESSAGE_SIZE: usize = 65536;
 
 static SESSION_STORE: LazyLock<DashMap<String, std::time::Instant>> =
     LazyLock::new(DashMap::new);
@@ -71,6 +75,13 @@ pub async fn ws_handler(
         _ => return StatusCode::UNAUTHORIZED.into_response(),
     }
 
+    // Rate limit WebSocket connections per IP
+    let ip = extract_ip(&headers, "0.0.0.0");
+    if !state.rate_limiter.check(&ip) {
+        warn!("WebSocket rate limit exceeded for IP: {}", ip);
+        return StatusCode::TOO_MANY_REQUESTS.into_response();
+    }
+
     let user_id = headers
         .get("user-id")
         .and_then(|h| h.to_str().ok())
@@ -94,8 +105,8 @@ pub async fn ws_handler(
         .map(|s| s.to_string());
 
     info!(
-        "WebSocket connected: client={} user={}",
-        client_name, user_id
+        "WebSocket connected: client={} user={} ip={}",
+        client_name, user_id, ip
     );
 
     ws.on_upgrade(move |socket| handle_socket(socket, state, session_id))
@@ -163,6 +174,10 @@ async fn handle_socket(
     while let Some(msg) = receiver.next().await {
         match msg {
             Ok(Message::Text(text)) => {
+                if text.len() > MAX_WS_MESSAGE_SIZE {
+                    warn!("WebSocket message too large ({} bytes), dropping", text.len());
+                    continue;
+                }
                 handle_ws_message(&state, &text).await;
             }
             Ok(Message::Ping(payload)) => {

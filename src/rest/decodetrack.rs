@@ -8,7 +8,10 @@ use serde::Deserialize;
 use crate::models::track::LavalinkTrack;
 use crate::rest::auth::require_auth;
 use crate::rest::error::LavalinkError;
+use crate::security;
 use crate::AppState;
+
+const MAX_DECODE_BATCH_SIZE: usize = 100;
 
 #[derive(Deserialize)]
 pub struct DecodeTrackQuery {
@@ -63,6 +66,14 @@ pub async fn decode_tracks(
         DecodeTracksPayload::Object { tracks } => tracks,
     };
 
+    if track_strings.len() > MAX_DECODE_BATCH_SIZE {
+        return Err(LavalinkError::new(
+            StatusCode::BAD_REQUEST,
+            format!("Batch size {} exceeds maximum of {}", track_strings.len(), MAX_DECODE_BATCH_SIZE),
+            "/v4/decodetracks",
+        ));
+    }
+
     let mut result = Vec::with_capacity(track_strings.len());
     for s in track_strings {
         match crate::track_encoding::decode_track(&s) {
@@ -70,7 +81,7 @@ pub async fn decode_tracks(
             Err(e) => {
                 return Err(LavalinkError::new(
                     StatusCode::BAD_REQUEST,
-                    format!("Failed to decode track '{}': {}", s, e),
+                    format!("Failed to decode track: {}", e),
                     "/v4/decodetracks",
                 ));
             }

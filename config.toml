@@ -1,13 +1,53 @@
 # ==============================================================================
-#  🌸 KizunaLink — Configuration File
+#  KizunaLink Configuration
 # ==============================================================================
 
 [server]
 host = "0.0.0.0"
 port = 2333
 password = "youshallnotpass"
+max_connections = 1000
+request_timeout_secs = 30
 
 [sources]
-jiosaavn = true    # Native 320kbps Indian & Global audio
-spotify = true     # High-speed Spotify metadata & playlist resolver
-youtube = true     # Piped / InnerTube YouTube stream fallback
+jiosaavn = true
+spotify = true
+youtube = true
+soundcloud = true
+bandcamp = true
+twitch = true
+vimeo = true
+niconico = true
+http = true
+local = false
+applemusic = true
+deezer = true
+
+[ratelimit]
+ip_blocks = []
+strategy = "RotatingIpRoutePlanner"
+excluded_ips = []
+retry_limit = 4
+max_requests = 60
+window_secs = 60
+burst = 10
+
+[logging]
+level = "info"
+# file = "kizunalink.log"
+colored = true
+
+[metrics]
+enabled = true
+port = 9090
+
+[security]
+max_body_size = 1048576
+ssrf_protection = true
+blocked_hosts = []
+
+[proxy]
+# url = "socks5://proxy:1080"
+# username = ""
+# password = ""
+timeout_secs = 30

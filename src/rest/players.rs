@@ -7,8 +7,10 @@ use serde::Deserialize;
 use tracing::error;
 
 use crate::models::protocol::{PlayerResponse, PlayerUpdatePayload};
+use crate::ratelimit::extract_ip;
 use crate::rest::auth::require_auth;
 use crate::rest::error::LavalinkError;
+use crate::security;
 use crate::AppState;
 
 #[derive(Deserialize, Default)]
@@ -81,6 +83,10 @@ pub async fn get_player(
     let path = format!("/v4/sessions/{}/players/{}", session_id, guild_id);
     require_auth(&headers, &state.password, &path)?;
 
+    if let Err(e) = security::validate_guild_id(&guild_id) {
+        return Err(LavalinkError::new(StatusCode::BAD_REQUEST, e, path));
+    }
+
     match state.player_manager.get_player(&guild_id).await {
         Some(player) => Ok(Json(player)),
         None => Err(LavalinkError::new(
@@ -100,6 +106,25 @@ pub async fn update_player(
 ) -> Result<Json<PlayerResponse>, LavalinkError> {
     let path = format!("/v4/sessions/{}/players/{}", session_id, guild_id);
     require_auth(&headers, &state.password, &path)?;
+
+    // Rate limit check
+    let ip = extract_ip(&headers, "0.0.0.0");
+    if !state.rate_limiter.check(&ip) {
+        return Err(LavalinkError::new(
+            StatusCode::TOO_MANY_REQUESTS,
+            "Rate limit exceeded",
+            &path,
+        ));
+    }
+
+    // Validate guild ID
+    if let Err(e) = security::validate_guild_id(&guild_id) {
+        return Err(LavalinkError::new(
+            StatusCode::BAD_REQUEST,
+            e,
+            &path,
+        ));
+    }
 
     let no_replace = query.no_replace.unwrap_or(false);
 
@@ -127,6 +152,10 @@ pub async fn destroy_player(
 ) -> Result<StatusCode, LavalinkError> {
     let path = format!("/v4/sessions/{}/players/{}", session_id, guild_id);
     require_auth(&headers, &state.password, &path)?;
+
+    if let Err(e) = security::validate_guild_id(&guild_id) {
+        return Err(LavalinkError::new(StatusCode::BAD_REQUEST, e, path));
+    }
 
     if state.player_manager.destroy_player(&guild_id) {
         Ok(StatusCode::NO_CONTENT)
