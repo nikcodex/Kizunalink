@@ -1,0 +1,237 @@
+{
+  "total_count": 2,
+  "jobs": [
+    {
+      "id": 98874142621,
+      "run_id": 33178743502,
+      "workflow_name": "Build KizunaLink Engine",
+      "head_branch": "main",
+      "run_url": "https://api.github.com/repos/nikcodex/Kizunalink/actions/runs/33178743502",
+      "run_attempt": 1,
+      "node_id": "CR_kwDOT54zY88AAAAXBVuvnQ",
+      "head_sha": "7068cebdcfcd6090b131718543693c62d55a3a4f",
+      "url": "https://api.github.com/repos/nikcodex/Kizunalink/actions/jobs/98874142621",
+      "html_url": "https://github.com/nikcodex/Kizunalink/actions/runs/33178743502/job/98874142621",
+      "status": "completed",
+      "conclusion": "failure",
+      "created_at": "2026-08-28T14:09:14Z",
+      "started_at": "2026-08-28T14:09:16Z",
+      "completed_at": "2026-08-28T14:10:25Z",
+      "name": "Build (Linux ARM64 / Termux)",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "started_at": "2026-08-28T14:09:17Z",
+          "completed_at": "2026-08-28T14:09:18Z"
+        },
+        {
+          "name": "Checkout Source Code",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2,
+          "started_at": "2026-08-28T14:09:18Z",
+          "completed_at": "2026-08-28T14:09:20Z"
+        },
+        {
+          "name": "Install System Dependencies",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3,
+          "started_at": "2026-08-28T14:09:20Z",
+          "completed_at": "2026-08-28T14:09:37Z"
+        },
+        {
+          "name": "Install Rust Toolchain (ARM64)",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4,
+          "started_at": "2026-08-28T14:09:37Z",
+          "completed_at": "2026-08-28T14:09:40Z"
+        },
+        {
+          "name": "Cache Cargo Dependencies",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5,
+          "started_at": "2026-08-28T14:09:40Z",
+          "completed_at": "2026-08-28T14:09:45Z"
+        },
+        {
+          "name": "Setup Zig",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6,
+          "started_at": "2026-08-28T14:09:45Z",
+          "completed_at": "2026-08-28T14:09:58Z"
+        },
+        {
+          "name": "Install cargo-zigbuild",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 7,
+          "started_at": "2026-08-28T14:09:58Z",
+          "completed_at": "2026-08-28T14:10:04Z"
+        },
+        {
+          "name": "Build Release Binary (ARM64)",
+          "status": "completed",
+          "conclusion": "failure",
+          "number": 8,
+          "started_at": "2026-08-28T14:10:04Z",
+          "completed_at": "2026-08-28T14:10:24Z"
+        },
+        {
+          "name": "Upload ARM64 Binary Artifact",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 9,
+          "started_at": "2026-08-28T14:10:24Z",
+          "completed_at": "2026-08-28T14:10:24Z"
+        },
+        {
+          "name": "Post Cache Cargo Dependencies",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 17,
+          "started_at": "2026-08-28T14:10:24Z",
+          "completed_at": "2026-08-28T14:10:24Z"
+        },
+        {
+          "name": "Post Checkout Source Code",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 18,
+          "started_at": "2026-08-28T14:10:24Z",
+          "completed_at": "2026-08-28T14:10:24Z"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 19,
+          "started_at": "2026-08-28T14:10:24Z",
+          "completed_at": "2026-08-28T14:10:24Z"
+        }
+      ],
+      "check_run_url": "https://api.github.com/repos/nikcodex/Kizunalink/check-runs/98874142621",
+      "labels": [
+        "ubuntu-latest"
+      ],
+      "runner_id": 1000000239,
+      "runner_name": "GitHub Actions 1000000239",
+      "runner_group_id": 0,
+      "runner_group_name": "GitHub Actions"
+    },
+    {
+      "id": 98874142958,
+      "run_id": 33178743502,
+      "workflow_name": "Build KizunaLink Engine",
+      "head_branch": "main",
+      "run_url": "https://api.github.com/repos/nikcodex/Kizunalink/actions/runs/33178743502",
+      "run_attempt": 1,
+      "node_id": "CR_kwDOT54zY88AAAAXBVuw7g",
+      "head_sha": "7068cebdcfcd6090b131718543693c62d55a3a4f",
+      "url": "https://api.github.com/repos/nikcodex/Kizunalink/actions/jobs/98874142958",
+      "html_url": "https://github.com/nikcodex/Kizunalink/actions/runs/33178743502/job/98874142958",
+      "status": "completed",
+      "conclusion": "failure",
+      "created_at": "2026-08-28T14:09:14Z",
+      "started_at": "2026-08-28T14:09:16Z",
+      "completed_at": "2026-08-28T14:10:13Z",
+      "name": "Build (Linux x86_64)",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "started_at": "2026-08-28T14:09:17Z",
+          "completed_at": "2026-08-28T14:09:19Z"
+        },
+        {
+          "name": "Checkout Source Code",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2,
+          "started_at": "2026-08-28T14:09:19Z",
+          "completed_at": "2026-08-28T14:09:21Z"
+        },
+        {
+          "name": "Install System Dependencies",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3,
+          "started_at": "2026-08-28T14:09:21Z",
+          "completed_at": "2026-08-28T14:09:34Z"
+        },
+        {
+          "name": "Install Rust Toolchain (x86_64)",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4,
+          "started_at": "2026-08-28T14:09:34Z",
+          "completed_at": "2026-08-28T14:09:36Z"
+        },
+        {
+          "name": "Cache Cargo Dependencies",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5,
+          "started_at": "2026-08-28T14:09:36Z",
+          "completed_at": "2026-08-28T14:09:45Z"
+        },
+        {
+          "name": "Build Release Binary",
+          "status": "completed",
+          "conclusion": "failure",
+          "number": 6,
+          "started_at": "2026-08-28T14:09:45Z",
+          "completed_at": "2026-08-28T14:10:11Z"
+        },
+        {
+          "name": "Upload x86_64 Binary Artifact",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 7,
+          "started_at": "2026-08-28T14:10:11Z",
+          "completed_at": "2026-08-28T14:10:11Z"
+        },
+        {
+          "name": "Post Cache Cargo Dependencies",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 13,
+          "started_at": "2026-08-28T14:10:11Z",
+          "completed_at": "2026-08-28T14:10:11Z"
+        },
+        {
+          "name": "Post Checkout Source Code",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 14,
+          "started_at": "2026-08-28T14:10:11Z",
+          "completed_at": "2026-08-28T14:10:11Z"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 15,
+          "started_at": "2026-08-28T14:10:11Z",
+          "completed_at": "2026-08-28T14:10:11Z"
+        }
+      ],
+      "check_run_url": "https://api.github.com/repos/nikcodex/Kizunalink/check-runs/98874142958",
+      "labels": [
+        "ubuntu-latest"
+      ],
+      "runner_id": 1000000242,
+      "runner_name": "GitHub Actions 1000000242",
+      "runner_group_id": 0,
+      "runner_group_name": "GitHub Actions"
+    }
+  ]
+}

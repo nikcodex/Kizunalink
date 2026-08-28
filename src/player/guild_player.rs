@@ -426,7 +426,7 @@ impl GuildPlayer {
                 // To prove the architecture, we rebuild the source for Kizuna
                 if let Ok(k_source) = crate::dsp::pipeline::create_kizuna_source(
                     crate::config::http_client(),
-                    stream_url.clone(),
+                    url.clone(),
                     None,
                     self.shared_chain.clone(),
                     0,
