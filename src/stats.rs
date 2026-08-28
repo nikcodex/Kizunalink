@@ -1,8 +1,48 @@
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::OnceLock;
 use sysinfo::System;
 use tokio::sync::RwLock;
 
-use crate::models::protocol::{CpuStats, MemoryStats};
+use crate::models::protocol::{CpuStats, FrameStats, MemoryStats};
+
+/// Global frame counters for /v4/stats and /v4/metrics.
+pub struct FrameCounters {
+    pub sent: AtomicU64,
+    pub nulled: AtomicU64,
+    pub deficit: AtomicU64,
+}
+
+static FRAME_COUNTERS: OnceLock<FrameCounters> = OnceLock::new();
+
+impl FrameCounters {
+    pub fn global() -> &'static Self {
+        FRAME_COUNTERS.get_or_init(|| Self {
+            sent: AtomicU64::new(0),
+            nulled: AtomicU64::new(0),
+            deficit: AtomicU64::new(0),
+        })
+    }
+
+    pub fn record_sent(&self, frames: u64) {
+        self.sent.fetch_add(frames, Ordering::Relaxed);
+    }
+
+    pub fn record_nulled(&self, frames: u64) {
+        self.nulled.fetch_add(frames, Ordering::Relaxed);
+    }
+
+    pub fn record_deficit(&self, frames: u64) {
+        self.deficit.fetch_add(frames, Ordering::Relaxed);
+    }
+
+    pub fn snapshot(&self) -> FrameStats {
+        FrameStats {
+            sent: self.sent.load(Ordering::Relaxed),
+            nulled: self.nulled.load(Ordering::Relaxed),
+            deficit: self.deficit.load(Ordering::Relaxed),
+        }
+    }
+}
 
 /// Global system monitor — initialized once, updated periodically.
 pub struct SystemStats {

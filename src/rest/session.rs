@@ -9,6 +9,8 @@ use crate::rest::auth::require_auth;
 use crate::rest::error::LavalinkError;
 use crate::AppState;
 
+use crate::ws::handler::update_session_state;
+
 pub async fn update_session(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -18,8 +20,14 @@ pub async fn update_session(
     let path = format!("/v4/sessions/{}", session_id);
     require_auth(&headers, &state.password, &path)?;
 
+    let (resuming, timeout) = update_session_state(
+        &session_id,
+        payload.resuming,
+        payload.timeout,
+    );
+
     Ok(Json(SessionResponse {
-        resuming: payload.resuming.unwrap_or(false),
-        timeout: payload.timeout.unwrap_or(60),
+        resuming,
+        timeout,
     }))
 }

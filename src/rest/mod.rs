@@ -4,6 +4,7 @@ pub mod error;
 pub mod info;
 pub mod loadtracks;
 pub mod lyrics;
+pub mod metrics;
 pub mod players;
 pub mod routeplanner;
 pub mod session;

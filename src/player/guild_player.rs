@@ -354,30 +354,39 @@ impl GuildPlayer {
     ) -> (songbird::input::Input, bool) {
         let chain_active = self.shared_chain.lock().unwrap().is_active();
 
-        if chain_active {
-            match pipeline::create_filtered_input(
-                reqwest::Client::new(),
-                stream_url.to_string(),
-                Self::extension_hint(stream_url),
-                self.shared_chain.clone(),
-                start_offset_ms * (SAMPLE_RATE as u64 / 1000),
-            )
-            .await
-            {
-                Ok(input) => return (input, true),
-                Err(e) => {
-                    warn!(
-                        "Filtered pipeline setup failed ({}), falling back to direct input",
-                        e
-                    );
-                }
-            }
+        // When no filters are active, use Opus passthrough — Songbird handles
+        // the raw HTTP stream (WebM/Ogg demux + Opus decode) directly, skipping
+        // our Symphonia decode→PCM→re-encode pipeline entirely.
+        if !chain_active {
+            return (
+                HttpRequest::new(reqwest::Client::new(), stream_url.to_string()).into(),
+                false,
+            );
         }
 
-        (
-            HttpRequest::new(reqwest::Client::new(), stream_url.to_string()).into(),
-            false,
+        // Filters are active — must decode to PCM, apply DSP, re-encode
+        match pipeline::create_filtered_input(
+            reqwest::Client::new(),
+            stream_url.to_string(),
+            Self::extension_hint(stream_url),
+            self.shared_chain.clone(),
+            start_offset_ms * (SAMPLE_RATE as u64 / 1000),
+            true, // opus_passthrough hint
         )
+        .await
+        {
+            Ok(input) => (input, true),
+            Err(e) => {
+                warn!(
+                    "Filtered pipeline setup failed ({}), falling back to direct input",
+                    e
+                );
+                (
+                    HttpRequest::new(reqwest::Client::new(), stream_url.to_string()).into(),
+                    false,
+                )
+            }
+        }
     }
 
     fn stop_handle_silently(&mut self) {

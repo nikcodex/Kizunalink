@@ -137,6 +137,27 @@ impl BiquadFilter {
         }
     }
 
+    /// Update peaking EQ coefficients in-place (preserves filter state to avoid clicks).
+    pub fn update_peaking_eq(&mut self, sample_rate: f64, frequency: f64, q: f64, gain_db: f64) {
+        let w0 = 2.0 * std::f64::consts::PI * frequency / sample_rate;
+        let alpha = w0.sin() / (2.0 * q);
+        let cos_w0 = w0.cos();
+        let a = 10.0_f64.powf(gain_db / 40.0);
+        
+        let b0 = 1.0 + alpha * a;
+        let b1 = -2.0 * cos_w0;
+        let b2 = 1.0 - alpha * a;
+        let a0 = 1.0 + alpha / a;
+        let a1 = -2.0 * cos_w0;
+        let a2 = 1.0 - alpha / a;
+        
+        self.b0 = b0 / a0;
+        self.b1 = b1 / a0;
+        self.b2 = b2 / a0;
+        self.a1 = a1 / a0;
+        self.a2 = a2 / a0;
+    }
+
     /// Process a single sample
     #[inline]
     pub fn process(&mut self, input: f64) -> f64 {

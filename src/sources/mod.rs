@@ -1,6 +1,12 @@
+pub mod apple_music;
 pub mod backoff;
+pub mod bandcamp;
+pub mod deezer;
 pub mod jiosaavn;
+pub mod niconico;
 pub mod route_planner;
 pub mod soundcloud;
 pub mod spotify;
+pub mod twitch;
+pub mod vimeo;
 pub mod youtube;

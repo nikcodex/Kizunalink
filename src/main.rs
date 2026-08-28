@@ -1,8 +1,10 @@
 mod plugins;
 mod config;
 pub mod dsp;
+mod dave;
 mod models;
 mod player;
+pub mod metrics;
 mod rest;
 mod sources;
 mod stats;
@@ -21,8 +23,10 @@ use tracing::{info, warn};
 
 use player::manager::PlayerManager;
 use sources::{
-    jiosaavn::JioSaavnSource, route_planner::RoutePlanner, soundcloud::SoundCloudSource,
-    spotify::SpotifySource, youtube::YouTubeSource,
+    apple_music::AppleMusicSource, bandcamp::BandcampSource, deezer::DeezerSource,
+    jiosaavn::JioSaavnSource, niconico::NicoNicoSource, route_planner::RoutePlanner,
+    soundcloud::SoundCloudSource, spotify::SpotifySource, twitch::TwitchSource,
+    vimeo::VimeoSource, youtube::YouTubeSource,
 };
 
 #[derive(Clone)]
@@ -32,7 +36,14 @@ pub struct AppState {
     pub youtube: Arc<YouTubeSource>,
     pub spotify: Arc<SpotifySource>,
     pub soundcloud: Arc<SoundCloudSource>,
+    pub bandcamp: Arc<BandcampSource>,
+    pub twitch: Arc<TwitchSource>,
+    pub vimeo: Arc<VimeoSource>,
+    pub niconico: Arc<NicoNicoSource>,
+    pub apple_music: Arc<AppleMusicSource>,
+    pub deezer: Arc<DeezerSource>,
     pub plugin_manager: Arc<plugins::PluginManager>,
+    pub dave_manager: dave::DaveManager,
     pub route_planner: Option<Arc<RoutePlanner>>,
     pub password: String,
     pub start_time: std::time::Instant,
@@ -68,6 +79,12 @@ async fn main() {
     let youtube = YouTubeSource::new(route_planner.clone());
     let spotify = SpotifySource::new();
     let soundcloud = SoundCloudSource::new();
+    let bandcamp = BandcampSource::new();
+    let twitch = TwitchSource::new();
+    let vimeo = VimeoSource::new();
+    let niconico = NicoNicoSource::new();
+    let apple_music = AppleMusicSource::new();
+    let deezer = DeezerSource::new();
 
     let player_manager = Arc::new(PlayerManager::new(
         event_tx.clone(),
@@ -77,13 +94,22 @@ async fn main() {
         soundcloud.clone(),
     ));
 
+    let dave_manager = dave::DaveManager::new();
+
     let state = AppState {
         player_manager,
         jiosaavn,
         youtube,
         spotify,
         soundcloud,
+        bandcamp,
+        twitch,
+        vimeo,
+        niconico,
+        apple_music,
+        deezer,
         plugin_manager,
+        dave_manager,
         route_planner,
         password,
         start_time: std::time::Instant::now(),
@@ -103,6 +129,7 @@ async fn main() {
         .route("/v4/decodetrack", get(rest::decodetrack::decode_track))
         .route("/v4/decodetracks", post(rest::decodetrack::decode_tracks))
         .route("/v4/sessions/:session_id", patch(rest::session::update_session))
+        .route("/v4/players/all", get(rest::players::get_all_players))
         .route(
             "/v4/sessions/:session_id/players",
             get(rest::players::get_players),
@@ -117,6 +144,7 @@ async fn main() {
         )
         .route("/v4/lyrics/:song_id", get(rest::lyrics::get_lyrics))
         .route("/v4/sessions", get(rest::sessions::list_sessions))
+        .route("/v4/metrics", get(rest::metrics::get_metrics))
         .route(
             "/v4/routeplanner/status",
             get(rest::routeplanner::get_routeplanner_status),
@@ -171,7 +199,11 @@ async fn main() {
                     "systemLoad": cpu.system_load,
                     "lavalinkLoad": cpu.lavalink_load
                 },
-                "frameStats": null
+                "frameStats": {
+                    "sent": crate::stats::FrameCounters::global().sent.load(std::sync::atomic::Ordering::Relaxed),
+                    "nulled": crate::stats::FrameCounters::global().nulled.load(std::sync::atomic::Ordering::Relaxed),
+                    "deficit": crate::stats::FrameCounters::global().deficit.load(std::sync::atomic::Ordering::Relaxed)
+                }
             });
 
             let _ = stats_state.event_tx.send(stats.to_string());

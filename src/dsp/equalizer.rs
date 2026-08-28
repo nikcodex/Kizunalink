@@ -42,13 +42,13 @@ impl Equalizer {
     pub fn set_band(&mut self, band: usize, gain_db: f32) {
         if band < NUM_BANDS {
             self.gains[band] = gain_db;
-            self.bands_l[band] = BiquadFilter::peaking_eq(
+            self.bands_l[band].update_peaking_eq(
                 self.sample_rate,
                 BAND_FREQUENCIES[band],
                 0.707,
                 gain_db as f64,
             );
-            self.bands_r[band] = BiquadFilter::peaking_eq(
+            self.bands_r[band].update_peaking_eq(
                 self.sample_rate,
                 BAND_FREQUENCIES[band],
                 0.707,

@@ -27,6 +27,10 @@ pub async fn get_info() -> Json<ServerInfo> {
             "youtube".to_string(),
             "spotify".to_string(),
             "soundcloud".to_string(),
+            "bandcamp".to_string(),
+            "twitch".to_string(),
+            "vimeo".to_string(),
+            "niconico".to_string(),
             "http".to_string(),
         ],
         filters: vec![

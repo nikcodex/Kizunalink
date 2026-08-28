@@ -19,6 +19,9 @@ use tracing::{info, warn};
 /// How long an IP stays marked as failing before it is retried (default: 120s).
 const DEFAULT_FAIL_COOLDOWN_SECS: u64 = 120;
 
+/// Maximum number of cached HTTP clients before evicting all entries.
+const MAX_CLIENT_CACHE_SIZE: usize = 100;
+
 #[derive(Debug, Clone)]
 pub enum IpBlock {
     Single(IpAddr),
@@ -320,6 +323,10 @@ impl RoutePlanner {
             .build()
         {
             Ok(client) => {
+                // Evict cache if it grows too large
+                if self.client_cache.len() >= MAX_CLIENT_CACHE_SIZE {
+                    self.client_cache.clear();
+                }
                 self.client_cache.insert(ip, client.clone());
                 (client, Some(ip))
             }

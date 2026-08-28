@@ -37,6 +37,8 @@ impl LowPass {
         self.rebuild();
     }
 
+    /// Process a single mono sample using the left channel filter.
+    /// For stereo audio, use `process_buffer` instead.
     #[inline]
     pub fn process(&mut self, input: f64) -> f64 {
         self.filter_l.process(input)

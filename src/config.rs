@@ -22,6 +22,28 @@ pub struct SourcesConfig {
     pub jiosaavn: bool,
     pub spotify: bool,
     pub youtube: bool,
+    #[serde(default = "default_true")]
+    pub soundcloud: bool,
+    #[serde(default = "default_true")]
+    pub bandcamp: bool,
+    #[serde(default = "default_true")]
+    pub twitch: bool,
+    #[serde(default)]
+    pub vimeo: bool,
+    #[serde(default)]
+    pub niconico: bool,
+    #[serde(default)]
+    pub http: bool,
+    #[serde(default)]
+    pub local: bool,
+    #[serde(default = "default_true")]
+    pub applemusic: bool,
+    #[serde(default = "default_true")]
+    pub deezer: bool,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -67,6 +89,15 @@ impl Default for AppConfig {
                 jiosaavn: true,
                 spotify: true,
                 youtube: true,
+                soundcloud: true,
+                bandcamp: true,
+                twitch: true,
+                vimeo: false,
+                niconico: false,
+                http: true,
+                local: false,
+                applemusic: true,
+                deezer: true,
             },
             ratelimit: RatelimitConfig::default(),
         }
@@ -104,6 +135,15 @@ impl AppConfig {
                 jiosaavn: true,
                 spotify: true,
                 youtube: true,
+                soundcloud: true,
+                bandcamp: true,
+                twitch: true,
+                vimeo: false,
+                niconico: false,
+                http: true,
+                local: false,
+                applemusic: true,
+                deezer: true,
             },
             ratelimit,
         }

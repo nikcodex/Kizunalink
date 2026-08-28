@@ -17,6 +17,48 @@ pub struct NoReplaceQuery {
     pub no_replace: Option<bool>,
 }
 
+#[derive(Deserialize, Default)]
+pub struct AllPlayersQuery {
+    /// Filter to only players that are actively playing (track loaded and not paused).
+    pub playing: Option<bool>,
+    /// Filter to only players that are connected to a voice channel.
+    pub connected: Option<bool>,
+}
+
+/// GET /v4/players/all — List all players across all sessions with optional filters.
+pub async fn get_all_players(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<AllPlayersQuery>,
+) -> Result<Json<serde_json::Value>, LavalinkError> {
+    require_auth(&headers, &state.password, "/v4/players/all")?;
+
+    let all = state.player_manager.get_all_players().await;
+
+    let filtered: Vec<PlayerResponse> = all
+        .into_iter()
+        .filter(|p| {
+            if let Some(playing) = query.playing {
+                let is_playing = p.track.is_some() && !p.paused;
+                if is_playing != playing {
+                    return false;
+                }
+            }
+            if let Some(connected) = query.connected {
+                if p.state.connected != connected {
+                    return false;
+                }
+            }
+            true
+        })
+        .collect();
+
+    Ok(Json(serde_json::json!({
+        "players": filtered,
+        "count": filtered.len(),
+    })))
+}
+
 pub async fn get_players(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -25,6 +67,8 @@ pub async fn get_players(
     let path = format!("/v4/sessions/{}/players", session_id);
     require_auth(&headers, &state.password, &path)?;
 
+    // Single-session server: return all players.
+    // In a multi-session setup, filter by session_id stored on each player.
     let players = state.player_manager.get_all_players().await;
     Ok(Json(players))
 }

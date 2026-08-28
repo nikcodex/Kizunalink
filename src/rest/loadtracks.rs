@@ -39,6 +39,55 @@ pub async fn load_tracks(
         )));
     }
 
+    // Bandcamp URLs
+    if identifier.contains("bandcamp.com") || identifier.contains("bcvc.live") {
+        if let Ok(Some(track)) = state.bandcamp.resolve_track(&identifier).await {
+            crate::metrics::Metrics::global().tracks_loaded.inc();
+            return Ok(Json(LoadResult::Track(track)));
+        }
+    }
+
+    // Twitch URLs
+    if identifier.contains("twitch.tv/") {
+        let channel = identifier
+            .split("twitch.tv/")
+            .nth(1)
+            .and_then(|s| s.split('/').next())
+            .unwrap_or(&identifier);
+        if let Ok(tracks) = state.twitch.search(channel, 1).await {
+            if let Some(track) = tracks.into_iter().next() {
+                crate::metrics::Metrics::global().tracks_loaded.inc();
+                return Ok(Json(LoadResult::Track(track)));
+            }
+        }
+    }
+
+    // Vimeo URLs
+    if identifier.contains("vimeo.com/") {
+        let video_id = identifier
+            .split("vimeo.com/")
+            .nth(1)
+            .and_then(|s| s.split('/').next())
+            .unwrap_or(&identifier);
+        if let Ok(Some(track)) = state.vimeo.resolve_video(video_id).await {
+            crate::metrics::Metrics::global().tracks_loaded.inc();
+            return Ok(Json(LoadResult::Track(track)));
+        }
+    }
+
+    // NicoNico URLs
+    if identifier.contains("nicovideo.jp/") || identifier.contains("nico.ms/") {
+        let video_id = identifier
+            .split("nicovideo.jp/watch/").nth(1)
+            .or_else(|| identifier.split("nico.ms/").nth(1))
+            .and_then(|s| s.split('?').next())
+            .unwrap_or(&identifier);
+        if let Ok(Some(track)) = state.niconico.resolve_video(video_id).await {
+            crate::metrics::Metrics::global().tracks_loaded.inc();
+            return Ok(Json(LoadResult::Track(track)));
+        }
+    }
+
     // Recommendation prefixes
     if let Some(stripped) = identifier.strip_prefix("jsrec:") {
         if let Ok(tracks) = state.jiosaavn.get_recommendations(stripped.trim()).await {
@@ -107,18 +156,75 @@ pub async fn load_tracks(
         }
     }
 
-    // Apple Music / Deezer search prefixes -> match with JioSaavn / Spotify
-    if let Some(stripped) = identifier
-        .strip_prefix("amsearch:")
-        .or_else(|| identifier.strip_prefix("dzsearch:"))
-    {
-        if let Ok(tracks) = state.jiosaavn.search(stripped.trim(), 10).await {
+    // Apple Music URLs
+    if identifier.contains("music.apple.com/") {
+        if let Some(track_id) = extract_apple_music_id(&identifier) {
+            if let Ok(Some(track)) = state.apple_music.resolve_track(&track_id).await {
+                crate::metrics::Metrics::global().tracks_loaded.inc();
+                return Ok(Json(LoadResult::Track(track)));
+            }
+        }
+    } else if let Some(stripped) = identifier.strip_prefix("amsearch:") {
+        if let Ok(tracks) = state.apple_music.search(stripped.trim(), 10).await {
             if !tracks.is_empty() {
                 return Ok(Json(LoadResult::Search(tracks)));
             }
         }
-        if let Ok(tracks) = state.spotify.search(stripped.trim(), 10).await {
-            return Ok(Json(LoadResult::Search(tracks)));
+    }
+
+    // Deezer URLs
+    if identifier.contains("deezer.com/") {
+        if let Some(track_id) = extract_deezer_id(&identifier, "track") {
+            if let Ok(Some(track)) = state.deezer.resolve_track(&track_id).await {
+                crate::metrics::Metrics::global().tracks_loaded.inc();
+                return Ok(Json(LoadResult::Track(track)));
+            }
+        } else if let Some(pl_id) = extract_deezer_id(&identifier, "playlist") {
+            if let Ok(Some(pl)) = state.deezer.resolve_playlist(&pl_id).await {
+                return Ok(Json(LoadResult::Playlist(pl)));
+            }
+        }
+    } else if let Some(stripped) = identifier.strip_prefix("dzsearch:") {
+        if let Ok(tracks) = state.deezer.search(stripped.trim(), 10).await {
+            if !tracks.is_empty() {
+                return Ok(Json(LoadResult::Search(tracks)));
+            }
+        }
+    }
+
+    // Bandcamp search
+    if let Some(stripped) = identifier.strip_prefix("bcsearch:") {
+        if let Ok(tracks) = state.bandcamp.search(stripped.trim(), 10).await {
+            if !tracks.is_empty() {
+                return Ok(Json(LoadResult::Search(tracks)));
+            }
+        }
+    }
+
+    // NicoNico search
+    if let Some(stripped) = identifier.strip_prefix("nisearch:") {
+        if let Ok(tracks) = state.niconico.search(stripped.trim(), 10).await {
+            if !tracks.is_empty() {
+                return Ok(Json(LoadResult::Search(tracks)));
+            }
+        }
+    }
+
+    // Twitch stream resolve
+    if let Some(stripped) = identifier.strip_prefix("twsearch:") {
+        if let Ok(tracks) = state.twitch.search(stripped.trim(), 10).await {
+            if !tracks.is_empty() {
+                return Ok(Json(LoadResult::Search(tracks)));
+            }
+        }
+    }
+
+    // Vimeo search
+    if let Some(stripped) = identifier.strip_prefix("vmsearch:") {
+        if let Ok(tracks) = state.vimeo.search(stripped.trim(), 10).await {
+            if !tracks.is_empty() {
+                return Ok(Json(LoadResult::Search(tracks)));
+            }
         }
     }
 
@@ -142,6 +248,11 @@ pub async fn load_tracks(
             if let Ok(sc_tracks) = state.soundcloud.search(search_term, 10).await {
                 if !sc_tracks.is_empty() {
                     return Ok(Json(LoadResult::Search(sc_tracks)));
+                }
+            }
+            if let Ok(bc_tracks) = state.bandcamp.search(search_term, 10).await {
+                if !bc_tracks.is_empty() {
+                    return Ok(Json(LoadResult::Search(bc_tracks)));
                 }
             }
             Ok(Json(LoadResult::Empty))
@@ -183,6 +294,20 @@ fn extract_youtube_id(url: &str) -> String {
 }
 
 fn extract_spotify_id(url: &str, entity_type: &str) -> Option<String> {
+    let pattern = format!("/{}/", entity_type);
+    url.split(&pattern).nth(1).and_then(|s| s.split('?').next()).map(|s| s.to_string())
+}
+
+fn extract_apple_music_id(url: &str) -> Option<String> {
+    // URLs like: https://music.apple.com/us/album/song-name/123456?i=789
+    // The track ID is the `i=` parameter, or the last path segment
+    if let Some(i_param) = url.split("i=").nth(1).and_then(|s| s.split('&').next()) {
+        return Some(i_param.to_string());
+    }
+    url.rsplit('/').next().and_then(|s| s.split('?').next()).map(|s| s.to_string())
+}
+
+fn extract_deezer_id(url: &str, entity_type: &str) -> Option<String> {
     let pattern = format!("/{}/", entity_type);
     url.split(&pattern).nth(1).and_then(|s| s.split('?').next()).map(|s| s.to_string())
 }
