@@ -45,7 +45,7 @@ async fn test_track_control_play_pause_resume_seek_stop() {
     let (cmd_tx, cmd_rx) = mpsc::channel(32);
     let (event_tx, _) = broadcast::channel(32);
     let handle = KizunaTrackHandle::new(cmd_tx, event_tx.subscribe());
-    let mut rx_events = handle.events();
+    let mut rx_events = handle.events().await;
 
     let scheduler = FrameScheduler::new(source);
 
@@ -109,7 +109,7 @@ async fn test_failing_source_emits_error_and_terminates() {
     let (cmd_tx, cmd_rx) = mpsc::channel(32);
     let (event_tx, _) = broadcast::channel(32);
     let handle = KizunaTrackHandle::new(cmd_tx, event_tx.subscribe());
-    let mut rx_events = handle.events();
+    let mut rx_events = handle.events().await;
 
     let scheduler = FrameScheduler::new(source);
 

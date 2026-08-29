@@ -49,7 +49,7 @@ async fn test_long_run_stability_and_rollover() {
         total: frame_count,
     }));
 
-    let (cmd_tx, cmd_rx) = mpsc::channel(32);
+    let (_cmd_tx, cmd_rx) = mpsc::channel(32);
     let (event_tx, _) = broadcast::channel(32);
 
     let scheduler = FrameScheduler::new(source);

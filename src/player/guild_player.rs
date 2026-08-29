@@ -10,7 +10,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use tokio::sync::{broadcast, mpsc, Mutex};
-use tracing::{info, warn};
+use tracing::info;
 
 use crate::dsp::pipeline::{self, SharedChain};
 

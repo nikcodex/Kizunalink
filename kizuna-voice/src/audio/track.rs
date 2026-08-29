@@ -114,4 +114,9 @@ impl KizunaTrackHandle {
         let mut rx = self.event_rx.lock().await;
         rx.recv().await.map_err(|e| e.to_string())
     }
+
+    pub async fn events(&self) -> broadcast::Receiver<TrackEvent> {
+        let rx = self.event_rx.lock().await;
+        rx.resubscribe()
+    }
 }
