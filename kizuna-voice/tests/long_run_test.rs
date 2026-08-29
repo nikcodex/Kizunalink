@@ -56,35 +56,38 @@ async fn test_long_run_stability_and_rollover() {
     let udp_clone = voice_udp.clone();
     let dave_clone = dave.clone();
 
-    // Start sequence near u16::MAX to force rollover
-    let mut sequence: u16 = u16::MAX - 50;
-    // Start timestamp near u32::MAX to force rollover
-    let mut timestamp: u32 = u32::MAX - 5000;
+    let sequence = Arc::new(std::sync::atomic::AtomicU16::new(u16::MAX - 50));
+    let timestamp = Arc::new(std::sync::atomic::AtomicU32::new(u32::MAX - 5000));
 
-    let initial_seq = sequence;
-    let initial_ts = timestamp;
+    let initial_seq = sequence.load(std::sync::atomic::Ordering::SeqCst);
+    let initial_ts = timestamp.load(std::sync::atomic::Ordering::SeqCst);
+
+    let seq_clone = sequence.clone();
+    let ts_clone = timestamp.clone();
 
     let scheduler_task = tokio::spawn(async move {
         scheduler
             .run(cmd_rx, event_tx, |frame| {
                 let udp = udp_clone.clone();
                 let dave = dave_clone.clone();
+                let seq_atomic = seq_clone.clone();
+                let ts_atomic = ts_clone.clone();
 
                 async move {
-                    sequence = sequence.wrapping_add(1);
-                    timestamp = timestamp.wrapping_add(960);
+                    let cur_seq = seq_atomic.fetch_add(1, std::sync::atomic::Ordering::SeqCst).wrapping_add(1);
+                    let cur_ts = ts_atomic.fetch_add(960, std::sync::atomic::Ordering::SeqCst).wrapping_add(960);
 
                     let AudioFrame::Opus(opus_data) = frame else {
                         panic!("Expected Opus frame");
                     };
 
-                    let header = RtpHeader::new(sequence, timestamp, ssrc);
+                    let header = RtpHeader::new(cur_seq, cur_ts, ssrc);
                     let mut header_buf = Vec::new();
                     header.write_to(&mut header_buf).unwrap();
 
                     let mut dave_guard = dave.lock().await;
                     let encrypted = dave_guard
-                        .encrypt_frame("sender_long_run", &opus_data, sequence as u32, &header_buf)
+                        .encrypt_frame("sender_long_run", &opus_data, cur_seq as u32, &header_buf)
                         .expect("DAVE encrypt");
 
                     let mut packet = header_buf;
