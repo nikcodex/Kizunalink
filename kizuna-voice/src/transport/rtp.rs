@@ -1,6 +1,7 @@
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use std::io::Cursor;
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RtpHeader {
     pub version: u8,
     pub payload_type: u8,
@@ -46,6 +47,7 @@ impl RtpHeader {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RtpPacket {
     pub header: RtpHeader,
     pub payload: Vec<u8>,
