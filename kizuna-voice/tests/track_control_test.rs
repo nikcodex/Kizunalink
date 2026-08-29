@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use kizuna_voice::audio::{
     AudioFrame, AudioSource, FrameScheduler, KizunaTrackHandle, TrackEvent, TrackState,
 };
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{broadcast, mpsc, Mutex};
