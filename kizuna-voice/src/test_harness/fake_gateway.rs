@@ -61,94 +61,98 @@ impl FakeVoiceGateway {
                     }
                     accept_res = listener.accept() => {
                         if let Ok((stream, _peer_addr)) = accept_res {
-                            if let Ok(mut ws) = tokio_tungstenite::accept_async(stream).await {
-                                let (mut ws_tx, mut ws_rx) = ws.split();
-                                let (msg_tx, mut msg_rx) = mpsc::channel::<VoicePayload>(32);
+                            let received_in_task = received_clone.clone();
+                            let outgoing_in_task = outgoing_clone.clone();
+                            let cfg = config.clone();
 
-                                {
-                                    let mut out = outgoing_clone.lock().await;
-                                    *out = Some(msg_tx.clone());
-                                }
+                            tokio::spawn(async move {
+                                if let Ok(mut ws) = tokio_tungstenite::accept_async(stream).await {
+                                    let (mut ws_tx, mut ws_rx) = ws.split();
+                                    let (msg_tx, mut msg_rx) = mpsc::channel::<VoicePayload>(32);
 
-                                // Send Hello (Op 8)
-                                let hello = json!({
-                                    "op": 8,
-                                    "d": {
-                                        "heartbeat_interval": config.heartbeat_interval,
-                                        "v": 4
+                                    {
+                                        let mut out = outgoing_in_task.lock().await;
+                                        *out = Some(msg_tx.clone());
                                     }
-                                });
-                                let _ = ws_tx.send(Message::Text(hello.to_string())).await;
 
-                                let received_in_task = received_clone.clone();
-                                let cfg = config.clone();
-                                let msg_tx_in_task = msg_tx.clone();
-
-                                // Spawn sender task
-                                let send_task = tokio::spawn(async move {
-                                    while let Some(payload) = msg_rx.recv().await {
-                                        let text = serde_json::to_string(&payload).unwrap();
-                                        if ws_tx.send(Message::Text(text)).await.is_err() {
-                                            break;
+                                    // Send Hello (Op 8)
+                                    let hello = json!({
+                                        "op": 8,
+                                        "d": {
+                                            "heartbeat_interval": cfg.heartbeat_interval,
+                                            "v": 4
                                         }
-                                    }
-                                });
+                                    });
+                                    let _ = ws_tx.send(Message::Text(hello.to_string())).await;
 
-                                // Process incoming messages
-                                while let Some(msg) = ws_rx.next().await {
-                                    if let Ok(Message::Text(text)) = msg {
-                                        if let Ok(payload) = serde_json::from_str::<VoicePayload>(&text) {
-                                            {
-                                                let mut list = received_in_task.lock().await;
-                                                list.push(VoicePayload {
-                                                    op: payload.op,
-                                                    d: payload.d.clone(),
-                                                });
+                                    let msg_tx_in_task = msg_tx.clone();
+
+                                    // Spawn sender task
+                                    let send_task = tokio::spawn(async move {
+                                        while let Some(payload) = msg_rx.recv().await {
+                                            let text = serde_json::to_string(&payload).unwrap();
+                                            if ws_tx.send(Message::Text(text)).await.is_err() {
+                                                break;
                                             }
+                                        }
+                                    });
 
-                                            if cfg.auto_handshake {
-                                                match payload.op {
-                                                    0 => {
-                                                        // Identify -> send Ready (Op 2)
-                                                        let ready = VoicePayload {
-                                                            op: 2,
-                                                            d: json!({
-                                                                "ssrc": cfg.ssrc,
-                                                                "ip": "127.0.0.1",
-                                                                "port": cfg.udp_port,
-                                                                "modes": ["aead_aes256_gcm_rtpsize"]
-                                                            }),
-                                                        };
-                                                        let _ = msg_tx_in_task.send(ready).await;
+                                    // Process incoming messages
+                                    while let Some(msg) = ws_rx.next().await {
+                                        if let Ok(Message::Text(text)) = msg {
+                                            if let Ok(payload) = serde_json::from_str::<VoicePayload>(&text) {
+                                                {
+                                                    let mut list = received_in_task.lock().await;
+                                                    list.push(VoicePayload {
+                                                        op: payload.op,
+                                                        d: payload.d.clone(),
+                                                    });
+                                                }
+
+                                                if cfg.auto_handshake {
+                                                    match payload.op {
+                                                        0 => {
+                                                            // Identify -> send Ready (Op 2)
+                                                            let ready = VoicePayload {
+                                                                op: 2,
+                                                                d: json!({
+                                                                    "ssrc": cfg.ssrc,
+                                                                    "ip": "127.0.0.1",
+                                                                    "port": cfg.udp_port,
+                                                                    "modes": ["aead_aes256_gcm_rtpsize"]
+                                                                }),
+                                                            };
+                                                            let _ = msg_tx_in_task.send(ready).await;
+                                                        }
+                                                        1 => {
+                                                            // Select Protocol -> send Session Description (Op 4)
+                                                            let sd = VoicePayload {
+                                                                op: 4,
+                                                                d: json!({
+                                                                    "mode": "aead_aes256_gcm_rtpsize",
+                                                                    "secret_key": vec![1u8; 32]
+                                                                }),
+                                                            };
+                                                            let _ = msg_tx_in_task.send(sd).await;
+                                                        }
+                                                        3 => {
+                                                            // Heartbeat -> send Heartbeat ACK (Op 6)
+                                                            let ack = VoicePayload {
+                                                                op: 6,
+                                                                d: payload.d,
+                                                            };
+                                                            let _ = msg_tx_in_task.send(ack).await;
+                                                        }
+                                                        _ => {}
                                                     }
-                                                    1 => {
-                                                        // Select Protocol -> send Session Description (Op 4)
-                                                        let sd = VoicePayload {
-                                                            op: 4,
-                                                            d: json!({
-                                                                "mode": "aead_aes256_gcm_rtpsize",
-                                                                "secret_key": vec![1u8; 32]
-                                                            }),
-                                                        };
-                                                        let _ = msg_tx_in_task.send(sd).await;
-                                                    }
-                                                    3 => {
-                                                        // Heartbeat -> send Heartbeat ACK (Op 6)
-                                                        let ack = VoicePayload {
-                                                            op: 6,
-                                                            d: payload.d,
-                                                        };
-                                                        let _ = msg_tx_in_task.send(ack).await;
-                                                    }
-                                                    _ => {}
                                                 }
                                             }
                                         }
                                     }
-                                }
 
-                                send_task.abort();
-                            }
+                                    send_task.abort();
+                                }
+                            });
                         }
                     }
                 }
