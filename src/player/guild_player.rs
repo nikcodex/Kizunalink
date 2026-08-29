@@ -8,7 +8,7 @@ use crate::player::queue::{LoopMode, TrackQueue};
 use crate::util;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tokio::sync::Mutex;
+
 use tokio::sync::{broadcast, mpsc, Mutex};
 use tracing::{info, warn};
 
@@ -244,7 +244,6 @@ impl GuildPlayer {
             )
             .await
             {
-                use tokio::sync::Mutex;
                 let k_src = Arc::new(Mutex::new(k_source));
                 let mut adapter = adapter_arc.lock().await;
                 let k_handle = adapter.play_source(k_src, self.user_id.clone());
@@ -333,7 +332,6 @@ impl GuildPlayer {
             )
             .await
             {
-                use tokio::sync::Mutex;
                 let k_src = Arc::new(Mutex::new(k_source));
                 let mut adapter = adapter_arc.lock().await;
                 let k_handle = adapter.play_source(k_src, self.user_id.clone());

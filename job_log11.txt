@@ -1,0 +1,695 @@
+﻿2026-08-28T15:16:54.0850189Z Current runner version: '2.336.0'
+2026-08-28T15:16:54.0885004Z ##[group]Runner Image Provisioner
+2026-08-28T15:16:54.0886403Z Hosted Compute Agent
+2026-08-28T15:16:54.0887322Z Version: 20260819.586
+2026-08-28T15:16:54.0888294Z Commit: 3cc4a88dfa507ef76119ad1bb3eccc6378bb2b76
+2026-08-28T15:16:54.0889489Z Build Date: 2026-08-18T23:20:18Z
+2026-08-28T15:16:54.0890538Z Worker ID: {63dd52b5-f60c-4c70-b54c-cfe66db27adb}
+2026-08-28T15:16:54.0891777Z Azure Region: eastus
+2026-08-28T15:16:54.0892672Z ##[endgroup]
+2026-08-28T15:16:54.0895740Z ##[group]Operating System
+2026-08-28T15:16:54.0896815Z Ubuntu
+2026-08-28T15:16:54.0897595Z 24.04.4
+2026-08-28T15:16:54.0898520Z LTS
+2026-08-28T15:16:54.0899291Z ##[endgroup]
+2026-08-28T15:16:54.0900103Z ##[group]Runner Image
+2026-08-28T15:16:54.0901097Z Image: ubuntu-24.04
+2026-08-28T15:16:54.0901951Z Version: 20260823.283.1
+2026-08-28T15:16:54.0904754Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260823.283/images/ubuntu/Ubuntu2404-Readme.md
+2026-08-28T15:16:54.0907347Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260823.283
+2026-08-28T15:16:54.0908918Z ##[endgroup]
+2026-08-28T15:16:54.0910720Z ##[group]GITHUB_TOKEN Permissions
+2026-08-28T15:16:54.0913758Z Contents: read
+2026-08-28T15:16:54.0914874Z Metadata: read
+2026-08-28T15:16:54.0915810Z ##[endgroup]
+2026-08-28T15:16:54.0918787Z Secret source: Actions
+2026-08-28T15:16:54.0920910Z Prepare workflow directory
+2026-08-28T15:16:54.1472729Z Prepare all required actions
+2026-08-28T15:16:54.1522001Z Getting action download info
+2026-08-28T15:16:54.3315091Z Download action repository 'actions/checkout@v4' (SHA:11d5960a326750d5838078e36cf38b85af677262)
+2026-08-28T15:16:54.4667977Z Download action repository 'dtolnay/rust-toolchain@stable' (SHA:4360b52568e2003a75bf9bc1d59f33a8e3fc893c)
+2026-08-28T15:16:54.5639817Z Download action repository 'Swatinem/rust-cache@v2' (SHA:6323deb102c322ba6fcbdcafc7e3dddab59af2b6)
+2026-08-28T15:16:54.7357144Z Download action repository 'actions/upload-artifact@v4' (SHA:ea165f8d65b6e75b540449e92b4886f43607fa02)
+2026-08-28T15:16:54.9981291Z Complete job name: Build (Linux x86_64)
+2026-08-28T15:16:55.0852879Z Node 20 is being deprecated. This workflow is running with Node 24 by default. If you need to temporarily use Node 20, you can set the ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true environment variable. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+2026-08-28T15:16:55.0866633Z ##[group]Run actions/checkout@v4
+2026-08-28T15:16:55.0867955Z with:
+2026-08-28T15:16:55.0868754Z   repository: nikcodex/Kizunalink
+2026-08-28T15:16:55.0876703Z   token: ***
+2026-08-28T15:16:55.0877592Z   ssh-strict: true
+2026-08-28T15:16:55.0878432Z   ssh-user: git
+2026-08-28T15:16:55.0879276Z   persist-credentials: true
+2026-08-28T15:16:55.0880164Z   clean: true
+2026-08-28T15:16:55.0880988Z   sparse-checkout-cone-mode: true
+2026-08-28T15:16:55.0882001Z   fetch-depth: 1
+2026-08-28T15:16:55.0882821Z   fetch-tags: false
+2026-08-28T15:16:55.0883743Z   show-progress: true
+2026-08-28T15:16:55.0884834Z   lfs: false
+2026-08-28T15:16:55.0885749Z   submodules: false
+2026-08-28T15:16:55.0886623Z   set-safe-directory: true
+2026-08-28T15:16:55.0887611Z   allow-unsafe-pr-checkout: false
+2026-08-28T15:16:55.0888965Z env:
+2026-08-28T15:16:55.0889794Z   CARGO_TERM_COLOR: always
+2026-08-28T15:16:55.0890713Z   LIBOPUS_STATIC: 1
+2026-08-28T15:16:55.0891525Z   OPUS_STATIC: 1
+2026-08-28T15:16:55.0892329Z ##[endgroup]
+2026-08-28T15:16:55.2087846Z Syncing repository: nikcodex/Kizunalink
+2026-08-28T15:16:55.2090748Z ##[group]Getting Git version info
+2026-08-28T15:16:55.2091585Z Working directory is '/home/runner/work/Kizunalink/Kizunalink'
+2026-08-28T15:16:55.2093118Z [command]/usr/bin/git version
+2026-08-28T15:16:55.2148493Z git version 2.55.0
+2026-08-28T15:16:55.2170614Z ##[endgroup]
+2026-08-28T15:16:55.2188055Z Temporarily overriding HOME='/home/runner/work/_temp/796e4d46-e685-4b96-a7df-f0c353c32bf3' before making global git config changes
+2026-08-28T15:16:55.2190084Z Adding repository directory to the temporary git global config as a safe directory
+2026-08-28T15:16:55.2194266Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/Kizunalink/Kizunalink
+2026-08-28T15:16:55.2259199Z Deleting the contents of '/home/runner/work/Kizunalink/Kizunalink'
+2026-08-28T15:16:55.2262944Z ##[group]Initializing the repository
+2026-08-28T15:16:55.2268883Z [command]/usr/bin/git init /home/runner/work/Kizunalink/Kizunalink
+2026-08-28T15:16:55.2369792Z hint: Using 'master' as the name for the initial branch. This default branch name
+2026-08-28T15:16:55.2372048Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+2026-08-28T15:16:55.2373383Z hint: to use in all of your new repositories, which will suppress this warning,
+2026-08-28T15:16:55.2374340Z hint: call:
+2026-08-28T15:16:55.2375397Z hint:
+2026-08-28T15:16:55.2376340Z hint: 	git config --global init.defaultBranch <name>
+2026-08-28T15:16:55.2377124Z hint:
+2026-08-28T15:16:55.2377819Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+2026-08-28T15:16:55.2378874Z hint: 'development'. The just-created branch can be renamed via this command:
+2026-08-28T15:16:55.2380046Z hint:
+2026-08-28T15:16:55.2380571Z hint: 	git branch -m <name>
+2026-08-28T15:16:55.2381104Z hint:
+2026-08-28T15:16:55.2381796Z hint: Disable this message with "git config set advice.defaultBranchName false"
+2026-08-28T15:16:55.2382943Z Initialized empty Git repository in /home/runner/work/Kizunalink/Kizunalink/.git/
+2026-08-28T15:16:55.2387491Z [command]/usr/bin/git remote add origin https://github.com/nikcodex/Kizunalink
+2026-08-28T15:16:55.2434287Z ##[endgroup]
+2026-08-28T15:16:55.2435510Z ##[group]Disabling automatic garbage collection
+2026-08-28T15:16:55.2438950Z [command]/usr/bin/git config --local gc.auto 0
+2026-08-28T15:16:55.2474133Z ##[endgroup]
+2026-08-28T15:16:55.2475344Z ##[group]Setting up auth
+2026-08-28T15:16:55.2483028Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-08-28T15:16:55.2520485Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-08-28T15:16:55.2893612Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-08-28T15:16:55.2939593Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-08-28T15:16:55.3197832Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-08-28T15:16:55.3238106Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-08-28T15:16:55.3480784Z [command]/usr/bin/git config --local http.https://github.com/.extraheader AUTHORIZATION: basic ***
+2026-08-28T15:16:55.3522671Z ##[endgroup]
+2026-08-28T15:16:55.3523577Z ##[group]Fetching the repository
+2026-08-28T15:16:55.3532782Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +31fcf5c586e41c953fa1fc58c145979ade1054e5:refs/remotes/origin/main
+2026-08-28T15:16:56.4395824Z From https://github.com/nikcodex/Kizunalink
+2026-08-28T15:16:56.4398455Z  * [new ref]         31fcf5c586e41c953fa1fc58c145979ade1054e5 -> origin/main
+2026-08-28T15:16:56.4402862Z ##[endgroup]
+2026-08-28T15:16:56.4404823Z ##[group]Determining the checkout info
+2026-08-28T15:16:56.4406768Z ##[endgroup]
+2026-08-28T15:16:56.4488622Z [command]/usr/bin/git sparse-checkout disable
+2026-08-28T15:16:56.4491841Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+2026-08-28T15:16:56.4506807Z ##[group]Checking out the ref
+2026-08-28T15:16:56.4511211Z [command]/usr/bin/git checkout --progress --force -B main refs/remotes/origin/main
+2026-08-28T15:16:56.7076018Z Switched to a new branch 'main'
+2026-08-28T15:16:56.7078487Z branch 'main' set up to track 'origin/main'.
+2026-08-28T15:16:56.7101320Z ##[endgroup]
+2026-08-28T15:16:56.7149553Z [command]/usr/bin/git log -1 --format=%H
+2026-08-28T15:16:56.7179411Z 31fcf5c586e41c953fa1fc58c145979ade1054e5
+2026-08-28T15:16:56.7444780Z ##[group]Run sudo apt-get update && sudo apt-get install -y cmake libopus-dev
+2026-08-28T15:16:56.7447187Z [36;1msudo apt-get update && sudo apt-get install -y cmake libopus-dev[0m
+2026-08-28T15:16:56.7496220Z shell: /usr/bin/bash -e {0}
+2026-08-28T15:16:56.7497350Z env:
+2026-08-28T15:16:56.7498262Z   CARGO_TERM_COLOR: always
+2026-08-28T15:16:56.7499363Z   LIBOPUS_STATIC: 1
+2026-08-28T15:16:56.7500334Z   OPUS_STATIC: 1
+2026-08-28T15:16:56.7501285Z ##[endgroup]
+2026-08-28T15:16:56.8363584Z Get:1 file:/etc/apt/apt-mirrors.txt Mirrorlist [144 B]
+2026-08-28T15:16:56.8679030Z Get:6 https://packages.microsoft.com/repos/azure-cli noble InRelease [3564 B]
+2026-08-28T15:16:56.8777825Z Hit:2 http://azure.archive.ubuntu.com/ubuntu noble InRelease
+2026-08-28T15:16:56.8781848Z Get:7 https://packages.microsoft.com/ubuntu/24.04/prod noble InRelease [3600 B]
+2026-08-28T15:16:56.8786166Z Get:8 https://dl.google.com/linux/chrome-stable/deb stable InRelease [2548 B]
+2026-08-28T15:16:56.8809629Z Get:3 http://azure.archive.ubuntu.com/ubuntu noble-updates InRelease [126 kB]
+2026-08-28T15:16:56.8841077Z Get:4 http://azure.archive.ubuntu.com/ubuntu noble-backports InRelease [126 kB]
+2026-08-28T15:16:56.8870966Z Get:5 http://azure.archive.ubuntu.com/ubuntu noble-security InRelease [126 kB]
+2026-08-28T15:16:57.0640913Z Get:9 https://packages.microsoft.com/ubuntu/24.04/prod noble/main arm64 Packages [378 kB]
+2026-08-28T15:16:57.0816215Z Get:10 https://packages.microsoft.com/ubuntu/24.04/prod noble/main amd64 Packages [425 kB]
+2026-08-28T15:16:57.1635346Z Get:11 http://azure.archive.ubuntu.com/ubuntu noble-updates/main amd64 Packages [1230 kB]
+2026-08-28T15:16:57.1713871Z Get:12 http://azure.archive.ubuntu.com/ubuntu noble-updates/main Translation-en [287 kB]
+2026-08-28T15:16:57.1745792Z Get:13 http://azure.archive.ubuntu.com/ubuntu noble-updates/main amd64 Components [180 kB]
+2026-08-28T15:16:57.1775263Z Get:20 https://dl.google.com/linux/chrome-stable/deb stable/main amd64 Packages [1403 B]
+2026-08-28T15:16:57.1776433Z Get:14 http://azure.archive.ubuntu.com/ubuntu noble-updates/universe amd64 Packages [1689 kB]
+2026-08-28T15:16:57.1886809Z Get:15 http://azure.archive.ubuntu.com/ubuntu noble-updates/universe Translation-en [338 kB]
+2026-08-28T15:16:57.1925727Z Get:16 http://azure.archive.ubuntu.com/ubuntu noble-updates/universe amd64 Components [388 kB]
+2026-08-28T15:16:57.1948671Z Get:17 http://azure.archive.ubuntu.com/ubuntu noble-updates/restricted amd64 Packages [1486 kB]
+2026-08-28T15:16:57.2060048Z Get:18 http://azure.archive.ubuntu.com/ubuntu noble-updates/restricted Translation-en [339 kB]
+2026-08-28T15:16:57.2075003Z Get:19 http://azure.archive.ubuntu.com/ubuntu noble-updates/multiverse amd64 Components [940 B]
+2026-08-28T15:16:57.2198202Z Get:21 http://azure.archive.ubuntu.com/ubuntu noble-backports/main amd64 Components [5776 B]
+2026-08-28T15:16:57.2667926Z Get:22 http://azure.archive.ubuntu.com/ubuntu noble-backports/universe amd64 Components [12.6 kB]
+2026-08-28T15:16:57.2817400Z Get:23 http://azure.archive.ubuntu.com/ubuntu noble-security/main amd64 Packages [972 kB]
+2026-08-28T15:16:57.2887985Z Get:24 http://azure.archive.ubuntu.com/ubuntu noble-security/main Translation-en [206 kB]
+2026-08-28T15:16:57.2906286Z Get:25 http://azure.archive.ubuntu.com/ubuntu noble-security/main amd64 Components [46.4 kB]
+2026-08-28T15:16:57.2917591Z Get:26 http://azure.archive.ubuntu.com/ubuntu noble-security/universe amd64 Packages [1203 kB]
+2026-08-28T15:16:57.2990569Z Get:27 http://azure.archive.ubuntu.com/ubuntu noble-security/universe Translation-en [241 kB]
+2026-08-28T15:16:57.3010752Z Get:28 http://azure.archive.ubuntu.com/ubuntu noble-security/universe amd64 Components [76.4 kB]
+2026-08-28T15:16:57.3022373Z Get:29 http://azure.archive.ubuntu.com/ubuntu noble-security/restricted amd64 Packages [1392 kB]
+2026-08-28T15:16:57.3103250Z Get:30 http://azure.archive.ubuntu.com/ubuntu noble-security/restricted Translation-en [321 kB]
+2026-08-28T15:16:57.3126170Z Get:31 http://azure.archive.ubuntu.com/ubuntu noble-security/multiverse Translation-en [11.1 kB]
+2026-08-28T15:17:01.6146272Z Fetched 11.6 MB in 1s (7820 kB/s)
+2026-08-28T15:17:02.4021398Z Reading package lists...
+2026-08-28T15:17:02.4347691Z Reading package lists...
+2026-08-28T15:17:02.6343291Z Building dependency tree...
+2026-08-28T15:17:02.6350737Z Reading state information...
+2026-08-28T15:17:02.8037661Z The following additional packages will be installed:
+2026-08-28T15:17:02.8045852Z   cmake-data libjsoncpp25 libopus0 librhash0
+2026-08-28T15:17:02.8051510Z Suggested packages:
+2026-08-28T15:17:02.8051946Z   cmake-doc cmake-format elpa-cmake-mode ninja-build opus-tools
+2026-08-28T15:17:02.8286089Z The following NEW packages will be installed:
+2026-08-28T15:17:02.8297724Z   cmake cmake-data libjsoncpp25 libopus-dev libopus0 librhash0
+2026-08-28T15:17:02.8514412Z 0 upgraded, 6 newly installed, 0 to remove and 38 not upgraded.
+2026-08-28T15:17:02.8515184Z Need to get 14.0 MB of archives.
+2026-08-28T15:17:02.8515573Z After this operation, 50.4 MB of additional disk space will be used.
+2026-08-28T15:17:02.8515984Z Get:1 file:/etc/apt/apt-mirrors.txt Mirrorlist [144 B]
+2026-08-28T15:17:02.8904800Z Get:2 http://azure.archive.ubuntu.com/ubuntu noble/main amd64 libjsoncpp25 amd64 1.9.5-6build1 [82.8 kB]
+2026-08-28T15:17:02.9122377Z Get:3 http://azure.archive.ubuntu.com/ubuntu noble/main amd64 librhash0 amd64 1.4.3-3build1 [129 kB]
+2026-08-28T15:17:02.9317229Z Get:4 http://azure.archive.ubuntu.com/ubuntu noble/main amd64 cmake-data all 3.28.3-1build7 [2155 kB]
+2026-08-28T15:17:03.0232455Z Get:5 http://azure.archive.ubuntu.com/ubuntu noble/main amd64 cmake amd64 3.28.3-1build7 [11.2 MB]
+2026-08-28T15:17:03.4968033Z Get:6 http://azure.archive.ubuntu.com/ubuntu noble/main amd64 libopus0 amd64 1.4-1build1 [208 kB]
+2026-08-28T15:17:03.5100665Z Get:7 http://azure.archive.ubuntu.com/ubuntu noble/main amd64 libopus-dev amd64 1.4-1build1 [267 kB]
+2026-08-28T15:17:03.7762224Z Fetched 14.0 MB in 1s (20.7 MB/s)
+2026-08-28T15:17:03.7975250Z Selecting previously unselected package libjsoncpp25:amd64.
+2026-08-28T15:17:03.8196100Z (Reading database ... 
+2026-08-28T15:17:03.8196553Z (Reading database ... 5%
+2026-08-28T15:17:03.8197008Z (Reading database ... 10%
+2026-08-28T15:17:03.8197481Z (Reading database ... 15%
+2026-08-28T15:17:03.8197892Z (Reading database ... 20%
+2026-08-28T15:17:03.8198304Z (Reading database ... 25%
+2026-08-28T15:17:03.8198852Z (Reading database ... 30%
+2026-08-28T15:17:03.8199209Z (Reading database ... 35%
+2026-08-28T15:17:03.8199968Z (Reading database ... 40%
+2026-08-28T15:17:03.8200189Z (Reading database ... 45%
+2026-08-28T15:17:03.8200410Z (Reading database ... 50%
+2026-08-28T15:17:03.8257841Z (Reading database ... 55%
+2026-08-28T15:17:03.8706682Z (Reading database ... 60%
+2026-08-28T15:17:04.0609981Z (Reading database ... 65%
+2026-08-28T15:17:04.2634111Z (Reading database ... 70%
+2026-08-28T15:17:04.4705644Z (Reading database ... 75%
+2026-08-28T15:17:04.6213041Z (Reading database ... 80%
+2026-08-28T15:17:04.8227061Z (Reading database ... 85%
+2026-08-28T15:17:05.0127899Z (Reading database ... 90%
+2026-08-28T15:17:05.2227419Z (Reading database ... 95%
+2026-08-28T15:17:05.2227860Z (Reading database ... 100%
+2026-08-28T15:17:05.2228366Z (Reading database ... 203385 files and directories currently installed.)
+2026-08-28T15:17:05.2277427Z Preparing to unpack .../0-libjsoncpp25_1.9.5-6build1_amd64.deb ...
+2026-08-28T15:17:05.2311858Z Unpacking libjsoncpp25:amd64 (1.9.5-6build1) ...
+2026-08-28T15:17:05.2547091Z Selecting previously unselected package librhash0:amd64.
+2026-08-28T15:17:05.2681088Z Preparing to unpack .../1-librhash0_1.4.3-3build1_amd64.deb ...
+2026-08-28T15:17:05.2690673Z Unpacking librhash0:amd64 (1.4.3-3build1) ...
+2026-08-28T15:17:05.2931822Z Selecting previously unselected package cmake-data.
+2026-08-28T15:17:05.3065196Z Preparing to unpack .../2-cmake-data_3.28.3-1build7_all.deb ...
+2026-08-28T15:17:05.3139172Z Unpacking cmake-data (3.28.3-1build7) ...
+2026-08-28T15:17:05.8699873Z Selecting previously unselected package cmake.
+2026-08-28T15:17:05.8850560Z Preparing to unpack .../3-cmake_3.28.3-1build7_amd64.deb ...
+2026-08-28T15:17:05.8857486Z Unpacking cmake (3.28.3-1build7) ...
+2026-08-28T15:17:06.0634729Z Selecting previously unselected package libopus0:amd64.
+2026-08-28T15:17:06.0770446Z Preparing to unpack .../4-libopus0_1.4-1build1_amd64.deb ...
+2026-08-28T15:17:06.0778887Z Unpacking libopus0:amd64 (1.4-1build1) ...
+2026-08-28T15:17:06.1006715Z Selecting previously unselected package libopus-dev:amd64.
+2026-08-28T15:17:06.1142114Z Preparing to unpack .../5-libopus-dev_1.4-1build1_amd64.deb ...
+2026-08-28T15:17:06.1149672Z Unpacking libopus-dev:amd64 (1.4-1build1) ...
+2026-08-28T15:17:06.1585315Z Setting up libopus0:amd64 (1.4-1build1) ...
+2026-08-28T15:17:06.1605547Z Setting up libjsoncpp25:amd64 (1.9.5-6build1) ...
+2026-08-28T15:17:06.1622236Z Setting up librhash0:amd64 (1.4.3-3build1) ...
+2026-08-28T15:17:06.1640591Z Setting up cmake-data (3.28.3-1build7) ...
+2026-08-28T15:17:06.1706859Z Setting up libopus-dev:amd64 (1.4-1build1) ...
+2026-08-28T15:17:06.1721687Z Setting up cmake (3.28.3-1build7) ...
+2026-08-28T15:17:06.1742374Z Processing triggers for man-db (2.12.0-4build2) ...
+2026-08-28T15:17:06.1762361Z Not building database; man-db/auto-update is not 'true'.
+2026-08-28T15:17:06.1774895Z Processing triggers for libc-bin (2.39-0ubuntu8.8) ...
+2026-08-28T15:17:06.8402933Z 
+2026-08-28T15:17:06.8404298Z Running kernel seems to be up-to-date.
+2026-08-28T15:17:06.8415597Z 
+2026-08-28T15:17:06.8415902Z No services need to be restarted.
+2026-08-28T15:17:06.8416264Z 
+2026-08-28T15:17:06.8416637Z No containers need to be restarted.
+2026-08-28T15:17:06.8416903Z 
+2026-08-28T15:17:06.8417169Z No user sessions are running outdated binaries.
+2026-08-28T15:17:06.8417489Z 
+2026-08-28T15:17:06.8417958Z No VM guests are running outdated hypervisor (qemu) binaries on this host.
+2026-08-28T15:17:07.9488076Z ##[group]Run dtolnay/rust-toolchain@stable
+2026-08-28T15:17:07.9488381Z with:
+2026-08-28T15:17:07.9488600Z   targets: x86_64-unknown-linux-gnu
+2026-08-28T15:17:07.9488862Z   toolchain: stable
+2026-08-28T15:17:07.9489061Z env:
+2026-08-28T15:17:07.9489254Z   CARGO_TERM_COLOR: always
+2026-08-28T15:17:07.9489487Z   LIBOPUS_STATIC: 1
+2026-08-28T15:17:07.9489690Z   OPUS_STATIC: 1
+2026-08-28T15:17:07.9489889Z ##[endgroup]
+2026-08-28T15:17:07.9557778Z ##[start-action display=Parse toolchain version;id=__dtolnay_rust-toolchain.parse]
+2026-08-28T15:17:07.9599921Z ##[group]Run if [[ -z $toolchain ]]; then
+2026-08-28T15:17:07.9600290Z [36;1mif [[ -z $toolchain ]]; then[0m
+2026-08-28T15:17:07.9600819Z [36;1m  # GitHub does not enforce `required: true` inputs itself. https://github.com/actions/runner/issues/1070[0m
+2026-08-28T15:17:07.9601370Z [36;1m  echo "'toolchain' is a required input" >&2[0m
+2026-08-28T15:17:07.9601691Z [36;1m  exit 1[0m
+2026-08-28T15:17:07.9602085Z [36;1melif [[ $toolchain =~ ^stable' '[0-9]+' '(year|month|week|day)s?' 'ago$ ]]; then[0m
+2026-08-28T15:17:07.9602495Z [36;1m  if [[ Linux == macOS ]]; then[0m
+2026-08-28T15:17:07.9603022Z [36;1m    echo "toolchain=1.$((($(date -v-$(sed 's/stable \([0-9]*\) \(.\).*/\1\2/' <<< $toolchain) +%s)/60/60/24-16569)/7/6))" >> $GITHUB_OUTPUT[0m
+2026-08-28T15:17:07.9603522Z [36;1m  else[0m
+2026-08-28T15:17:07.9603921Z [36;1m    echo "toolchain=1.$((($(date --date "${toolchain#stable }" +%s)/60/60/24-16569)/7/6))" >> $GITHUB_OUTPUT[0m
+2026-08-28T15:17:07.9604365Z [36;1m  fi[0m
+2026-08-28T15:17:07.9604838Z [36;1melif [[ $toolchain =~ ^stable' 'minus' '[0-9]+' 'releases?$ ]]; then[0m
+2026-08-28T15:17:07.9605364Z [36;1m  echo "toolchain=1.$((($(date +%s)/60/60/24-16569)/7/6-${toolchain//[^0-9]/}))" >> $GITHUB_OUTPUT[0m
+2026-08-28T15:17:07.9605813Z [36;1melif [[ $toolchain =~ ^1\.[0-9]+$ ]]; then[0m
+2026-08-28T15:17:07.9606530Z [36;1m  echo "toolchain=1.$((i=${toolchain#1.}, c=($(date +%s)/60/60/24-16569)/7/6, i+9*i*(10*i<=c)+90*i*(100*i<=c)))" >> $GITHUB_OUTPUT[0m
+2026-08-28T15:17:07.9607005Z [36;1melse[0m
+2026-08-28T15:17:07.9607255Z [36;1m  echo "toolchain=$toolchain" >> $GITHUB_OUTPUT[0m
+2026-08-28T15:17:07.9607555Z [36;1mfi[0m
+2026-08-28T15:17:07.9649313Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-08-28T15:17:07.9649657Z env:
+2026-08-28T15:17:07.9649862Z   CARGO_TERM_COLOR: always
+2026-08-28T15:17:07.9650102Z   LIBOPUS_STATIC: 1
+2026-08-28T15:17:07.9650310Z   OPUS_STATIC: 1
+2026-08-28T15:17:07.9650514Z   toolchain: stable
+2026-08-28T15:17:07.9650717Z ##[endgroup]
+2026-08-28T15:17:07.9742783Z ##[end-action id=__dtolnay_rust-toolchain.parse;outcome=success;conclusion=success;duration_ms=18]
+2026-08-28T15:17:07.9755539Z ##[start-action display=Construct rustup command line;id=__dtolnay_rust-toolchain.flags]
+2026-08-28T15:17:07.9781052Z ##[group]Run echo "targets=$(for t in ${targets//,/ }; do echo -n ' --target' $t; done)" >> $GITHUB_OUTPUT
+2026-08-28T15:17:07.9781724Z [36;1mecho "targets=$(for t in ${targets//,/ }; do echo -n ' --target' $t; done)" >> $GITHUB_OUTPUT[0m
+2026-08-28T15:17:07.9782342Z [36;1mecho "components=$(for c in ${components//,/ }; do echo -n ' --component' $c; done)" >> $GITHUB_OUTPUT[0m
+2026-08-28T15:17:07.9782830Z [36;1mecho "downgrade=" >> $GITHUB_OUTPUT[0m
+2026-08-28T15:17:07.9821871Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-08-28T15:17:07.9822210Z env:
+2026-08-28T15:17:07.9822413Z   CARGO_TERM_COLOR: always
+2026-08-28T15:17:07.9822651Z   LIBOPUS_STATIC: 1
+2026-08-28T15:17:07.9822854Z   OPUS_STATIC: 1
+2026-08-28T15:17:07.9823074Z   targets: x86_64-unknown-linux-gnu
+2026-08-28T15:17:07.9823329Z   components: 
+2026-08-28T15:17:07.9823525Z ##[endgroup]
+2026-08-28T15:17:07.9901265Z ##[end-action id=__dtolnay_rust-toolchain.flags;outcome=success;conclusion=success;duration_ms=14]
+2026-08-28T15:17:07.9903497Z ##[start-action display=Set $CARGO_HOME;id=__dtolnay_rust-toolchain.__run]
+2026-08-28T15:17:07.9920193Z ##[group]Run echo CARGO_HOME=${CARGO_HOME:-"$HOME/.cargo"} >> $GITHUB_ENV
+2026-08-28T15:17:07.9920671Z [36;1mecho CARGO_HOME=${CARGO_HOME:-"$HOME/.cargo"} >> $GITHUB_ENV[0m
+2026-08-28T15:17:07.9957775Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-08-28T15:17:07.9958113Z env:
+2026-08-28T15:17:07.9958315Z   CARGO_TERM_COLOR: always
+2026-08-28T15:17:07.9958553Z   LIBOPUS_STATIC: 1
+2026-08-28T15:17:07.9958761Z   OPUS_STATIC: 1
+2026-08-28T15:17:07.9958962Z ##[endgroup]
+2026-08-28T15:17:08.0026111Z ##[end-action id=__dtolnay_rust-toolchain.__run;outcome=success;conclusion=success;duration_ms=12]
+2026-08-28T15:17:08.0028431Z ##[start-action display=Install rustup if needed;id=__dtolnay_rust-toolchain.__run_2]
+2026-08-28T15:17:08.0050536Z ##[group]Run if ! command -v rustup &>/dev/null; then
+2026-08-28T15:17:08.0050906Z [36;1mif ! command -v rustup &>/dev/null; then[0m
+2026-08-28T15:17:08.0051659Z [36;1m  curl --proto '=https' --tlsv1.2 --retry 10 --retry-connrefused --location --silent --show-error --fail https://sh.rustup.rs | sh -s -- --default-toolchain none -y[0m
+2026-08-28T15:17:08.0052367Z [36;1m  echo "$CARGO_HOME/bin" >> $GITHUB_PATH[0m
+2026-08-28T15:17:08.0052677Z [36;1mfi[0m
+2026-08-28T15:17:08.0090478Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-08-28T15:17:08.0090818Z env:
+2026-08-28T15:17:08.0091027Z   CARGO_TERM_COLOR: always
+2026-08-28T15:17:08.0091272Z   LIBOPUS_STATIC: 1
+2026-08-28T15:17:08.0091479Z   OPUS_STATIC: 1
+2026-08-28T15:17:08.0091696Z   CARGO_HOME: /home/runner/.cargo
+2026-08-28T15:17:08.0091943Z ##[endgroup]
+2026-08-28T15:17:08.0158071Z ##[end-action id=__dtolnay_rust-toolchain.__run_2;outcome=success;conclusion=success;duration_ms=12]
+2026-08-28T15:17:08.0182562Z ##[start-action display=Install rustup if needed on windows;id=__dtolnay_rust-toolchain.__run_3]
+2026-08-28T15:17:08.0191685Z ##[end-action id=__dtolnay_rust-toolchain.__run_3;outcome=skipped;conclusion=skipped;duration_ms=0]
+2026-08-28T15:17:08.0203173Z ##[start-action display=rustup toolchain install stable;id=__dtolnay_rust-toolchain.__run_4]
+2026-08-28T15:17:08.0220612Z ##[group]Run rustup toolchain install stable --target x86_64-unknown-linux-gnu --profile minimal --no-self-update
+2026-08-28T15:17:08.0221375Z [36;1mrustup toolchain install stable --target x86_64-unknown-linux-gnu --profile minimal --no-self-update[0m
+2026-08-28T15:17:08.0260908Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-08-28T15:17:08.0261268Z env:
+2026-08-28T15:17:08.0261475Z   CARGO_TERM_COLOR: always
+2026-08-28T15:17:08.0261723Z   LIBOPUS_STATIC: 1
+2026-08-28T15:17:08.0261932Z   OPUS_STATIC: 1
+2026-08-28T15:17:08.0262154Z   CARGO_HOME: /home/runner/.cargo
+2026-08-28T15:17:08.0262417Z   RUSTUP_PERMIT_COPY_RENAME: 1
+2026-08-28T15:17:08.0262654Z ##[endgroup]
+2026-08-28T15:17:08.2018357Z info: syncing channel updates for stable-x86_64-unknown-linux-gnu
+2026-08-28T15:17:08.3010498Z info: latest update on 2026-08-20 for version 1.98.0 (88d9e12ae 2026-08-18)
+2026-08-28T15:17:08.3197560Z info: component rust-std is up to date
+2026-08-28T15:17:08.3213046Z 
+2026-08-28T15:17:08.3312413Z   stable-x86_64-unknown-linux-gnu unchanged - rustc 1.98.0 (88d9e12ae 2026-08-18)
+2026-08-28T15:17:08.3312806Z 
+2026-08-28T15:17:08.3399884Z ##[end-action id=__dtolnay_rust-toolchain.__run_4;outcome=success;conclusion=success;duration_ms=319]
+2026-08-28T15:17:08.3405429Z ##[start-action display=rustup default stable;id=__dtolnay_rust-toolchain.__run_5]
+2026-08-28T15:17:08.3421846Z ##[group]Run rustup default stable
+2026-08-28T15:17:08.3422153Z [36;1mrustup default stable[0m
+2026-08-28T15:17:08.3465404Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-08-28T15:17:08.3465761Z env:
+2026-08-28T15:17:08.3465972Z   CARGO_TERM_COLOR: always
+2026-08-28T15:17:08.3466219Z   LIBOPUS_STATIC: 1
+2026-08-28T15:17:08.3466441Z   OPUS_STATIC: 1
+2026-08-28T15:17:08.3466668Z   CARGO_HOME: /home/runner/.cargo
+2026-08-28T15:17:08.3466937Z ##[endgroup]
+2026-08-28T15:17:08.3593301Z info: using existing install for stable-x86_64-unknown-linux-gnu
+2026-08-28T15:17:08.3603759Z info: default toolchain set to stable-x86_64-unknown-linux-gnu
+2026-08-28T15:17:08.3604185Z 
+2026-08-28T15:17:08.3696321Z   stable-x86_64-unknown-linux-gnu unchanged - rustc 1.98.0 (88d9e12ae 2026-08-18)
+2026-08-28T15:17:08.3696698Z 
+2026-08-28T15:17:08.3715656Z ##[end-action id=__dtolnay_rust-toolchain.__run_5;outcome=success;conclusion=success;duration_ms=30]
+2026-08-28T15:17:08.3718235Z ##[start-action display=Create cachekey;id=__dtolnay_rust-toolchain.rustc-version]
+2026-08-28T15:17:08.3735732Z ##[group]Run DATE=$(rustc +stable --version --verbose | sed -ne 's/^commit-date: \(20[0-9][0-9]\)-\([01][0-9]\)-\([0-3][0-9]\)$/\1\2\3/p')
+2026-08-28T15:17:08.3736542Z [36;1mDATE=$(rustc +stable --version --verbose | sed -ne 's/^commit-date: \(20[0-9][0-9]\)-\([01][0-9]\)-\([0-3][0-9]\)$/\1\2\3/p')[0m
+2026-08-28T15:17:08.3737156Z [36;1mHASH=$(rustc +stable --version --verbose | sed -ne 's/^commit-hash: //p')[0m
+2026-08-28T15:17:08.3737681Z [36;1mecho "cachekey=$(echo $DATE$HASH | head -c12)" >> $GITHUB_OUTPUT[0m
+2026-08-28T15:17:08.3777873Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-08-28T15:17:08.3778205Z env:
+2026-08-28T15:17:08.3778406Z   CARGO_TERM_COLOR: always
+2026-08-28T15:17:08.3778645Z   LIBOPUS_STATIC: 1
+2026-08-28T15:17:08.3778853Z   OPUS_STATIC: 1
+2026-08-28T15:17:08.3779071Z   CARGO_HOME: /home/runner/.cargo
+2026-08-28T15:17:08.3779326Z ##[endgroup]
+2026-08-28T15:17:08.4261159Z ##[end-action id=__dtolnay_rust-toolchain.rustc-version;outcome=success;conclusion=success;duration_ms=54]
+2026-08-28T15:17:08.4263815Z ##[start-action display=Disable incremental compilation;id=__dtolnay_rust-toolchain.__run_6]
+2026-08-28T15:17:08.4280532Z ##[group]Run if [ -z "${CARGO_INCREMENTAL+set}" ]; then
+2026-08-28T15:17:08.4280921Z [36;1mif [ -z "${CARGO_INCREMENTAL+set}" ]; then[0m
+2026-08-28T15:17:08.4281249Z [36;1m  echo CARGO_INCREMENTAL=0 >> $GITHUB_ENV[0m
+2026-08-28T15:17:08.4281529Z [36;1mfi[0m
+2026-08-28T15:17:08.4321481Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-08-28T15:17:08.4321828Z env:
+2026-08-28T15:17:08.4322034Z   CARGO_TERM_COLOR: always
+2026-08-28T15:17:08.4322273Z   LIBOPUS_STATIC: 1
+2026-08-28T15:17:08.4322481Z   OPUS_STATIC: 1
+2026-08-28T15:17:08.4322705Z   CARGO_HOME: /home/runner/.cargo
+2026-08-28T15:17:08.4322954Z ##[endgroup]
+2026-08-28T15:17:08.4390336Z ##[end-action id=__dtolnay_rust-toolchain.__run_6;outcome=success;conclusion=success;duration_ms=12]
+2026-08-28T15:17:08.4392602Z ##[start-action display=Enable colors in Cargo output;id=__dtolnay_rust-toolchain.__run_7]
+2026-08-28T15:17:08.4407851Z ##[group]Run if [ -z "${CARGO_TERM_COLOR+set}" ]; then
+2026-08-28T15:17:08.4408246Z [36;1mif [ -z "${CARGO_TERM_COLOR+set}" ]; then[0m
+2026-08-28T15:17:08.4408586Z [36;1m  echo CARGO_TERM_COLOR=always >> $GITHUB_ENV[0m
+2026-08-28T15:17:08.4408882Z [36;1mfi[0m
+2026-08-28T15:17:08.4446755Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-08-28T15:17:08.4447120Z env:
+2026-08-28T15:17:08.4447330Z   CARGO_TERM_COLOR: always
+2026-08-28T15:17:08.4447586Z   LIBOPUS_STATIC: 1
+2026-08-28T15:17:08.4447799Z   OPUS_STATIC: 1
+2026-08-28T15:17:08.4448028Z   CARGO_HOME: /home/runner/.cargo
+2026-08-28T15:17:08.4448282Z   CARGO_INCREMENTAL: 0
+2026-08-28T15:17:08.4448503Z ##[endgroup]
+2026-08-28T15:17:08.4515954Z ##[end-action id=__dtolnay_rust-toolchain.__run_7;outcome=success;conclusion=success;duration_ms=12]
+2026-08-28T15:17:08.4518423Z ##[start-action display=Enable Cargo sparse registry;id=__dtolnay_rust-toolchain.__run_8]
+2026-08-28T15:17:08.4535547Z ##[group]Run # implemented in 1.66, stabilized in 1.68, made default in 1.70
+2026-08-28T15:17:08.4536078Z [36;1m# implemented in 1.66, stabilized in 1.68, made default in 1.70[0m
+2026-08-28T15:17:08.4536782Z [36;1mif [ -z "${CARGO_REGISTRIES_CRATES_IO_PROTOCOL+set}" -o -f "/home/runner/work/_temp"/.implicit_cargo_registries_crates_io_protocol ]; then[0m
+2026-08-28T15:17:08.4537482Z [36;1m  if rustc +stable --version --verbose | grep -q '^release: 1\.6[89]\.'; then[0m
+2026-08-28T15:17:08.4538244Z [36;1m    touch "/home/runner/work/_temp"/.implicit_cargo_registries_crates_io_protocol || true[0m
+2026-08-28T15:17:08.4538792Z [36;1m    echo CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse >> $GITHUB_ENV[0m
+2026-08-28T15:17:08.4539291Z [36;1m  elif rustc +stable --version --verbose | grep -q '^release: 1\.6[67]\.'; then[0m
+2026-08-28T15:17:08.4539874Z [36;1m    touch "/home/runner/work/_temp"/.implicit_cargo_registries_crates_io_protocol || true[0m
+2026-08-28T15:17:08.4540393Z [36;1m    echo CARGO_REGISTRIES_CRATES_IO_PROTOCOL=git >> $GITHUB_ENV[0m
+2026-08-28T15:17:08.4540742Z [36;1m  fi[0m
+2026-08-28T15:17:08.4540939Z [36;1mfi[0m
+2026-08-28T15:17:08.4578383Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-08-28T15:17:08.4578724Z env:
+2026-08-28T15:17:08.4578932Z   CARGO_TERM_COLOR: always
+2026-08-28T15:17:08.4579177Z   LIBOPUS_STATIC: 1
+2026-08-28T15:17:08.4579389Z   OPUS_STATIC: 1
+2026-08-28T15:17:08.4579622Z   CARGO_HOME: /home/runner/.cargo
+2026-08-28T15:17:08.4579885Z   CARGO_INCREMENTAL: 0
+2026-08-28T15:17:08.4580116Z ##[endgroup]
+2026-08-28T15:17:08.4952342Z ##[end-action id=__dtolnay_rust-toolchain.__run_8;outcome=success;conclusion=success;duration_ms=43]
+2026-08-28T15:17:08.4955351Z ##[start-action display=Work around spurious network errors in curl 8.0;id=__dtolnay_rust-toolchain.__run_9]
+2026-08-28T15:17:08.4972617Z ##[group]Run # https://rust-lang.zulipchat.com/#narrow/stream/246057-t-cargo/topic/timeout.20investigation
+2026-08-28T15:17:08.4973336Z [36;1m# https://rust-lang.zulipchat.com/#narrow/stream/246057-t-cargo/topic/timeout.20investigation[0m
+2026-08-28T15:17:08.4973921Z [36;1mif rustc +stable --version --verbose | grep -q '^release: 1\.7[01]\.'; then[0m
+2026-08-28T15:17:08.4974383Z [36;1m  echo CARGO_HTTP_MULTIPLEXING=false >> $GITHUB_ENV[0m
+2026-08-28T15:17:08.4974947Z [36;1mfi[0m
+2026-08-28T15:17:08.5014692Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-08-28T15:17:08.5015250Z env:
+2026-08-28T15:17:08.5015468Z   CARGO_TERM_COLOR: always
+2026-08-28T15:17:08.5015704Z   LIBOPUS_STATIC: 1
+2026-08-28T15:17:08.5015916Z   OPUS_STATIC: 1
+2026-08-28T15:17:08.5016135Z   CARGO_HOME: /home/runner/.cargo
+2026-08-28T15:17:08.5016387Z   CARGO_INCREMENTAL: 0
+2026-08-28T15:17:08.5016604Z ##[endgroup]
+2026-08-28T15:17:08.5231956Z ##[end-action id=__dtolnay_rust-toolchain.__run_9;outcome=success;conclusion=success;duration_ms=27]
+2026-08-28T15:17:08.5236713Z ##[start-action display=rustc +stable --version --verbose;id=__dtolnay_rust-toolchain.__run_10]
+2026-08-28T15:17:08.5252882Z ##[group]Run rustc +stable --version --verbose
+2026-08-28T15:17:08.5253237Z [36;1mrustc +stable --version --verbose[0m
+2026-08-28T15:17:08.5294347Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-08-28T15:17:08.5294910Z env:
+2026-08-28T15:17:08.5295123Z   CARGO_TERM_COLOR: always
+2026-08-28T15:17:08.5295369Z   LIBOPUS_STATIC: 1
+2026-08-28T15:17:08.5295577Z   OPUS_STATIC: 1
+2026-08-28T15:17:08.5295827Z   CARGO_HOME: /home/runner/.cargo
+2026-08-28T15:17:08.5296099Z   CARGO_INCREMENTAL: 0
+2026-08-28T15:17:08.5296321Z ##[endgroup]
+2026-08-28T15:17:08.5496625Z rustc 1.98.0 (88d9e12ae 2026-08-18)
+2026-08-28T15:17:08.5497400Z binary: rustc
+2026-08-28T15:17:08.5498070Z commit-hash: 88d9e12ae178fab0fb5cc050a94da85685d449ea
+2026-08-28T15:17:08.5498760Z commit-date: 2026-08-18
+2026-08-28T15:17:08.5499283Z host: x86_64-unknown-linux-gnu
+2026-08-28T15:17:08.5499861Z release: 1.98.0
+2026-08-28T15:17:08.5500400Z LLVM version: 22.1.8
+2026-08-28T15:17:08.5522377Z ##[end-action id=__dtolnay_rust-toolchain.__run_10;outcome=success;conclusion=success;duration_ms=28]
+2026-08-28T15:17:08.5696835Z ##[group]Run Swatinem/rust-cache@v2
+2026-08-28T15:17:08.5697126Z with:
+2026-08-28T15:17:08.5697348Z   key: x86_64-unknown-linux-gnu
+2026-08-28T15:17:08.5697607Z   prefix-key: v0-rust
+2026-08-28T15:17:08.5697829Z   add-job-id-key: true
+2026-08-28T15:17:08.5698069Z   add-rust-environment-hash-key: true
+2026-08-28T15:17:08.5698358Z   cache-targets: true
+2026-08-28T15:17:08.5698583Z   cache-all-crates: false
+2026-08-28T15:17:08.5698834Z   cache-workspace-crates: false
+2026-08-28T15:17:08.5699086Z   save-if: true
+2026-08-28T15:17:08.5699296Z   cache-provider: github
+2026-08-28T15:17:08.5699523Z   cache-bin: true
+2026-08-28T15:17:08.5699730Z   lookup-only: false
+2026-08-28T15:17:08.5699941Z   cmd-format: {0}
+2026-08-28T15:17:08.5700134Z env:
+2026-08-28T15:17:08.5700329Z   CARGO_TERM_COLOR: always
+2026-08-28T15:17:08.5700565Z   LIBOPUS_STATIC: 1
+2026-08-28T15:17:08.5700774Z   OPUS_STATIC: 1
+2026-08-28T15:17:08.5700996Z   CARGO_HOME: /home/runner/.cargo
+2026-08-28T15:17:08.5701308Z   CARGO_INCREMENTAL: 0
+2026-08-28T15:17:08.5701530Z ##[endgroup]
+2026-08-28T15:17:08.9078744Z ##[group]Cache Configuration
+2026-08-28T15:17:08.9079209Z Cache Provider:
+2026-08-28T15:17:08.9079540Z     github
+2026-08-28T15:17:08.9079834Z Workspaces:
+2026-08-28T15:17:08.9080101Z     /home/runner/work/Kizunalink/Kizunalink
+2026-08-28T15:17:08.9080433Z Cache Paths:
+2026-08-28T15:17:08.9080655Z     /home/runner/.cargo/bin
+2026-08-28T15:17:08.9080914Z     /home/runner/.cargo/.crates.toml
+2026-08-28T15:17:08.9081193Z     /home/runner/.cargo/.crates2.json
+2026-08-28T15:17:08.9081457Z     /home/runner/.cargo/registry
+2026-08-28T15:17:08.9081711Z     /home/runner/.cargo/git
+2026-08-28T15:17:08.9082139Z     /home/runner/work/Kizunalink/Kizunalink/target
+2026-08-28T15:17:08.9082497Z Restore Key:
+2026-08-28T15:17:08.9082823Z     v0-rust-x86_64-unknown-linux-gnu-build-linux-x86_64-Linux-x64-0b9fd15e
+2026-08-28T15:17:08.9083200Z Cache Key:
+2026-08-28T15:17:08.9083558Z     v0-rust-x86_64-unknown-linux-gnu-build-linux-x86_64-Linux-x64-0b9fd15e-50d17467
+2026-08-28T15:17:08.9083957Z .. Prefix:
+2026-08-28T15:17:08.9084242Z   - v0-rust-x86_64-unknown-linux-gnu-build-linux-x86_64-Linux-x64
+2026-08-28T15:17:08.9084825Z .. Environment considered:
+2026-08-28T15:17:08.9085061Z   - Rust Versions:
+2026-08-28T15:17:08.9085518Z     - 1.98.0 x86_64-unknown-linux-gnu 88d9e12ae178fab0fb5cc050a94da85685d449ea
+2026-08-28T15:17:08.9086247Z   - CARGO_HOME
+2026-08-28T15:17:08.9086447Z   - CARGO_INCREMENTAL
+2026-08-28T15:17:08.9086664Z   - CARGO_TERM_COLOR
+2026-08-28T15:17:08.9086885Z .. Lockfiles considered:
+2026-08-28T15:17:08.9087164Z   - /home/runner/work/Kizunalink/Kizunalink/Cargo.toml
+2026-08-28T15:17:08.9087560Z   - /home/runner/work/Kizunalink/Kizunalink/kizuna-voice/Cargo.toml
+2026-08-28T15:17:08.9088079Z ##[endgroup]
+2026-08-28T15:17:08.9088194Z 
+2026-08-28T15:17:08.9088291Z ... Restoring cache ...
+2026-08-28T15:17:08.9787967Z Cache hit for restore-key: v0-rust-x86_64-unknown-linux-gnu-build-linux-x86_64-Linux-x64-0b9fd15e-0a5a6644
+2026-08-28T15:17:10.0386098Z Received 260046848 of 558130908 (46.6%), 247.5 MBs/sec
+2026-08-28T15:17:11.0362578Z Received 532676608 of 558130908 (95.4%), 253.9 MBs/sec
+2026-08-28T15:17:11.1927653Z Received 558130908 of 558130908 (100.0%), 246.9 MBs/sec
+2026-08-28T15:17:11.1954104Z Cache Size: ~532 MB (558130908 B)
+2026-08-28T15:17:11.1996303Z [command]/usr/bin/tar -xf /home/runner/work/_temp/417afa62-fa2c-44a3-a566-7f7646607b60/cache.tzst -P -C /home/runner/work/Kizunalink/Kizunalink --use-compress-program unzstd
+2026-08-28T15:17:14.1360401Z Cache restored successfully
+2026-08-28T15:17:14.1612746Z Restored from cache key "v0-rust-x86_64-unknown-linux-gnu-build-linux-x86_64-Linux-x64-0b9fd15e-0a5a6644" full match: false.
+2026-08-28T15:17:14.1818281Z ##[group]Run cargo build --release --target x86_64-unknown-linux-gnu
+2026-08-28T15:17:14.1818774Z [36;1mcargo build --release --target x86_64-unknown-linux-gnu[0m
+2026-08-28T15:17:14.1860649Z shell: /usr/bin/bash -e {0}
+2026-08-28T15:17:14.1860928Z env:
+2026-08-28T15:17:14.1861147Z   CARGO_TERM_COLOR: always
+2026-08-28T15:17:14.1861397Z   LIBOPUS_STATIC: 1
+2026-08-28T15:17:14.1861618Z   OPUS_STATIC: 1
+2026-08-28T15:17:14.1861841Z   CARGO_HOME: /home/runner/.cargo
+2026-08-28T15:17:14.1862110Z   CARGO_INCREMENTAL: 0
+2026-08-28T15:17:14.1862342Z   CACHE_ON_FAILURE: false
+2026-08-28T15:17:14.1862576Z ##[endgroup]
+2026-08-28T15:17:15.6695876Z [1m[92m    Updating[0m crates.io index
+2026-08-28T15:17:16.2311817Z [1m[92m     Locking[0m 436 packages to latest compatible versions
+2026-08-28T15:17:16.2329113Z [1m[92m      Adding[0m aes-gcm v0.10.3 [1m[33m(available: v0.11.1)[0m
+2026-08-28T15:17:16.2443656Z [1m[92m      Adding[0m axum v0.7.9 [1m[33m(available: v0.8.9)[0m
+2026-08-28T15:17:16.2465075Z [1m[92m      Adding[0m base64 v0.22.1 [1m[33m(available: v0.23.1)[0m
+2026-08-28T15:17:16.2640819Z [1m[92m      Adding[0m dashmap v5.5.3 [1m[33m(available: v6.2.1)[0m
+2026-08-28T15:17:16.2777014Z [1m[92m      Adding[0m generic-array v0.14.7 [1m[33m(available: v0.14.9)[0m
+2026-08-28T15:17:16.2864883Z [1m[92m      Adding[0m hkdf v0.12.4 [1m[33m(available: v0.13.0)[0m
+2026-08-28T15:17:16.2868546Z [1m[92m      Adding[0m hmac v0.12.1 [1m[33m(available: v0.13.0)[0m
+2026-08-28T15:17:16.3090227Z [1m[92m      Adding[0m libloading v0.8.9 [1m[33m(available: v0.9.0)[0m
+2026-08-28T15:17:16.3310693Z [1m[92m      Adding[0m prometheus v0.13.4 [1m[33m(available: v0.14.0)[0m
+2026-08-28T15:17:16.3333404Z [1m[92m      Adding[0m rand v0.8.8 [1m[33m(available: v0.10.2)[0m
+2026-08-28T15:17:16.3456089Z [1m[92m      Adding[0m reqwest v0.11.27 [1m[33m(available: v0.13.4)[0m
+2026-08-28T15:17:16.3526497Z [1m[92m      Adding[0m rubato v0.14.1 [1m[33m(available: v5.0.0)[0m
+2026-08-28T15:17:16.3779125Z [1m[92m      Adding[0m sha2 v0.10.9 [1m[33m(available: v0.11.0)[0m
+2026-08-28T15:17:16.3813939Z [1m[92m      Adding[0m symphonia v0.5.5 [1m[33m(available: v0.6.1)[0m
+2026-08-28T15:17:16.3928490Z [1m[92m      Adding[0m sysinfo v0.31.4 [1m[33m(available: v0.39.6)[0m
+2026-08-28T15:17:16.3935290Z [1m[92m      Adding[0m thiserror v1.0.69 [1m[33m(available: v2.0.20)[0m
+2026-08-28T15:17:16.4017828Z [1m[92m      Adding[0m tokio-tungstenite v0.21.0 [1m[33m(available: v0.30.0)[0m
+2026-08-28T15:17:16.4037983Z [1m[92m      Adding[0m toml v0.8.23 [1m[33m(available: v1.1.4+spec-1.1.0)[0m
+2026-08-28T15:17:16.4066393Z [1m[92m      Adding[0m tower v0.4.13 [1m[33m(available: v0.5.3)[0m
+2026-08-28T15:17:16.4095019Z [1m[92m      Adding[0m tower-http v0.5.2 [1m[33m(available: v0.7.0)[0m
+2026-08-28T15:17:17.9440014Z [1m[92m   Compiling[0m getrandom v0.2.17
+2026-08-28T15:17:17.9527536Z [1m[92m   Compiling[0m futures-util v0.3.34
+2026-08-28T15:17:17.9646288Z [1m[92m   Compiling[0m futures-channel v0.3.34
+2026-08-28T15:17:20.8287582Z [1m[92m   Compiling[0m hyper v1.11.1
+2026-08-28T15:17:22.2640277Z [1m[92m   Compiling[0m rand_core v0.6.4
+2026-08-28T15:17:22.2641381Z [1m[92m   Compiling[0m ring v0.17.14
+2026-08-28T15:17:22.4417589Z [1m[92m   Compiling[0m crypto-common v0.1.7
+2026-08-28T15:17:22.5213102Z [1m[92m   Compiling[0m digest v0.10.7
+2026-08-28T15:17:22.6427363Z [1m[92m   Compiling[0m ff v0.13.1
+2026-08-28T15:17:22.7026860Z [1m[92m   Compiling[0m hmac v0.12.1
+2026-08-28T15:17:22.7433170Z [1m[92m   Compiling[0m group v0.13.0
+2026-08-28T15:17:22.8086570Z [1m[92m   Compiling[0m hkdf v0.12.4
+2026-08-28T15:17:22.8856811Z [1m[92m   Compiling[0m crypto-bigint v0.5.5
+2026-08-28T15:17:22.8996228Z [1m[92m   Compiling[0m signature v2.2.0
+2026-08-28T15:17:22.9886261Z [1m[92m   Compiling[0m universal-hash v0.5.1
+2026-08-28T15:17:23.0676166Z [1m[92m   Compiling[0m cipher v0.4.4
+2026-08-28T15:17:23.2826768Z [1m[92m   Compiling[0m rand_chacha v0.3.1
+2026-08-28T15:17:23.5519687Z [1m[92m   Compiling[0m rfc6979 v0.4.0
+2026-08-28T15:17:23.7106316Z [1m[92m   Compiling[0m sha2 v0.10.9
+2026-08-28T15:17:23.9746160Z [1m[92m   Compiling[0m elliptic-curve v0.13.8
+2026-08-28T15:17:24.3556635Z [1m[92m   Compiling[0m ecdsa v0.16.9
+2026-08-28T15:17:24.5456169Z [1m[92m   Compiling[0m primeorder v0.13.6
+2026-08-28T15:17:24.5876245Z [1m[92m   Compiling[0m rand v0.8.8
+2026-08-28T15:17:24.7926167Z [1m[92m   Compiling[0m sha1 v0.10.7
+2026-08-28T15:17:24.9146491Z [1m[92m   Compiling[0m curve25519-dalek v4.1.3
+2026-08-28T15:17:25.0228283Z [1m[92m   Compiling[0m rustls-webpki v0.102.8
+2026-08-28T15:17:25.3185265Z [1m[92m   Compiling[0m polyval v0.6.2
+2026-08-28T15:17:25.5461878Z [1m[92m   Compiling[0m aead v0.5.2
+2026-08-28T15:17:25.5525786Z [1m[92m   Compiling[0m rustls v0.22.4
+2026-08-28T15:17:25.6711708Z [1m[92m   Compiling[0m ghash v0.5.1
+2026-08-28T15:17:25.7326978Z [1m[92m   Compiling[0m p384 v0.13.1
+2026-08-28T15:17:26.5976862Z [1m[92m   Compiling[0m p256 v0.13.2
+2026-08-28T15:17:26.9507114Z [1m[92m   Compiling[0m sct v0.7.1
+2026-08-28T15:17:27.0836146Z [1m[92m   Compiling[0m rustls-webpki v0.101.7
+2026-08-28T15:17:27.1116446Z [1m[92m   Compiling[0m aes v0.8.4
+2026-08-28T15:17:27.1119285Z [1m[92m   Compiling[0m chacha20 v0.9.1
+2026-08-28T15:17:27.3075875Z [1m[92m   Compiling[0m ctr v0.9.2
+2026-08-28T15:17:27.4476297Z [1m[92m   Compiling[0m poly1305 v0.8.0
+2026-08-28T15:17:27.7696660Z [1m[92m   Compiling[0m ed25519 v2.2.3
+2026-08-28T15:17:27.8806085Z [1m[92m   Compiling[0m ed25519-dalek v2.2.0
+2026-08-28T15:17:27.8915719Z [1m[92m   Compiling[0m chacha20poly1305 v0.10.1
+2026-08-28T15:17:27.9715968Z [1m[92m   Compiling[0m aes-gcm v0.10.3
+2026-08-28T15:17:28.0936128Z [1m[92m   Compiling[0m rustls v0.21.12
+2026-08-28T15:17:28.1465977Z [1m[92m   Compiling[0m x25519-dalek v2.0.1
+2026-08-28T15:17:28.2306017Z [1m[92m   Compiling[0m k256 v0.13.4
+2026-08-28T15:17:28.3725998Z [1m[92m   Compiling[0m h2 v0.3.27
+2026-08-28T15:17:29.5946587Z [1m[92m   Compiling[0m hpke-rs-rust-crypto v0.7.0
+2026-08-28T15:17:32.4775941Z [1m[92m   Compiling[0m hyper v0.14.32
+2026-08-28T15:17:33.6436335Z [1m[92m   Compiling[0m tokio-rustls v0.24.1
+2026-08-28T15:17:33.8266629Z [1m[92m   Compiling[0m tungstenite v0.21.0
+2026-08-28T15:17:34.0996278Z [1m[92m   Compiling[0m tokio-rustls v0.25.0
+2026-08-28T15:17:34.2826429Z [1m[92m   Compiling[0m tungstenite v0.24.0
+2026-08-28T15:17:34.5886420Z [1m[92m   Compiling[0m tokio-tungstenite v0.21.0
+2026-08-28T15:17:34.8666686Z [1m[92m   Compiling[0m openmls_rust_crypto v0.6.0
+2026-08-28T15:17:35.7385972Z [1m[92m   Compiling[0m hyper-rustls v0.24.2
+2026-08-28T15:17:35.7986083Z [1m[92m   Compiling[0m tokio-tungstenite v0.24.0
+2026-08-28T15:17:35.8856198Z [1m[92m   Compiling[0m openmls_basic_credential v0.6.0
+2026-08-28T15:17:36.0516183Z [1m[92m   Compiling[0m axum-core v0.4.5
+2026-08-28T15:17:37.2026109Z [1m[92m   Compiling[0m tower v0.5.3
+2026-08-28T15:17:37.2589882Z [1m[92m   Compiling[0m hyper-util v0.1.20
+2026-08-28T15:17:37.5849980Z [1m[92m   Compiling[0m kizuna-voice v0.1.0 (/home/runner/work/Kizunalink/Kizunalink/kizuna-voice)
+2026-08-28T15:17:37.5957237Z [1m[92m   Compiling[0m reqwest v0.11.27
+2026-08-28T15:17:37.8461281Z [1m[33mwarning[0m[1m: unused import: `std::time::Duration`[0m
+2026-08-28T15:17:37.8466960Z  [1m[94m--> [0mkizuna-voice/src/gateway/connection.rs:3:5
+2026-08-28T15:17:37.8467773Z   [1m[94m|[0m
+2026-08-28T15:17:37.8468507Z [1m[94m3[0m [1m[94m|[0m use std::time::Duration;
+2026-08-28T15:17:37.8469364Z   [1m[94m|[0m     [1m[33m^^^^^^^^^^^^^^^^^^^[0m
+2026-08-28T15:17:37.8470030Z   [1m[94m|[0m
+2026-08-28T15:17:37.8470934Z   [1m[94m= [0m[1mnote[0m: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+2026-08-28T15:17:37.8471656Z 
+2026-08-28T15:17:37.8472299Z [1m[33mwarning[0m[1m: unused import: `tokio::sync::mpsc`[0m
+2026-08-28T15:17:37.8473532Z  [1m[94m--> [0mkizuna-voice/src/gateway/connection.rs:5:5
+2026-08-28T15:17:37.8474276Z   [1m[94m|[0m
+2026-08-28T15:17:37.8475204Z [1m[94m5[0m [1m[94m|[0m use tokio::sync::mpsc;
+2026-08-28T15:17:37.8475950Z   [1m[94m|[0m     [1m[33m^^^^^^^^^^^^^^^^^[0m
+2026-08-28T15:17:37.8476441Z 
+2026-08-28T15:17:37.8476991Z [1m[33mwarning[0m[1m: unused import: `tokio::time`[0m
+2026-08-28T15:17:37.8477810Z  [1m[94m--> [0mkizuna-voice/src/gateway/connection.rs:6:5
+2026-08-28T15:17:37.8478527Z   [1m[94m|[0m
+2026-08-28T15:17:37.8479159Z [1m[94m6[0m [1m[94m|[0m use tokio::time;
+2026-08-28T15:17:37.8479891Z   [1m[94m|[0m     [1m[33m^^^^^^^^^^^[0m
+2026-08-28T15:17:37.8480357Z 
+2026-08-28T15:17:37.8792820Z [1m[92m   Compiling[0m axum v0.7.9
+2026-08-28T15:17:37.8849501Z [1m[33mwarning[0m[1m: unused imports: `error` and `warn`[0m
+2026-08-28T15:17:37.8876559Z   [1m[94m--> [0mkizuna-voice/src/gateway/connection.rs:10:22
+2026-08-28T15:17:37.8905587Z    [1m[94m|[0m
+2026-08-28T15:17:37.8936052Z [1m[94m10[0m [1m[94m|[0m use tracing::{debug, error, info, warn};
+2026-08-28T15:17:37.8937076Z    [1m[94m|[0m                      [1m[33m^^^^^[0m        [1m[33m^^^^[0m
+2026-08-28T15:17:37.8965081Z 
+2026-08-28T15:17:38.2538210Z [1m[33mwarning[0m[1m: value assigned to `state` is never read[0m
+2026-08-28T15:17:38.2546013Z   [1m[94m--> [0mkizuna-voice/src/audio/scheduler.rs:62:29
+2026-08-28T15:17:38.2585896Z    [1m[94m|[0m
+2026-08-28T15:17:38.2587109Z [1m[94m62[0m [1m[94m|[0m [1m[94m...[0m                   state = TrackState::Stopped;
+2026-08-28T15:17:38.2588190Z    [1m[94m|[0m                       [1m[33m^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+2026-08-28T15:17:38.2588935Z    [1m[94m|[0m
+2026-08-28T15:17:38.2589734Z    [1m[94m= [0m[1mhelp[0m: maybe it is overwritten before being read?
+2026-08-28T15:17:38.2590854Z    [1m[94m= [0m[1mnote[0m: `#[warn(unused_assignments)]` (part of `#[warn(unused)]`) on by default
+2026-08-28T15:17:38.2591608Z 
+2026-08-28T15:17:38.2592249Z [1m[33mwarning[0m[1m: value assigned to `state` is never read[0m
+2026-08-28T15:17:38.2593113Z    [1m[94m--> [0mkizuna-voice/src/audio/scheduler.rs:113:33
+2026-08-28T15:17:38.2593840Z     [1m[94m|[0m
+2026-08-28T15:17:38.2594933Z [1m[94m113[0m [1m[94m|[0m [1m[94m...[0m                   state = TrackState::Ended;
+2026-08-28T15:17:38.2595912Z     [1m[94m|[0m                       [1m[33m^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+2026-08-28T15:17:38.2596629Z     [1m[94m|[0m
+2026-08-28T15:17:38.2597331Z     [1m[94m= [0m[1mhelp[0m: maybe it is overwritten before being read?
+2026-08-28T15:17:38.2598300Z 
+2026-08-28T15:17:51.1045441Z [1m[33mwarning[0m: `kizuna-voice` (lib) generated 6 warnings (run `cargo fix --lib -p kizuna-voice` to apply 4 suggestions)
+2026-08-28T15:17:51.1046342Z [1m[92m   Compiling[0m kizunalink v0.1.0 (/home/runner/work/Kizunalink/Kizunalink)
+2026-08-28T15:17:51.3572678Z [1m[91merror[E0252][0m[1m: the name `Mutex` is defined multiple times[0m
+2026-08-28T15:17:51.3573425Z   [1m[94m--> [0msrc/player/guild_player.rs:12:36
+2026-08-28T15:17:51.3573901Z    [1m[94m|[0m
+2026-08-28T15:17:51.3574769Z [1m[94m11[0m [1m[94m|[0m use tokio::sync::Mutex;
+2026-08-28T15:17:51.3575613Z    [1m[94m|[0m     [1m[94m------------------[0m [1m[94mprevious import of the type `Mutex` here[0m
+2026-08-28T15:17:51.3576498Z [1m[94m12[0m [1m[94m|[0m use tokio::sync::{broadcast, mpsc, Mutex};
+2026-08-28T15:17:51.3577255Z    [1m[94m|[0m                                    [1m[91m^^^^^[0m [1m[91m`Mutex` reimported here[0m
+2026-08-28T15:17:51.3577901Z    [1m[94m|[0m
+2026-08-28T15:17:51.3578556Z    [1m[94m= [0m[1mnote[0m: `Mutex` must be defined only once in the type namespace of this module
+2026-08-28T15:17:51.3579092Z 
+2026-08-28T15:17:51.5856095Z [1m[33mwarning[0m[1m: unused import: `Mutex`[0m
+2026-08-28T15:17:51.5856814Z   [1m[94m--> [0msrc/player/guild_player.rs:12:36
+2026-08-28T15:17:51.5857314Z    [1m[94m|[0m
+2026-08-28T15:17:51.5858432Z [1m[94m12[0m [1m[94m|[0m use tokio::sync::{broadcast, mpsc, Mutex};
+2026-08-28T15:17:51.5859182Z    [1m[94m|[0m                                    [1m[33m^^^^^[0m
+2026-08-28T15:17:51.5859705Z    [1m[94m|[0m
+2026-08-28T15:17:51.5860379Z    [1m[94m= [0m[1mnote[0m: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+2026-08-28T15:17:51.5860916Z 
+2026-08-28T15:17:51.5861170Z [1m[33mwarning[0m[1m: unused import: `warn`[0m
+2026-08-28T15:17:51.5861788Z   [1m[94m--> [0msrc/player/guild_player.rs:13:21
+2026-08-28T15:17:51.5862262Z    [1m[94m|[0m
+2026-08-28T15:17:51.5862764Z [1m[94m13[0m [1m[94m|[0m use tracing::{info, warn};
+2026-08-28T15:17:51.5863369Z    [1m[94m|[0m                     [1m[33m^^^^[0m
+2026-08-28T15:17:51.5863687Z 
+2026-08-28T15:17:53.3441748Z [1m[33mwarning[0m[1m: unused variable: `endpoint`[0m
+2026-08-28T15:17:53.3442550Z    [1m[94m--> [0msrc/player/guild_player.rs:180:13
+2026-08-28T15:17:53.3443130Z     [1m[94m|[0m
+2026-08-28T15:17:53.3443689Z [1m[94m180[0m [1m[94m|[0m         let endpoint = endpoint_raw
+2026-08-28T15:17:53.3445125Z     [1m[94m|[0m             [1m[33m^^^^^^^^[0m [1m[33mhelp: if this is intentional, prefix it with an underscore: `_endpoint`[0m
+2026-08-28T15:17:53.3446012Z     [1m[94m|[0m
+2026-08-28T15:17:53.3446744Z     [1m[94m= [0m[1mnote[0m: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+2026-08-28T15:17:53.3447324Z 
+2026-08-28T15:17:53.3447637Z [1m[33mwarning[0m[1m: unused variable: `guild_num`[0m
+2026-08-28T15:17:53.3448296Z    [1m[94m--> [0msrc/player/guild_player.rs:188:13
+2026-08-28T15:17:53.3448832Z     [1m[94m|[0m
+2026-08-28T15:17:53.3449754Z [1m[94m188[0m [1m[94m|[0m         let guild_num = self.guild_id.parse::<u64>().unwrap_or(0);
+2026-08-28T15:17:53.3450972Z     [1m[94m|[0m             [1m[33m^^^^^^^^^[0m [1m[33mhelp: if this is intentional, prefix it with an underscore: `_guild_num`[0m
+2026-08-28T15:17:53.3451647Z 
+2026-08-28T15:17:54.0047307Z [1mFor more information about this error, try `rustc --explain E0252`.[0m
+2026-08-28T15:17:54.0208230Z [1m[33mwarning[0m: `kizunalink` (bin "kizunalink") generated 4 warnings
+2026-08-28T15:17:54.0209327Z [1m[91merror[0m: could not compile `kizunalink` (bin "kizunalink") due to 1 previous error; 4 warnings emitted
+2026-08-28T15:17:54.1273726Z ##[error]Process completed with exit code 101.
+2026-08-28T15:17:54.1395303Z Node 20 is being deprecated. This workflow is running with Node 24 by default. If you need to temporarily use Node 20, you can set the ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true environment variable. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+2026-08-28T15:17:54.1396750Z Post job cleanup.
+2026-08-28T15:17:54.2270560Z [command]/usr/bin/git version
+2026-08-28T15:17:54.2313228Z git version 2.55.0
+2026-08-28T15:17:54.2354222Z Temporarily overriding HOME='/home/runner/work/_temp/3144dc1d-92cf-4eec-bace-92db3d4a08c7' before making global git config changes
+2026-08-28T15:17:54.2355712Z Adding repository directory to the temporary git global config as a safe directory
+2026-08-28T15:17:54.2359902Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/Kizunalink/Kizunalink
+2026-08-28T15:17:54.2402399Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-08-28T15:17:54.2463242Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-08-28T15:17:54.2723137Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-08-28T15:17:54.2760752Z http.https://github.com/.extraheader
+2026-08-28T15:17:54.2775507Z [command]/usr/bin/git config --local --unset-all http.https://github.com/.extraheader
+2026-08-28T15:17:54.2808892Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-08-28T15:17:54.3078094Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-08-28T15:17:54.3118987Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-08-28T15:17:54.3536546Z Cleaning up orphan processes
+2026-08-28T15:17:54.3831289Z ##[warning]Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
