@@ -18,13 +18,8 @@
 ///    → Client exports MLS secret and derives per-sender encryption keys
 /// 7. Audio frames are encrypted with AES-128-GCM before sending
 ///
-/// # Songbird Integration
 ///
-/// Songbird manages the voice WebSocket internally. To integrate DAVE:
-/// - The voice gateway DAVE messages (opcodes 21-26) arrive on Songbird's WS task
-/// - Currently Songbird does NOT expose these messages to user code
 /// - Integration requires either:
-///   a) Forking Songbird to add a DAVE message callback
 ///   b) Using the `cacophony` crate (AGPL) which has native DAVE support
 ///   c) Running a parallel voice WS connection (not recommended — Discord expects one connection)
 ///

@@ -6,7 +6,7 @@
 /// The chain exposes a streaming API: feed arbitrary-size interleaved stereo
 /// chunks into [`FilterChain::process`]; returned audio may differ in length
 /// when Timescale is active. This is the single code path used both by the
-/// live Songbird pipeline and by offline verification.
+/// live KizunaVoice pipeline and by offline verification.
 use super::channel_mix::ChannelMix;
 use super::distortion::Distortion;
 use super::equalizer::Equalizer;

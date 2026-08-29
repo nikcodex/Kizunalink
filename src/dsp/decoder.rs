@@ -1,6 +1,6 @@
 /// Streaming audio decoder: any symphonia-supported format -> interleaved
 /// stereo f32 at 48 kHz, pulled chunk-by-chunk. Used by the filtered playback
-/// pipeline so DSP runs on decoded PCM before it reaches Songbird's mixer.
+/// pipeline so DSP runs on decoded PCM before it reaches KizunaVoice's mixer.
 ///
 /// For Opus-encoded sources, an optional passthrough mode is available that
 /// skips the decode→PCM→re-encode cycle, saving ~60% CPU.

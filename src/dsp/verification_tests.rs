@@ -2,7 +2,7 @@
 //!
 //! For each Lavalink filter: configure the production `FilterChain` via
 //! `update_from_lavalink` (the exact code path used by REST PATCH /players),
-//! push a test signal through in 20 ms chunks (like Songbird's mixer does),
+//! push a test signal through in 20 ms chunks (like KizunaVoice's mixer does),
 //! write the result to a WAV file, and assert measurable spectral/temporal
 //! changes via Goertzel analysis and RMS envelopes.
 //!
