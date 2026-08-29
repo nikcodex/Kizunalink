@@ -34,13 +34,17 @@ impl VoiceGatewayClient {
         let url = if clean_endpoint.starts_with("ws://") || clean_endpoint.starts_with("wss://") {
             if clean_endpoint.contains('?') {
                 clean_endpoint.to_string()
-            } else {
+            } else if clean_endpoint.ends_with('/') {
                 format!("{}?v=4", clean_endpoint)
+            } else {
+                format!("{}/?v=4", clean_endpoint)
             }
         } else if clean_endpoint.starts_with("127.0.0.1") || clean_endpoint.starts_with("localhost") {
-            format!("ws://{}?v=4", clean_endpoint)
+            let host_port = clean_endpoint.trim_end_matches('/');
+            format!("ws://{}/?v=4", host_port)
         } else {
-            format!("wss://{}?v=4", clean_endpoint)
+            let host_port = clean_endpoint.trim_end_matches('/');
+            format!("wss://{}/?v=4", host_port)
         };
         info!("Connecting to voice gateway: {}", url);
         let (ws_stream, _) = connect_async(&url)
