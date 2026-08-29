@@ -414,7 +414,7 @@ impl DaveSession {
         sender_id: &str,
         plaintext: &[u8],
         nonce_counter: u32,
-        rtp_header: &[u8],
+        _rtp_header: &[u8],
     ) -> Result<Vec<u8>, String> {
         let uid: u64 = sender_id.parse().unwrap_or(0);
 
@@ -431,60 +431,54 @@ impl DaveSession {
         let cipher =
             Aes128Gcm::new_from_slice(&key).map_err(|e| format!("AES init failed: {}", e))?;
 
-        let mut nonce_bytes = [0u8; FRAME_NONCE_SIZE];
+        let mut nonce_bytes = [0u8; 12];
         nonce_bytes[8..12].copy_from_slice(&nonce_counter.to_le_bytes());
         let nonce = Nonce::from_slice(&nonce_bytes);
 
         let payload = aes_gcm::aead::Payload {
             msg: plaintext,
-            aad: rtp_header,
+            aad: &[], // Opus has no unencrypted ranges
         };
         let ciphertext = cipher
             .encrypt(nonce, payload)
             .map_err(|e| format!("Encryption failed: {}", e))?;
 
-        let mut frame = Vec::with_capacity(FRAME_HEADER_SIZE + ciphertext.len());
-        frame.push(1); // version
-        frame.push(0); // flags (audio)
-        frame.extend_from_slice(&nonce_counter.to_le_bytes());
-        frame.extend_from_slice(&ciphertext);
+        // Format: [ciphertext without tag] + [8 byte tag] + [ULEB128 nonce] + [size] + [0xFAFA]
+        if ciphertext.len() < 16 {
+            return Err("Ciphertext too short".to_string());
+        }
+        let (encrypted_media, full_tag) = ciphertext.split_at(ciphertext.len() - 16);
+        let mut frame = Vec::with_capacity(encrypted_media.len() + 8 + 10);
+
+        frame.extend_from_slice(encrypted_media);
+        frame.extend_from_slice(&full_tag[..8]);
+
+        let mut nonce_leb = Vec::new();
+        let mut val = nonce_counter;
+        loop {
+            let mut b = (val & 0x7F) as u8;
+            val >>= 7;
+            if val != 0 {
+                b |= 0x80;
+                nonce_leb.push(b);
+            } else {
+                nonce_leb.push(b);
+                break;
+            }
+        }
+        frame.extend_from_slice(&nonce_leb);
+
+        let suppl_size = 8 + nonce_leb.len() + 1 + 2;
+        frame.push(suppl_size as u8);
+        frame.push(0xFA);
+        frame.push(0xFA);
 
         Ok(frame)
     }
 
     /// Decrypt a received DAVE frame
-    pub fn decrypt_frame(&mut self, sender_id: &str, frame: &[u8]) -> Result<Vec<u8>, String> {
-        if frame.len() < FRAME_HEADER_SIZE + 16 {
-            return Err("Frame too short".to_string());
-        }
-
-        let _version = frame[0];
-        let _flags = frame[1];
-        let nonce_counter = u32::from_le_bytes([frame[2], frame[3], frame[4], frame[5]]);
-        let ciphertext = &frame[FRAME_HEADER_SIZE..];
-
-        let uid: u64 = sender_id.parse().unwrap_or(0);
-        let generation = ((nonce_counter >> 24) & 0xFF) as u64;
-
-        let ratchet = self
-            .sender_ratchets
-            .get_mut(sender_id)
-            .ok_or_else(|| format!("No ratchet for sender {}", sender_id))?;
-
-        let key = ratchet
-            .get_key_for_generation(&self.exporter_secret, uid, generation)
-            .ok_or_else(|| format!("Cannot derive key for generation {}", generation))?;
-
-        let cipher =
-            Aes128Gcm::new_from_slice(&key).map_err(|e| format!("AES init failed: {}", e))?;
-
-        let mut nonce_bytes = [0u8; FRAME_NONCE_SIZE];
-        nonce_bytes[8..12].copy_from_slice(&nonce_counter.to_le_bytes());
-        let nonce = Nonce::from_slice(&nonce_bytes);
-
-        cipher
-            .decrypt(nonce, ciphertext)
-            .map_err(|e| format!("Decryption failed: {}", e))
+    pub fn decrypt_frame(&mut self, _sender_id: &str, _frame: &[u8]) -> Result<Vec<u8>, String> {
+        Err("Receiving DAVE frames not yet fully implemented".to_string())
     }
 
     pub fn is_active(&self) -> bool {

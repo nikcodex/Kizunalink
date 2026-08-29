@@ -25,9 +25,9 @@ impl FrameScheduler {
         Fut: std::future::Future<Output = ()> + Send,
     {
         let mut interval = interval(Duration::from_millis(20));
-        interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
 
-        let mut state = TrackState::Idle;
+        let mut state = TrackState::Playing;
+        let _ = event_tx.send(TrackEvent::Started);
         let mut position = Duration::from_secs(0);
         let mut volume = 1.0f32;
         let mut last_tick = Instant::now();

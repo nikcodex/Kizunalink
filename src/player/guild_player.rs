@@ -218,7 +218,13 @@ impl GuildPlayer {
         }
     }
 
-    fn stop_handle_silently(&mut self) {}
+    fn stop_handle_silently(&mut self) {
+        if let Some(handle) = self.kizuna_track_handle.take() {
+            tokio::spawn(async move {
+                let _ = handle.stop().await;
+            });
+        }
+    }
 
     async fn restart_at(&mut self, position_ms: u64) {
         let Some(url) = self.current_stream_url.clone() else {
