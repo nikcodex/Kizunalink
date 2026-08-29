@@ -30,7 +30,17 @@ pub struct VoiceGatewayClient {
 
 impl VoiceGatewayClient {
     pub async fn connect(endpoint: &str) -> Result<Self> {
-        let url = format!("wss://{}?v=4", endpoint.trim_end_matches(":80"));
+        let url = if endpoint.starts_with("ws://") || endpoint.starts_with("wss://") {
+            if endpoint.contains('?') {
+                endpoint.to_string()
+            } else {
+                format!("{}?v=4", endpoint)
+            }
+        } else if endpoint.starts_with("127.0.0.1") || endpoint.starts_with("localhost") {
+            format!("ws://{}?v=4", endpoint.trim_end_matches(":80"))
+        } else {
+            format!("wss://{}?v=4", endpoint.trim_end_matches(":80"))
+        };
         info!("Connecting to voice gateway: {}", url);
         let (ws_stream, _) = connect_async(&url)
             .await

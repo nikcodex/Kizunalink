@@ -477,8 +477,87 @@ impl DaveSession {
     }
 
     /// Decrypt a received DAVE frame
-    pub fn decrypt_frame(&mut self, _sender_id: &str, _frame: &[u8]) -> Result<Vec<u8>, String> {
-        Err("Receiving DAVE frames not yet fully implemented".to_string())
+    pub fn decrypt_frame(&mut self, sender_id: &str, frame: &[u8]) -> Result<Vec<u8>, String> {
+        // Minimum supplemental data size is 12: 8 (tag) + 1 (nonce) + 1 (size) + 2 (magic)
+        if frame.len() < 12 {
+            return Err("Frame too short".to_string());
+        }
+
+        // Check magic marker 0xFAFA
+        let len = frame.len();
+        if frame[len - 2] != 0xFA || frame[len - 1] != 0xFA {
+            return Err("Invalid DAVE magic marker".to_string());
+        }
+
+        // Read supplemental data size
+        let suppl_size = frame[len - 3] as usize;
+        if suppl_size < 12 || suppl_size > len {
+            return Err(format!("Invalid supplemental data size: {}", suppl_size));
+        }
+
+        let suppl_start = len - suppl_size;
+        let suppl_data = &frame[suppl_start..len - 3]; // excludes suppl_size byte and magic marker
+
+        if suppl_data.len() < 9 {
+            return Err("Supplemental data truncated".to_string());
+        }
+
+        let auth_tag = &suppl_data[0..8];
+
+        // Decode ULEB128 nonce
+        let mut nonce_val: u32 = 0;
+        let mut shift = 0;
+        for &b in &suppl_data[8..] {
+            nonce_val |= ((b & 0x7F) as u32) << shift;
+            shift += 7;
+            if (b & 0x80) == 0 {
+                break;
+            }
+        }
+
+        let uid: u64 = sender_id.parse().unwrap_or(0);
+        let generation = (nonce_val as u64 >> 24) & 0xFF;
+
+        let ratchet = self
+            .sender_ratchets
+            .get_mut(sender_id)
+            .ok_or_else(|| format!("No ratchet for sender {}", sender_id))?;
+
+        let key = ratchet
+            .get_key_for_generation(&self.exporter_secret, uid, generation)
+            .ok_or_else(|| format!("Cannot derive key for generation {}", generation))?;
+
+        let cipher =
+            Aes128Gcm::new_from_slice(&key).map_err(|e| format!("AES init failed: {}", e))?;
+
+        let mut nonce_bytes = [0u8; 12];
+        nonce_bytes[8..12].copy_from_slice(&nonce_val.to_le_bytes());
+        let nonce = Nonce::from_slice(&nonce_bytes);
+
+        let encrypted_media = &frame[..suppl_start];
+
+        // Decrypt AES-CTR keystream by encrypting zero bytes of same length
+        let zeros = vec![0u8; encrypted_media.len()];
+        let keystream = cipher
+            .encrypt(nonce, aes_gcm::aead::Payload { msg: &zeros, aad: &[] })
+            .map_err(|e| format!("AES keystream generation failed: {}", e))?;
+
+        let mut plaintext = Vec::with_capacity(encrypted_media.len());
+        for i in 0..encrypted_media.len() {
+            plaintext.push(encrypted_media[i] ^ keystream[i]);
+        }
+
+        // Re-authenticate by encrypting recovered plaintext and comparing 8-byte tag
+        let check_ciphertext = cipher
+            .encrypt(nonce, aes_gcm::aead::Payload { msg: &plaintext, aad: &[] })
+            .map_err(|e| format!("AES re-authentication failed: {}", e))?;
+
+        let check_tag = &check_ciphertext[encrypted_media.len()..encrypted_media.len() + 8];
+        if check_tag != auth_tag {
+            return Err("DAVE authentication tag mismatch".to_string());
+        }
+
+        Ok(plaintext)
     }
 
     pub fn is_active(&self) -> bool {
@@ -548,7 +627,7 @@ mod tests {
         session.add_sender("456");
 
         let plaintext = b"hello opus frame data";
-        let encrypted = session.encrypt_frame("456", plaintext, 0).unwrap();
+        let encrypted = session.encrypt_frame("456", plaintext, 0, &[]).unwrap();
         let decrypted = session.decrypt_frame("456", &encrypted).unwrap();
         assert_eq!(decrypted, plaintext);
     }
@@ -561,8 +640,8 @@ mod tests {
         session.add_sender("100");
 
         let data = b"same data";
-        let f1 = session.encrypt_frame("100", data, 0).unwrap();
-        let f2 = session.encrypt_frame("100", data, 1).unwrap();
+        let f1 = session.encrypt_frame("100", data, 0, &[]).unwrap();
+        let f2 = session.encrypt_frame("100", data, 1, &[]).unwrap();
         assert_ne!(f1, f2);
     }
 
@@ -574,7 +653,7 @@ mod tests {
         session.add_sender("100");
 
         let data = b"secret data";
-        let encrypted = session.encrypt_frame("100", data, 0).unwrap();
+        let encrypted = session.encrypt_frame("100", data, 0, &[]).unwrap();
 
         // Create a different session with different secret
         let mut other = DaveSession::new("1".to_string());
@@ -595,10 +674,10 @@ mod tests {
 
         // Encrypt with generation 0
         let data = b"ratchet test";
-        let f0 = session.encrypt_frame("200", data, 0).unwrap();
+        let f0 = session.encrypt_frame("200", data, 0, &[]).unwrap();
 
         // Encrypt with generation 1 (ratchets forward)
-        let f1 = session.encrypt_frame("200", data, 0x01000000).unwrap();
+        let f1 = session.encrypt_frame("200", data, 0x01000000, &[]).unwrap();
 
         // Both should decrypt with the correct session
         assert_eq!(session.decrypt_frame("200", &f0).unwrap(), data);
@@ -619,7 +698,5 @@ mod tests {
 
         // Group should now be created
         assert!(session.group.is_some());
-        // Key package may or may not be queued depending on OpenMLS serialization
-        // The important thing is the group was created
     }
 }

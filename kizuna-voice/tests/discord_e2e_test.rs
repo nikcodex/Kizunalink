@@ -1,3 +1,4 @@
+// [REAL DISCORD E2E]
 use kizuna_voice::gateway::VoiceGatewayClient;
 use kizuna_voice::transport::VoiceUdp;
 use std::env;
