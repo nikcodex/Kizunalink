@@ -125,8 +125,11 @@ impl KizunaVoiceAdapter {
         let udp = self.udp.clone().expect("UDP not connected");
         let dave = self.dave.clone();
         let ssrc = self.ssrc;
-        let mut sequence = self.sequence;
-        let mut timestamp = self.timestamp;
+        let sequence = Arc::new(std::sync::atomic::AtomicU16::new(self.sequence));
+        let timestamp = Arc::new(std::sync::atomic::AtomicU32::new(self.timestamp));
+
+        let seq_clone = sequence.clone();
+        let ts_clone = timestamp.clone();
 
         tokio::spawn(async move {
             let encoder = std::sync::Arc::new(tokio::sync::Mutex::new(OpusEncoder::new().unwrap()));
@@ -136,10 +139,12 @@ impl KizunaVoiceAdapter {
                     let dave = dave.clone();
                     let sender_id_clone = sender_id.clone();
                     let enc_clone = encoder.clone();
+                    let seq_atomic = seq_clone.clone();
+                    let ts_atomic = ts_clone.clone();
 
                     async move {
-                        sequence = sequence.wrapping_add(1);
-                        timestamp = timestamp.wrapping_add(960);
+                        let cur_seq = seq_atomic.fetch_add(1, std::sync::atomic::Ordering::SeqCst).wrapping_add(1);
+                        let cur_ts = ts_atomic.fetch_add(960, std::sync::atomic::Ordering::SeqCst).wrapping_add(960);
 
                         let opus_data = match frame {
                             AudioFrame::Opus(data) => data,
@@ -154,7 +159,7 @@ impl KizunaVoiceAdapter {
                             }
                         };
 
-                        let header = RtpHeader::new(sequence, timestamp, ssrc);
+                        let header = RtpHeader::new(cur_seq, cur_ts, ssrc);
                         let mut header_buf = Vec::new();
                         header.write_to(&mut header_buf).unwrap();
 
@@ -163,7 +168,7 @@ impl KizunaVoiceAdapter {
                             if let Ok(encrypted) = dave_guard.encrypt_frame(
                                 &sender_id_clone,
                                 &opus_data,
-                                sequence as u32,
+                                cur_seq as u32,
                                 &header_buf,
                             ) {
                                 let mut packet = header_buf;
@@ -180,8 +185,8 @@ impl KizunaVoiceAdapter {
                 .await;
         });
 
-        self.sequence = sequence;
-        self.timestamp = timestamp;
+        self.sequence = sequence.load(std::sync::atomic::Ordering::SeqCst);
+        self.timestamp = timestamp.load(std::sync::atomic::Ordering::SeqCst);
 
         handle
     }

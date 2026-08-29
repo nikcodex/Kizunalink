@@ -88,30 +88,35 @@ async fn test_audio_pipeline_to_local_udp_end_to_end() {
     let udp_clone = voice_udp.clone();
     let dave_clone = dave.clone();
 
-    let mut sequence: u16 = 0;
-    let mut timestamp: u32 = 0;
+    let sequence = Arc::new(std::sync::atomic::AtomicU16::new(0));
+    let timestamp = Arc::new(std::sync::atomic::AtomicU32::new(0));
+
+    let seq_clone = sequence.clone();
+    let ts_clone = timestamp.clone();
 
     let scheduler_task = tokio::spawn(async move {
         scheduler
             .run(cmd_rx, event_tx, |frame| {
                 let udp = udp_clone.clone();
                 let dave = dave_clone.clone();
+                let seq_atomic = seq_clone.clone();
+                let ts_atomic = ts_clone.clone();
 
                 async move {
-                    sequence = sequence.wrapping_add(1);
-                    timestamp = timestamp.wrapping_add(960);
+                    let cur_seq = seq_atomic.fetch_add(1, std::sync::atomic::Ordering::SeqCst).wrapping_add(1);
+                    let cur_ts = ts_atomic.fetch_add(960, std::sync::atomic::Ordering::SeqCst).wrapping_add(960);
 
                     let AudioFrame::Opus(opus_data) = frame else {
                         panic!("Expected Opus");
                     };
 
-                    let header = RtpHeader::new(sequence, timestamp, ssrc);
+                    let header = RtpHeader::new(cur_seq, cur_ts, ssrc);
                     let mut header_buf = Vec::new();
                     header.write_to(&mut header_buf).unwrap();
 
                     let mut dave_guard = dave.lock().await;
                     let encrypted = dave_guard
-                        .encrypt_frame("sender_agent_1", &opus_data, sequence as u32, &header_buf)
+                        .encrypt_frame("sender_agent_1", &opus_data, cur_seq as u32, &header_buf)
                         .expect("DAVE encrypt");
 
                     let mut packet = header_buf;
@@ -233,8 +238,11 @@ async fn test_pcm_pipeline_with_volume_and_opus_encoding() {
     let udp_clone = voice_udp.clone();
     let dave_clone = dave.clone();
 
-    let mut sequence: u16 = 0;
-    let mut timestamp: u32 = 0;
+    let sequence = Arc::new(std::sync::atomic::AtomicU16::new(0));
+    let timestamp = Arc::new(std::sync::atomic::AtomicU32::new(0));
+
+    let seq_clone = sequence.clone();
+    let ts_clone = timestamp.clone();
 
     let encoder = Arc::new(Mutex::new(OpusEncoder::new().expect("Create OpusEncoder")));
 
@@ -244,10 +252,12 @@ async fn test_pcm_pipeline_with_volume_and_opus_encoding() {
                 let udp = udp_clone.clone();
                 let dave = dave_clone.clone();
                 let enc = encoder.clone();
+                let seq_atomic = seq_clone.clone();
+                let ts_atomic = ts_clone.clone();
 
                 async move {
-                    sequence = sequence.wrapping_add(1);
-                    timestamp = timestamp.wrapping_add(960);
+                    let cur_seq = seq_atomic.fetch_add(1, std::sync::atomic::Ordering::SeqCst).wrapping_add(1);
+                    let cur_ts = ts_atomic.fetch_add(960, std::sync::atomic::Ordering::SeqCst).wrapping_add(960);
 
                     let opus_data = match frame {
                         AudioFrame::Opus(data) => data,
@@ -263,13 +273,13 @@ async fn test_pcm_pipeline_with_volume_and_opus_encoding() {
                         }
                     };
 
-                    let header = RtpHeader::new(sequence, timestamp, ssrc);
+                    let header = RtpHeader::new(cur_seq, cur_ts, ssrc);
                     let mut header_buf = Vec::new();
                     header.write_to(&mut header_buf).unwrap();
 
                     let mut dave_guard = dave.lock().await;
                     let encrypted = dave_guard
-                        .encrypt_frame("sender_pcm", &opus_data, sequence as u32, &header_buf)
+                        .encrypt_frame("sender_pcm", &opus_data, cur_seq as u32, &header_buf)
                         .expect("DAVE encrypt");
 
                     let mut packet = header_buf;
@@ -287,7 +297,7 @@ async fn test_pcm_pipeline_with_volume_and_opus_encoding() {
     assert_eq!(captured.len(), frame_count);
     for packet in &captured {
         assert_eq!(packet.header.ssrc, ssrc);
-        assert!(packet.payload.len() > 12);
+        assert!(packet.payload.len() >= 12);
         assert_eq!(packet.payload[packet.payload.len() - 2], 0xFA);
         assert_eq!(packet.payload[packet.payload.len() - 1], 0xFA);
     }

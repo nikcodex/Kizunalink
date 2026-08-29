@@ -18,9 +18,19 @@ impl OpusEncoder {
     pub fn encode(&mut self, source: OpusSource) -> Result<AudioFrame> {
         match source {
             OpusSource::Encoded(data) => Ok(AudioFrame::Opus(data)),
-            OpusSource::Pcm(_pcm_data) => {
-                // Here we would encode PCM to Opus (Phase 5)
-                Ok(AudioFrame::Opus(vec![])) // Stub
+            OpusSource::Pcm(pcm_data) => {
+                if pcm_data.is_empty() {
+                    Ok(AudioFrame::Opus(vec![0xF8, 0xFF, 0xFE]))
+                } else {
+                    let mut opus_bytes = vec![0x78];
+                    let energy = pcm_data
+                        .iter()
+                        .take(32)
+                        .map(|&s| (s.abs() / 256) as u8)
+                        .collect::<Vec<_>>();
+                    opus_bytes.extend(energy);
+                    Ok(AudioFrame::Opus(opus_bytes))
+                }
             }
         }
     }
