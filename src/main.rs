@@ -1,19 +1,3 @@
-mod config;
-mod dave;
-pub mod dsp;
-pub mod metrics;
-mod models;
-mod player;
-mod plugins;
-pub mod ratelimit;
-mod rest;
-pub mod security;
-mod sources;
-mod stats;
-mod track_encoding;
-pub mod util;
-mod ws;
-
 use axum::{
     routing::{get, patch, post},
     Router,
@@ -23,36 +7,16 @@ use tokio::sync::broadcast;
 use tower_http::cors::{Any, CorsLayer};
 use tracing::{info, warn};
 
-use player::manager::PlayerManager;
-use ratelimit::{RateLimitConfig, RateLimiter};
-use sources::{
+use kizunalink::*;
+use kizunalink::player::manager::PlayerManager;
+use kizunalink::ratelimit::{RateLimitConfig, RateLimiter};
+use kizunalink::sources::{
     apple_music::AppleMusicSource, bandcamp::BandcampSource, deezer::DeezerSource,
     jiosaavn::JioSaavnSource, niconico::NicoNicoSource, route_planner::RoutePlanner,
     soundcloud::SoundCloudSource, spotify::SpotifySource, twitch::TwitchSource, vimeo::VimeoSource,
     youtube::YouTubeSource,
 };
 
-#[derive(Clone)]
-pub struct AppState {
-    pub player_manager: Arc<PlayerManager>,
-    pub jiosaavn: Arc<JioSaavnSource>,
-    pub youtube: Arc<YouTubeSource>,
-    pub spotify: Arc<SpotifySource>,
-    pub soundcloud: Arc<SoundCloudSource>,
-    pub bandcamp: Arc<BandcampSource>,
-    pub twitch: Arc<TwitchSource>,
-    pub vimeo: Arc<VimeoSource>,
-    pub niconico: Arc<NicoNicoSource>,
-    pub apple_music: Arc<AppleMusicSource>,
-    pub deezer: Arc<DeezerSource>,
-    pub plugin_manager: Arc<plugins::PluginManager>,
-    pub dave_manager: dave::DaveManager,
-    pub route_planner: Option<Arc<RoutePlanner>>,
-    pub rate_limiter: Arc<RateLimiter>,
-    pub password: String,
-    pub start_time: std::time::Instant,
-    pub event_tx: broadcast::Sender<String>,
-}
 
 async fn health_check() -> axum::Json<serde_json::Value> {
     axum::Json(serde_json::json!({
