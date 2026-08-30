@@ -168,7 +168,7 @@ async fn test_real_discord_voice_connection() {
 
     // Wait for Connected
     let mut connected = false;
-    for _ in 0..100 {
+    for _ in 0..400 {
         if *rx.borrow() == ConnectionState::Connected {
             connected = true;
             break;
