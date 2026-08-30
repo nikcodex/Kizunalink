@@ -29,9 +29,10 @@ impl Default for GatewaySessionConfig {
 pub struct FakeVoiceGateway {
     endpoint: String,
     port: u16,
-    received_payloads: Arc<Mutex<Vec<VoicePayload>>>,
-    outgoing_tx: Arc<Mutex<Option<mpsc::Sender<VoicePayload>>>>,
     shutdown_tx: Option<tokio::sync::oneshot::Sender<()>>,
+    pub received_payloads: Arc<Mutex<Vec<VoicePayload>>>,
+    pub outgoing_tx: Arc<Mutex<Option<mpsc::Sender<VoicePayload>>>>,
+    pub client_tasks: Arc<Mutex<Vec<tokio::task::JoinHandle<()>>>>,
 }
 
 impl FakeVoiceGateway {
@@ -48,10 +49,12 @@ impl FakeVoiceGateway {
         let endpoint = format!("127.0.0.1:{}", port);
         let received_payloads = Arc::new(Mutex::new(Vec::new()));
         let outgoing_tx = Arc::new(Mutex::new(None));
+        let client_tasks = Arc::new(Mutex::new(Vec::new()));
         let (shutdown_tx, mut shutdown_rx) = tokio::sync::oneshot::channel::<()>();
 
         let received_clone = received_payloads.clone();
         let outgoing_clone = outgoing_tx.clone();
+        let tasks_clone = client_tasks.clone();
 
         tokio::spawn(async move {
             loop {
@@ -63,6 +66,7 @@ impl FakeVoiceGateway {
                         if let Ok((stream, _peer_addr)) = accept_res {
                             let received_in_task = received_clone.clone();
                             let outgoing_in_task = outgoing_clone.clone();
+                            let tasks_in_task = tasks_clone.clone();
                             let cfg = config.clone();
 
                             tokio::spawn(async move {
@@ -160,6 +164,9 @@ impl FakeVoiceGateway {
                                     send_task.abort();
                                 }
                             });
+
+                            let mut tasks = tasks_in_task.lock().await;
+                            tasks.push(receive_task);
                         }
                     }
                 }
@@ -167,10 +174,11 @@ impl FakeVoiceGateway {
         });
 
         Ok(Self {
-            endpoint,
+            endpoint: format!("ws://{}", endpoint),
             port,
             received_payloads,
             outgoing_tx,
+            client_tasks,
             shutdown_tx: Some(shutdown_tx),
         })
     }
@@ -239,7 +247,10 @@ impl FakeVoiceGateway {
     }
 
     pub async fn drop_clients(&self) {
-        // To drop clients, we just drop the outgoing sender which causes the send_task to exit and ws to close.
+        let mut tasks = self.client_tasks.lock().await;
+        for task in tasks.drain(..) {
+            task.abort();
+        }
         let mut out = self.outgoing_tx.lock().await;
         *out = None;
     }
