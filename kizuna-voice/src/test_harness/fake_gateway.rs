@@ -258,5 +258,13 @@ impl Drop for FakeVoiceGateway {
         if let Some(tx) = self.shutdown_tx.take() {
             let _ = tx.send(());
         }
+        
+        let tasks_arc = self.client_tasks.clone();
+        tokio::spawn(async move {
+            let mut tasks = tasks_arc.lock().await;
+            for task in tasks.drain(..) {
+                task.abort();
+            }
+        });
     }
 }

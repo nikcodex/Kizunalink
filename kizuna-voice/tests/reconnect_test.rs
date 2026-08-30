@@ -104,10 +104,10 @@ async fn test_manager_resume_success() {
 
     // 1. Wait for initial connection (Identify)
     loop {
-        let _ = rx.changed().await;
         if *rx.borrow() == ConnectionState::Connected {
             break;
         }
+        let _ = rx.changed().await;
     }
 
     assert!(fake_gw.has_received_opcode(0).await, "Did not send Identify");
