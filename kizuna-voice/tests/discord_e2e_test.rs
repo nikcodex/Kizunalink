@@ -63,7 +63,7 @@ async fn test_real_discord_voice_connection() {
                 });
                 ws_stream.send(Message::Text(identify.to_string())).await.unwrap();
             } else if op == 0 && payload["t"] == "READY" {
-                info!("Main Gateway: READY");
+                println!("Main Gateway: READY");
                 session_id = payload["d"]["session_id"].as_str().unwrap().to_string();
                 user_id = payload["d"]["user"]["id"].as_str().unwrap().to_string();
                 break;
@@ -98,12 +98,12 @@ async fn test_real_discord_voice_connection() {
                 if t == "VOICE_STATE_UPDATE" {
                     if payload["d"]["user_id"].as_str().unwrap() == user_id {
                         voice_session_id = payload["d"]["session_id"].as_str().unwrap().to_string();
-                        info!("Got Voice Session ID: {}", voice_session_id);
+                        println!("Got Voice Session ID: {}", voice_session_id);
                     }
                 } else if t == "VOICE_SERVER_UPDATE" {
                     voice_endpoint = payload["d"]["endpoint"].as_str().unwrap().to_string();
                     voice_token = payload["d"]["token"].as_str().unwrap().to_string();
-                    info!("Got Voice Server Update: {}", voice_endpoint);
+                    println!("Got Voice Server Update: {}", voice_endpoint);
                 }
             }
         }
@@ -131,7 +131,7 @@ async fn test_real_discord_voice_connection() {
         }
     });
 
-    info!("Starting VoiceConnectionManager...");
+    println!("Starting VoiceConnectionManager...");
     // Replace wss:// endpoint formatting
     let wss_endpoint = format!("wss://{}?v=8", voice_endpoint);
     let credentials = VoiceCredentials {
@@ -176,7 +176,7 @@ async fn test_real_discord_voice_connection() {
         sleep(Duration::from_millis(100)).await;
     }
     assert!(connected, "VoiceConnectionManager failed to reach Connected state in real E2E");
-    info!("Real Discord Voice Gateway CONNECTED!");
+    println!("Real Discord Voice Gateway CONNECTED!");
     
     // Ensure UDP discovery succeeded
     let has_udp = udp_socket.read().await.is_some();
@@ -186,7 +186,7 @@ async fn test_real_discord_voice_connection() {
     let has_crypto = crypto.lock().await.is_some();
     assert!(has_crypto, "Transport Crypto was not initialized (missing secret_key)");
 
-    info!("UDP and TransportCrypto initialized successfully. Simulating audio transmission...");
+    println!("UDP and TransportCrypto initialized successfully. Simulating audio transmission...");
     
     // Test the data path (Opus -> DAVE -> TransportCrypto)
     let mut opus_encoder = OpusEncoder::new().unwrap();
@@ -199,7 +199,7 @@ async fn test_real_discord_voice_connection() {
     };
     assert!(!opus_data.is_empty(), "Opus encoding failed");
     
-    info!("Audio simulation complete. Real Discord E2E test PASSED!");
+    println!("Audio simulation complete. Real Discord E2E test PASSED!");
 
     manager.shutdown().await;
     let _ = jh.await;
