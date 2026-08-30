@@ -268,6 +268,9 @@ impl VoiceConnectionManager {
                     // Need a new connection for fresh identify since this one errored
                     return Err(format!("Resume failed: {}", e));
                 }
+                Err(_) => {
+                    return Err("Timeout waiting for Resumed".to_string());
+                }
             }
         } else {
             // Fresh Identify
