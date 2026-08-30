@@ -1,0 +1,502 @@
+﻿2026-08-30T09:32:41.0934277Z Current runner version: '2.336.0'
+2026-08-30T09:32:41.0951062Z ##[group]Runner Image Provisioner
+2026-08-30T09:32:41.0951854Z Hosted Compute Agent
+2026-08-30T09:32:41.0952335Z Version: 20260819.586
+2026-08-30T09:32:41.0952985Z Commit: 3cc4a88dfa507ef76119ad1bb3eccc6378bb2b76
+2026-08-30T09:32:41.0953515Z Build Date: 2026-08-18T23:20:18Z
+2026-08-30T09:32:41.0953999Z Worker ID: {92b491a8-b915-4b78-8a41-cc04cbb92e50}
+2026-08-30T09:32:41.0954481Z Azure Region: centralus
+2026-08-30T09:32:41.0954858Z ##[endgroup]
+2026-08-30T09:32:41.0955923Z ##[group]Operating System
+2026-08-30T09:32:41.0956361Z Ubuntu
+2026-08-30T09:32:41.0956764Z 24.04.4
+2026-08-30T09:32:41.0957150Z LTS
+2026-08-30T09:32:41.0957491Z ##[endgroup]
+2026-08-30T09:32:41.0957883Z ##[group]Runner Image
+2026-08-30T09:32:41.0958303Z Image: ubuntu-24.04
+2026-08-30T09:32:41.0958681Z Version: 20260823.283.1
+2026-08-30T09:32:41.0959556Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260823.283/images/ubuntu/Ubuntu2404-Readme.md
+2026-08-30T09:32:41.0960588Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260823.283
+2026-08-30T09:32:41.0961310Z ##[endgroup]
+2026-08-30T09:32:41.0962137Z ##[group]GITHUB_TOKEN Permissions
+2026-08-30T09:32:41.0963818Z Contents: read
+2026-08-30T09:32:41.0964232Z Metadata: read
+2026-08-30T09:32:41.0964640Z Packages: read
+2026-08-30T09:32:41.0965016Z ##[endgroup]
+2026-08-30T09:32:41.0966522Z Secret source: Actions
+2026-08-30T09:32:41.0967209Z Prepare workflow directory
+2026-08-30T09:32:41.1234870Z Prepare all required actions
+2026-08-30T09:32:41.1268900Z Getting action download info
+2026-08-30T09:32:41.3211282Z Download action repository 'actions/checkout@v4' (SHA:11d5960a326750d5838078e36cf38b85af677262)
+2026-08-30T09:32:41.5519232Z Download action repository 'dtolnay/rust-toolchain@stable' (SHA:4360b52568e2003a75bf9bc1d59f33a8e3fc893c)
+2026-08-30T09:32:41.7057611Z Download action repository 'Swatinem/rust-cache@v2' (SHA:6323deb102c322ba6fcbdcafc7e3dddab59af2b6)
+2026-08-30T09:32:42.2447070Z Complete job name: Check
+2026-08-30T09:32:42.2941404Z Node 20 is being deprecated. This workflow is running with Node 24 by default. If you need to temporarily use Node 20, you can set the ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true environment variable. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+2026-08-30T09:32:42.2948120Z ##[group]Run actions/checkout@v4
+2026-08-30T09:32:42.2948761Z with:
+2026-08-30T09:32:42.2949207Z   repository: nikcodex/Kizunalink
+2026-08-30T09:32:42.2952198Z   token: ***
+2026-08-30T09:32:42.2952768Z   ssh-strict: true
+2026-08-30T09:32:42.2953210Z   ssh-user: git
+2026-08-30T09:32:42.2953701Z   persist-credentials: true
+2026-08-30T09:32:42.2954149Z   clean: true
+2026-08-30T09:32:42.2954551Z   sparse-checkout-cone-mode: true
+2026-08-30T09:32:42.2955038Z   fetch-depth: 1
+2026-08-30T09:32:42.2955440Z   fetch-tags: false
+2026-08-30T09:32:42.2955902Z   show-progress: true
+2026-08-30T09:32:42.2956319Z   lfs: false
+2026-08-30T09:32:42.2956841Z   submodules: false
+2026-08-30T09:32:42.2957253Z   set-safe-directory: true
+2026-08-30T09:32:42.2957696Z   allow-unsafe-pr-checkout: false
+2026-08-30T09:32:42.2958315Z env:
+2026-08-30T09:32:42.2958698Z   CARGO_TERM_COLOR: always
+2026-08-30T09:32:42.2959125Z ##[endgroup]
+2026-08-30T09:32:42.3691142Z Syncing repository: nikcodex/Kizunalink
+2026-08-30T09:32:42.3693524Z ##[group]Getting Git version info
+2026-08-30T09:32:42.3694651Z Working directory is '/home/runner/work/Kizunalink/Kizunalink'
+2026-08-30T09:32:42.3696025Z [command]/usr/bin/git version
+2026-08-30T09:32:42.4700008Z git version 2.55.0
+2026-08-30T09:32:42.4749113Z ##[endgroup]
+2026-08-30T09:32:42.4760885Z Temporarily overriding HOME='/home/runner/work/_temp/45c8b72f-64c3-4b70-b3a5-9ab7c1f11807' before making global git config changes
+2026-08-30T09:32:42.4761909Z Adding repository directory to the temporary git global config as a safe directory
+2026-08-30T09:32:42.4765799Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/Kizunalink/Kizunalink
+2026-08-30T09:32:42.4804598Z Deleting the contents of '/home/runner/work/Kizunalink/Kizunalink'
+2026-08-30T09:32:42.4807714Z ##[group]Initializing the repository
+2026-08-30T09:32:42.4811349Z [command]/usr/bin/git init /home/runner/work/Kizunalink/Kizunalink
+2026-08-30T09:32:42.4897441Z hint: Using 'master' as the name for the initial branch. This default branch name
+2026-08-30T09:32:42.4898677Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+2026-08-30T09:32:42.4899653Z hint: to use in all of your new repositories, which will suppress this warning,
+2026-08-30T09:32:42.4900393Z hint: call:
+2026-08-30T09:32:42.4900843Z hint:
+2026-08-30T09:32:42.4901365Z hint: 	git config --global init.defaultBranch <name>
+2026-08-30T09:32:42.4901876Z hint:
+2026-08-30T09:32:42.4902356Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+2026-08-30T09:32:42.4903225Z hint: 'development'. The just-created branch can be renamed via this command:
+2026-08-30T09:32:42.4903865Z hint:
+2026-08-30T09:32:42.4904208Z hint: 	git branch -m <name>
+2026-08-30T09:32:42.4904574Z hint:
+2026-08-30T09:32:42.4905263Z hint: Disable this message with "git config set advice.defaultBranchName false"
+2026-08-30T09:32:42.4906899Z Initialized empty Git repository in /home/runner/work/Kizunalink/Kizunalink/.git/
+2026-08-30T09:32:42.4908356Z [command]/usr/bin/git remote add origin https://github.com/nikcodex/Kizunalink
+2026-08-30T09:32:42.4943768Z ##[endgroup]
+2026-08-30T09:32:42.4944392Z ##[group]Disabling automatic garbage collection
+2026-08-30T09:32:42.4946066Z [command]/usr/bin/git config --local gc.auto 0
+2026-08-30T09:32:42.4966945Z ##[endgroup]
+2026-08-30T09:32:42.4967545Z ##[group]Setting up auth
+2026-08-30T09:32:42.4970902Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-08-30T09:32:42.4992242Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-08-30T09:32:42.5256872Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-08-30T09:32:42.5279093Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-08-30T09:32:42.5425778Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-08-30T09:32:42.5448652Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-08-30T09:32:42.5593640Z [command]/usr/bin/git config --local http.https://github.com/.extraheader AUTHORIZATION: basic ***
+2026-08-30T09:32:42.5618663Z ##[endgroup]
+2026-08-30T09:32:42.5619560Z ##[group]Fetching the repository
+2026-08-30T09:32:42.5626387Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +2bc74d30c87597c29eeddd2d5ce7dc9ff4a890fc:refs/remotes/origin/main
+2026-08-30T09:32:43.1495593Z From https://github.com/nikcodex/Kizunalink
+2026-08-30T09:32:43.1497447Z  * [new ref]         2bc74d30c87597c29eeddd2d5ce7dc9ff4a890fc -> origin/main
+2026-08-30T09:32:43.1501292Z ##[endgroup]
+2026-08-30T09:32:43.1503300Z ##[group]Determining the checkout info
+2026-08-30T09:32:43.1505438Z ##[endgroup]
+2026-08-30T09:32:43.1509820Z [command]/usr/bin/git sparse-checkout disable
+2026-08-30T09:32:43.1565271Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+2026-08-30T09:32:43.1590377Z ##[group]Checking out the ref
+2026-08-30T09:32:43.1593056Z [command]/usr/bin/git checkout --progress --force -B main refs/remotes/origin/main
+2026-08-30T09:32:43.3626247Z Switched to a new branch 'main'
+2026-08-30T09:32:43.3628869Z branch 'main' set up to track 'origin/main'.
+2026-08-30T09:32:43.3634545Z ##[endgroup]
+2026-08-30T09:32:43.3675637Z [command]/usr/bin/git log -1 --format=%H
+2026-08-30T09:32:43.3693925Z 2bc74d30c87597c29eeddd2d5ce7dc9ff4a890fc
+2026-08-30T09:32:43.4137649Z ##[group]Run dtolnay/rust-toolchain@stable
+2026-08-30T09:32:43.4138576Z with:
+2026-08-30T09:32:43.4139217Z   toolchain: stable
+2026-08-30T09:32:43.4139905Z env:
+2026-08-30T09:32:43.4140530Z   CARGO_TERM_COLOR: always
+2026-08-30T09:32:43.4141290Z ##[endgroup]
+2026-08-30T09:32:43.4208488Z ##[start-action display=Parse toolchain version;id=__dtolnay_rust-toolchain.parse]
+2026-08-30T09:32:43.4265855Z ##[group]Run if [[ -z $toolchain ]]; then
+2026-08-30T09:32:43.4266795Z [36;1mif [[ -z $toolchain ]]; then[0m
+2026-08-30T09:32:43.4268229Z [36;1m  # GitHub does not enforce `required: true` inputs itself. https://github.com/actions/runner/issues/1070[0m
+2026-08-30T09:32:43.4269672Z [36;1m  echo "'toolchain' is a required input" >&2[0m
+2026-08-30T09:32:43.4270605Z [36;1m  exit 1[0m
+2026-08-30T09:32:43.4271622Z [36;1melif [[ $toolchain =~ ^stable' '[0-9]+' '(year|month|week|day)s?' 'ago$ ]]; then[0m
+2026-08-30T09:32:43.4273030Z [36;1m  if [[ Linux == macOS ]]; then[0m
+2026-08-30T09:32:43.4274542Z [36;1m    echo "toolchain=1.$((($(date -v-$(sed 's/stable \([0-9]*\) \(.\).*/\1\2/' <<< $toolchain) +%s)/60/60/24-16569)/7/6))" >> $GITHUB_OUTPUT[0m
+2026-08-30T09:32:43.4275906Z [36;1m  else[0m
+2026-08-30T09:32:43.4277049Z [36;1m    echo "toolchain=1.$((($(date --date "${toolchain#stable }" +%s)/60/60/24-16569)/7/6))" >> $GITHUB_OUTPUT[0m
+2026-08-30T09:32:43.4278307Z [36;1m  fi[0m
+2026-08-30T09:32:43.4279192Z [36;1melif [[ $toolchain =~ ^stable' 'minus' '[0-9]+' 'releases?$ ]]; then[0m
+2026-08-30T09:32:43.4280672Z [36;1m  echo "toolchain=1.$((($(date +%s)/60/60/24-16569)/7/6-${toolchain//[^0-9]/}))" >> $GITHUB_OUTPUT[0m
+2026-08-30T09:32:43.4281976Z [36;1melif [[ $toolchain =~ ^1\.[0-9]+$ ]]; then[0m
+2026-08-30T09:32:43.4283559Z [36;1m  echo "toolchain=1.$((i=${toolchain#1.}, c=($(date +%s)/60/60/24-16569)/7/6, i+9*i*(10*i<=c)+90*i*(100*i<=c)))" >> $GITHUB_OUTPUT[0m
+2026-08-30T09:32:43.4284959Z [36;1melse[0m
+2026-08-30T09:32:43.4285706Z [36;1m  echo "toolchain=$toolchain" >> $GITHUB_OUTPUT[0m
+2026-08-30T09:32:43.4286588Z [36;1mfi[0m
+2026-08-30T09:32:43.4313806Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-08-30T09:32:43.4314765Z env:
+2026-08-30T09:32:43.4315404Z   CARGO_TERM_COLOR: always
+2026-08-30T09:32:43.4316161Z   toolchain: stable
+2026-08-30T09:32:43.4316789Z ##[endgroup]
+2026-08-30T09:32:43.4408397Z ##[end-action id=__dtolnay_rust-toolchain.parse;outcome=success;conclusion=success;duration_ms=19]
+2026-08-30T09:32:43.4421136Z ##[start-action display=Construct rustup command line;id=__dtolnay_rust-toolchain.flags]
+2026-08-30T09:32:43.4457873Z ##[group]Run echo "targets=$(for t in ${targets//,/ }; do echo -n ' --target' $t; done)" >> $GITHUB_OUTPUT
+2026-08-30T09:32:43.4459560Z [36;1mecho "targets=$(for t in ${targets//,/ }; do echo -n ' --target' $t; done)" >> $GITHUB_OUTPUT[0m
+2026-08-30T09:32:43.4461280Z [36;1mecho "components=$(for c in ${components//,/ }; do echo -n ' --component' $c; done)" >> $GITHUB_OUTPUT[0m
+2026-08-30T09:32:43.4463088Z [36;1mecho "downgrade=" >> $GITHUB_OUTPUT[0m
+2026-08-30T09:32:43.4484465Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-08-30T09:32:43.4485484Z env:
+2026-08-30T09:32:43.4486117Z   CARGO_TERM_COLOR: always
+2026-08-30T09:32:43.4486865Z   targets: 
+2026-08-30T09:32:43.4487473Z   components: 
+2026-08-30T09:32:43.4488079Z ##[endgroup]
+2026-08-30T09:32:43.5262139Z ##[end-action id=__dtolnay_rust-toolchain.flags;outcome=success;conclusion=success;duration_ms=83]
+2026-08-30T09:32:43.5267183Z ##[start-action display=Set $CARGO_HOME;id=__dtolnay_rust-toolchain.__run]
+2026-08-30T09:32:43.5296569Z ##[group]Run echo CARGO_HOME=${CARGO_HOME:-"$HOME/.cargo"} >> $GITHUB_ENV
+2026-08-30T09:32:43.5297896Z [36;1mecho CARGO_HOME=${CARGO_HOME:-"$HOME/.cargo"} >> $GITHUB_ENV[0m
+2026-08-30T09:32:43.5316451Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-08-30T09:32:43.5317403Z env:
+2026-08-30T09:32:43.5318131Z   CARGO_TERM_COLOR: always
+2026-08-30T09:32:43.5318855Z ##[endgroup]
+2026-08-30T09:32:43.5369154Z ##[end-action id=__dtolnay_rust-toolchain.__run;outcome=success;conclusion=success;duration_ms=10]
+2026-08-30T09:32:43.5374143Z ##[start-action display=Install rustup if needed;id=__dtolnay_rust-toolchain.__run_2]
+2026-08-30T09:32:43.5410535Z ##[group]Run if ! command -v rustup &>/dev/null; then
+2026-08-30T09:32:43.5411561Z [36;1mif ! command -v rustup &>/dev/null; then[0m
+2026-08-30T09:32:43.5413549Z [36;1m  curl --proto '=https' --tlsv1.2 --retry 10 --retry-connrefused --location --silent --show-error --fail https://sh.rustup.rs | sh -s -- --default-toolchain none -y[0m
+2026-08-30T09:32:43.5415422Z [36;1m  echo "$CARGO_HOME/bin" >> $GITHUB_PATH[0m
+2026-08-30T09:32:43.5416290Z [36;1mfi[0m
+2026-08-30T09:32:43.5434924Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-08-30T09:32:43.5435883Z env:
+2026-08-30T09:32:43.5436536Z   CARGO_TERM_COLOR: always
+2026-08-30T09:32:43.5437382Z   CARGO_HOME: /home/runner/.cargo
+2026-08-30T09:32:43.5438100Z ##[endgroup]
+2026-08-30T09:32:43.5486390Z ##[end-action id=__dtolnay_rust-toolchain.__run_2;outcome=success;conclusion=success;duration_ms=11]
+2026-08-30T09:32:43.5491237Z ##[start-action display=Install rustup if needed on windows;id=__dtolnay_rust-toolchain.__run_3]
+2026-08-30T09:32:43.5502156Z ##[end-action id=__dtolnay_rust-toolchain.__run_3;outcome=skipped;conclusion=skipped;duration_ms=0]
+2026-08-30T09:32:43.5513495Z ##[start-action display=rustup toolchain install stable;id=__dtolnay_rust-toolchain.__run_4]
+2026-08-30T09:32:43.5542689Z ##[group]Run rustup toolchain install stable --profile minimal --no-self-update
+2026-08-30T09:32:43.5544168Z [36;1mrustup toolchain install stable --profile minimal --no-self-update[0m
+2026-08-30T09:32:43.5563258Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-08-30T09:32:43.5564246Z env:
+2026-08-30T09:32:43.5564876Z   CARGO_TERM_COLOR: always
+2026-08-30T09:32:43.5565625Z   CARGO_HOME: /home/runner/.cargo
+2026-08-30T09:32:43.5566423Z   RUSTUP_PERMIT_COPY_RENAME: 1
+2026-08-30T09:32:43.5567128Z ##[endgroup]
+2026-08-30T09:32:43.9304479Z info: syncing channel updates for stable-x86_64-unknown-linux-gnu
+2026-08-30T09:32:44.0258723Z 
+2026-08-30T09:32:44.0341306Z   stable-x86_64-unknown-linux-gnu unchanged - rustc 1.98.0 (88d9e12ae 2026-08-18)
+2026-08-30T09:32:44.0341844Z 
+2026-08-30T09:32:44.0362794Z ##[end-action id=__dtolnay_rust-toolchain.__run_4;outcome=success;conclusion=success;duration_ms=484]
+2026-08-30T09:32:44.0368149Z ##[start-action display=rustup default stable;id=__dtolnay_rust-toolchain.__run_5]
+2026-08-30T09:32:44.0385100Z ##[group]Run rustup default stable
+2026-08-30T09:32:44.0385458Z [36;1mrustup default stable[0m
+2026-08-30T09:32:44.0408176Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-08-30T09:32:44.0408544Z env:
+2026-08-30T09:32:44.0408776Z   CARGO_TERM_COLOR: always
+2026-08-30T09:32:44.0409077Z   CARGO_HOME: /home/runner/.cargo
+2026-08-30T09:32:44.0409362Z ##[endgroup]
+2026-08-30T09:32:44.0481783Z info: using existing install for stable-x86_64-unknown-linux-gnu
+2026-08-30T09:32:44.0496049Z info: default toolchain set to stable-x86_64-unknown-linux-gnu
+2026-08-30T09:32:44.0496390Z 
+2026-08-30T09:32:44.0558212Z   stable-x86_64-unknown-linux-gnu unchanged - rustc 1.98.0 (88d9e12ae 2026-08-18)
+2026-08-30T09:32:44.0558629Z 
+2026-08-30T09:32:44.0568750Z ##[end-action id=__dtolnay_rust-toolchain.__run_5;outcome=success;conclusion=success;duration_ms=19]
+2026-08-30T09:32:44.0571428Z ##[start-action display=Create cachekey;id=__dtolnay_rust-toolchain.rustc-version]
+2026-08-30T09:32:44.0587981Z ##[group]Run DATE=$(rustc +stable --version --verbose | sed -ne 's/^commit-date: \(20[0-9][0-9]\)-\([01][0-9]\)-\([0-3][0-9]\)$/\1\2\3/p')
+2026-08-30T09:32:44.0588659Z [36;1mDATE=$(rustc +stable --version --verbose | sed -ne 's/^commit-date: \(20[0-9][0-9]\)-\([01][0-9]\)-\([0-3][0-9]\)$/\1\2\3/p')[0m
+2026-08-30T09:32:44.0589205Z [36;1mHASH=$(rustc +stable --version --verbose | sed -ne 's/^commit-hash: //p')[0m
+2026-08-30T09:32:44.0589863Z [36;1mecho "cachekey=$(echo $DATE$HASH | head -c12)" >> $GITHUB_OUTPUT[0m
+2026-08-30T09:32:44.0607601Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-08-30T09:32:44.0607971Z env:
+2026-08-30T09:32:44.0608233Z   CARGO_TERM_COLOR: always
+2026-08-30T09:32:44.0608587Z   CARGO_HOME: /home/runner/.cargo
+2026-08-30T09:32:44.0608877Z ##[endgroup]
+2026-08-30T09:32:44.1879285Z ##[end-action id=__dtolnay_rust-toolchain.rustc-version;outcome=success;conclusion=success;duration_ms=130]
+2026-08-30T09:32:44.1881729Z ##[start-action display=Disable incremental compilation;id=__dtolnay_rust-toolchain.__run_6]
+2026-08-30T09:32:44.1897289Z ##[group]Run if [ -z "${CARGO_INCREMENTAL+set}" ]; then
+2026-08-30T09:32:44.1897700Z [36;1mif [ -z "${CARGO_INCREMENTAL+set}" ]; then[0m
+2026-08-30T09:32:44.1898054Z [36;1m  echo CARGO_INCREMENTAL=0 >> $GITHUB_ENV[0m
+2026-08-30T09:32:44.1898373Z [36;1mfi[0m
+2026-08-30T09:32:44.1916026Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-08-30T09:32:44.1916406Z env:
+2026-08-30T09:32:44.1916689Z   CARGO_TERM_COLOR: always
+2026-08-30T09:32:44.1917045Z   CARGO_HOME: /home/runner/.cargo
+2026-08-30T09:32:44.1917332Z ##[endgroup]
+2026-08-30T09:32:44.1954670Z ##[end-action id=__dtolnay_rust-toolchain.__run_6;outcome=success;conclusion=success;duration_ms=7]
+2026-08-30T09:32:44.1956823Z ##[start-action display=Enable colors in Cargo output;id=__dtolnay_rust-toolchain.__run_7]
+2026-08-30T09:32:44.1972093Z ##[group]Run if [ -z "${CARGO_TERM_COLOR+set}" ]; then
+2026-08-30T09:32:44.1972450Z [36;1mif [ -z "${CARGO_TERM_COLOR+set}" ]; then[0m
+2026-08-30T09:32:44.1973068Z [36;1m  echo CARGO_TERM_COLOR=always >> $GITHUB_ENV[0m
+2026-08-30T09:32:44.1973402Z [36;1mfi[0m
+2026-08-30T09:32:44.1989768Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-08-30T09:32:44.1990163Z env:
+2026-08-30T09:32:44.1990429Z   CARGO_TERM_COLOR: always
+2026-08-30T09:32:44.1990744Z   CARGO_HOME: /home/runner/.cargo
+2026-08-30T09:32:44.1991050Z   CARGO_INCREMENTAL: 0
+2026-08-30T09:32:44.1991303Z ##[endgroup]
+2026-08-30T09:32:44.2027718Z ##[end-action id=__dtolnay_rust-toolchain.__run_7;outcome=success;conclusion=success;duration_ms=7]
+2026-08-30T09:32:44.2029998Z ##[start-action display=Enable Cargo sparse registry;id=__dtolnay_rust-toolchain.__run_8]
+2026-08-30T09:32:44.2046708Z ##[group]Run # implemented in 1.66, stabilized in 1.68, made default in 1.70
+2026-08-30T09:32:44.2047202Z [36;1m# implemented in 1.66, stabilized in 1.68, made default in 1.70[0m
+2026-08-30T09:32:44.2047846Z [36;1mif [ -z "${CARGO_REGISTRIES_CRATES_IO_PROTOCOL+set}" -o -f "/home/runner/work/_temp"/.implicit_cargo_registries_crates_io_protocol ]; then[0m
+2026-08-30T09:32:44.2048446Z [36;1m  if rustc +stable --version --verbose | grep -q '^release: 1\.6[89]\.'; then[0m
+2026-08-30T09:32:44.2048960Z [36;1m    touch "/home/runner/work/_temp"/.implicit_cargo_registries_crates_io_protocol || true[0m
+2026-08-30T09:32:44.2049439Z [36;1m    echo CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse >> $GITHUB_ENV[0m
+2026-08-30T09:32:44.2049912Z [36;1m  elif rustc +stable --version --verbose | grep -q '^release: 1\.6[67]\.'; then[0m
+2026-08-30T09:32:44.2050460Z [36;1m    touch "/home/runner/work/_temp"/.implicit_cargo_registries_crates_io_protocol || true[0m
+2026-08-30T09:32:44.2050916Z [36;1m    echo CARGO_REGISTRIES_CRATES_IO_PROTOCOL=git >> $GITHUB_ENV[0m
+2026-08-30T09:32:44.2051288Z [36;1m  fi[0m
+2026-08-30T09:32:44.2051548Z [36;1mfi[0m
+2026-08-30T09:32:44.2067934Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-08-30T09:32:44.2068292Z env:
+2026-08-30T09:32:44.2068584Z   CARGO_TERM_COLOR: always
+2026-08-30T09:32:44.2068908Z   CARGO_HOME: /home/runner/.cargo
+2026-08-30T09:32:44.2069188Z   CARGO_INCREMENTAL: 0
+2026-08-30T09:32:44.2069471Z ##[endgroup]
+2026-08-30T09:32:44.2303263Z ##[end-action id=__dtolnay_rust-toolchain.__run_8;outcome=success;conclusion=success;duration_ms=27]
+2026-08-30T09:32:44.2305599Z ##[start-action display=Work around spurious network errors in curl 8.0;id=__dtolnay_rust-toolchain.__run_9]
+2026-08-30T09:32:44.2321717Z ##[group]Run # https://rust-lang.zulipchat.com/#narrow/stream/246057-t-cargo/topic/timeout.20investigation
+2026-08-30T09:32:44.2322359Z [36;1m# https://rust-lang.zulipchat.com/#narrow/stream/246057-t-cargo/topic/timeout.20investigation[0m
+2026-08-30T09:32:44.2323101Z [36;1mif rustc +stable --version --verbose | grep -q '^release: 1\.7[01]\.'; then[0m
+2026-08-30T09:32:44.2323527Z [36;1m  echo CARGO_HTTP_MULTIPLEXING=false >> $GITHUB_ENV[0m
+2026-08-30T09:32:44.2323863Z [36;1mfi[0m
+2026-08-30T09:32:44.2339724Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-08-30T09:32:44.2340088Z env:
+2026-08-30T09:32:44.2340333Z   CARGO_TERM_COLOR: always
+2026-08-30T09:32:44.2340624Z   CARGO_HOME: /home/runner/.cargo
+2026-08-30T09:32:44.2340893Z   CARGO_INCREMENTAL: 0
+2026-08-30T09:32:44.2341176Z ##[endgroup]
+2026-08-30T09:32:44.2470911Z ##[end-action id=__dtolnay_rust-toolchain.__run_9;outcome=success;conclusion=success;duration_ms=16]
+2026-08-30T09:32:44.2474660Z ##[start-action display=rustc +stable --version --verbose;id=__dtolnay_rust-toolchain.__run_10]
+2026-08-30T09:32:44.2489892Z ##[group]Run rustc +stable --version --verbose
+2026-08-30T09:32:44.2490249Z [36;1mrustc +stable --version --verbose[0m
+2026-08-30T09:32:44.2506221Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-08-30T09:32:44.2506589Z env:
+2026-08-30T09:32:44.2506886Z   CARGO_TERM_COLOR: always
+2026-08-30T09:32:44.2507166Z   CARGO_HOME: /home/runner/.cargo
+2026-08-30T09:32:44.2507486Z   CARGO_INCREMENTAL: 0
+2026-08-30T09:32:44.2507767Z ##[endgroup]
+2026-08-30T09:32:44.2625766Z rustc 1.98.0 (88d9e12ae 2026-08-18)
+2026-08-30T09:32:44.2626371Z binary: rustc
+2026-08-30T09:32:44.2626956Z commit-hash: 88d9e12ae178fab0fb5cc050a94da85685d449ea
+2026-08-30T09:32:44.2627487Z commit-date: 2026-08-18
+2026-08-30T09:32:44.2628009Z host: x86_64-unknown-linux-gnu
+2026-08-30T09:32:44.2628476Z release: 1.98.0
+2026-08-30T09:32:44.2628889Z LLVM version: 22.1.8
+2026-08-30T09:32:44.2640354Z ##[end-action id=__dtolnay_rust-toolchain.__run_10;outcome=success;conclusion=success;duration_ms=16]
+2026-08-30T09:32:44.2729103Z ##[group]Run Swatinem/rust-cache@v2
+2026-08-30T09:32:44.2729486Z with:
+2026-08-30T09:32:44.2729801Z   prefix-key: v0-rust
+2026-08-30T09:32:44.2730085Z   add-job-id-key: true
+2026-08-30T09:32:44.2730423Z   add-rust-environment-hash-key: true
+2026-08-30T09:32:44.2730769Z   cache-targets: true
+2026-08-30T09:32:44.2731079Z   cache-all-crates: false
+2026-08-30T09:32:44.2731387Z   cache-workspace-crates: false
+2026-08-30T09:32:44.2731690Z   save-if: true
+2026-08-30T09:32:44.2731966Z   cache-provider: github
+2026-08-30T09:32:44.2732255Z   cache-bin: true
+2026-08-30T09:32:44.2732716Z   lookup-only: false
+2026-08-30T09:32:44.2733106Z   cmd-format: {0}
+2026-08-30T09:32:44.2733379Z env:
+2026-08-30T09:32:44.2733654Z   CARGO_TERM_COLOR: always
+2026-08-30T09:32:44.2733969Z   CARGO_HOME: /home/runner/.cargo
+2026-08-30T09:32:44.2734272Z   CARGO_INCREMENTAL: 0
+2026-08-30T09:32:44.2734545Z ##[endgroup]
+2026-08-30T09:32:44.5155453Z ##[group]Cache Configuration
+2026-08-30T09:32:44.5155966Z Cache Provider:
+2026-08-30T09:32:44.5156232Z     github
+2026-08-30T09:32:44.5156571Z Workspaces:
+2026-08-30T09:32:44.5156941Z     /home/runner/work/Kizunalink/Kizunalink
+2026-08-30T09:32:44.5157253Z Cache Paths:
+2026-08-30T09:32:44.5157522Z     /home/runner/.cargo/bin
+2026-08-30T09:32:44.5157820Z     /home/runner/.cargo/.crates.toml
+2026-08-30T09:32:44.5158142Z     /home/runner/.cargo/.crates2.json
+2026-08-30T09:32:44.5158503Z     /home/runner/.cargo/registry
+2026-08-30T09:32:44.5158875Z     /home/runner/.cargo/git
+2026-08-30T09:32:44.5159241Z     /home/runner/work/Kizunalink/Kizunalink/target
+2026-08-30T09:32:44.5159609Z Restore Key:
+2026-08-30T09:32:44.5159925Z     v0-rust-check-Linux-x64-0b9fd15e
+2026-08-30T09:32:44.5160201Z Cache Key:
+2026-08-30T09:32:44.5160460Z     v0-rust-check-Linux-x64-0b9fd15e-50d17467
+2026-08-30T09:32:44.5160774Z .. Prefix:
+2026-08-30T09:32:44.5161237Z   - v0-rust-check-Linux-x64
+2026-08-30T09:32:44.5161544Z .. Environment considered:
+2026-08-30T09:32:44.5161829Z   - Rust Versions:
+2026-08-30T09:32:44.5162213Z     - 1.98.0 x86_64-unknown-linux-gnu 88d9e12ae178fab0fb5cc050a94da85685d449ea
+2026-08-30T09:32:44.5162741Z   - CARGO_HOME
+2026-08-30T09:32:44.5163058Z   - CARGO_INCREMENTAL
+2026-08-30T09:32:44.5163440Z   - CARGO_TERM_COLOR
+2026-08-30T09:32:44.5163779Z .. Lockfiles considered:
+2026-08-30T09:32:44.5164171Z   - /home/runner/work/Kizunalink/Kizunalink/Cargo.toml
+2026-08-30T09:32:44.5164633Z   - /home/runner/work/Kizunalink/Kizunalink/kizuna-voice/Cargo.toml
+2026-08-30T09:32:44.5165305Z ##[endgroup]
+2026-08-30T09:32:44.5165441Z 
+2026-08-30T09:32:44.5165665Z ... Restoring cache ...
+2026-08-30T09:32:44.6385687Z Cache hit for: v0-rust-check-Linux-x64-0b9fd15e-50d17467
+2026-08-30T09:32:45.7632422Z Received 134217728 of 278450790 (48.2%), 127.9 MBs/sec
+2026-08-30T09:32:46.5014251Z Received 278450790 of 278450790 (100.0%), 153.1 MBs/sec
+2026-08-30T09:32:46.5015865Z Cache Size: ~266 MB (278450790 B)
+2026-08-30T09:32:46.5061411Z [command]/usr/bin/tar -xf /home/runner/work/_temp/fd8302d9-bab1-4335-94f0-8c082672c00f/cache.tzst -P -C /home/runner/work/Kizunalink/Kizunalink --use-compress-program unzstd
+2026-08-30T09:32:47.6196971Z Cache restored successfully
+2026-08-30T09:32:47.6283624Z Restored from cache key "v0-rust-check-Linux-x64-0b9fd15e-50d17467" full match: true.
+2026-08-30T09:32:47.6358274Z ##[group]Run cargo check --workspace --all-targets --all-features
+2026-08-30T09:32:47.6358729Z [36;1mcargo check --workspace --all-targets --all-features[0m
+2026-08-30T09:32:47.6383708Z shell: /usr/bin/bash -e {0}
+2026-08-30T09:32:47.6383997Z env:
+2026-08-30T09:32:47.6384282Z   CARGO_TERM_COLOR: always
+2026-08-30T09:32:47.6384543Z   CARGO_HOME: /home/runner/.cargo
+2026-08-30T09:32:47.6384850Z   CARGO_INCREMENTAL: 0
+2026-08-30T09:32:47.6385093Z   CACHE_ON_FAILURE: false
+2026-08-30T09:32:47.6385325Z ##[endgroup]
+2026-08-30T09:32:48.2521904Z [1m[92m    Updating[0m crates.io index
+2026-08-30T09:32:49.9800705Z [1m[92m     Locking[0m 436 packages to latest compatible versions
+2026-08-30T09:32:49.9816439Z [1m[92m      Adding[0m aes-gcm v0.10.3 [1m[33m(available: v0.11.1)[0m
+2026-08-30T09:32:49.9909432Z [1m[92m      Adding[0m axum v0.7.9 [1m[33m(available: v0.8.9)[0m
+2026-08-30T09:32:49.9927438Z [1m[92m      Adding[0m base64 v0.22.1 [1m[33m(available: v0.23.1)[0m
+2026-08-30T09:32:50.0069536Z [1m[92m      Adding[0m dashmap v5.5.3 [1m[33m(available: v6.2.1)[0m
+2026-08-30T09:32:50.0171028Z [1m[92m      Adding[0m generic-array v0.14.7 [1m[33m(available: v0.14.9)[0m
+2026-08-30T09:32:50.0235125Z [1m[92m      Adding[0m hkdf v0.12.4 [1m[33m(available: v0.13.0)[0m
+2026-08-30T09:32:50.0237971Z [1m[92m      Adding[0m hmac v0.12.1 [1m[33m(available: v0.13.0)[0m
+2026-08-30T09:32:50.0408955Z [1m[92m      Adding[0m libloading v0.8.9 [1m[33m(available: v0.9.0)[0m
+2026-08-30T09:32:50.0565460Z [1m[92m      Adding[0m prometheus v0.13.4 [1m[33m(available: v0.14.0)[0m
+2026-08-30T09:32:50.0582475Z [1m[92m      Adding[0m rand v0.8.8 [1m[33m(available: v0.10.2)[0m
+2026-08-30T09:32:50.0672945Z [1m[92m      Adding[0m reqwest v0.11.27 [1m[33m(available: v0.13.4)[0m
+2026-08-30T09:32:50.0726502Z [1m[92m      Adding[0m rubato v0.14.1 [1m[33m(available: v5.0.0)[0m
+2026-08-30T09:32:50.0910728Z [1m[92m      Adding[0m sha2 v0.10.9 [1m[33m(available: v0.11.0)[0m
+2026-08-30T09:32:50.0935734Z [1m[92m      Adding[0m symphonia v0.5.5 [1m[33m(available: v0.6.1)[0m
+2026-08-30T09:32:50.1023479Z [1m[92m      Adding[0m sysinfo v0.31.4 [1m[33m(available: v0.39.6)[0m
+2026-08-30T09:32:50.1029052Z [1m[92m      Adding[0m thiserror v1.0.69 [1m[33m(available: v2.0.20)[0m
+2026-08-30T09:32:50.1091026Z [1m[92m      Adding[0m tokio-tungstenite v0.21.0 [1m[33m(available: v0.30.0)[0m
+2026-08-30T09:32:50.1105436Z [1m[92m      Adding[0m toml v0.8.23 [1m[33m(available: v1.1.4+spec-1.1.0)[0m
+2026-08-30T09:32:50.1125257Z [1m[92m      Adding[0m tower v0.4.13 [1m[33m(available: v0.5.3)[0m
+2026-08-30T09:32:50.1146990Z [1m[92m      Adding[0m tower-http v0.5.2 [1m[33m(available: v0.7.0)[0m
+2026-08-30T09:32:51.2185153Z [1m[92m    Checking[0m kizuna-voice v0.1.0 (/home/runner/work/Kizunalink/Kizunalink/kizuna-voice)
+2026-08-30T09:32:51.2245896Z [1m[92m    Checking[0m tower v0.4.13
+2026-08-30T09:32:51.9467754Z [1m[91merror[E0425][0m[1m: cannot find value `receive_task` in this scope[0m
+2026-08-30T09:32:51.9469121Z    [1m[94m--> [0mkizuna-voice/src/test_harness/fake_gateway.rs:169:40
+2026-08-30T09:32:51.9469992Z     [1m[94m|[0m
+2026-08-30T09:32:51.9485574Z [1m[94m169[0m [1m[94m|[0m [1m[94m...[0m                   tasks.push(receive_task);
+2026-08-30T09:32:51.9486884Z     [1m[94m|[0m                                  [1m[91m^^^^^^^^^^^^[0m
+2026-08-30T09:32:51.9487750Z     [1m[94m|[0m
+2026-08-30T09:32:51.9488461Z [1m[96mhelp[0m: a local variable with a similar name exists
+2026-08-30T09:32:51.9492259Z     [1m[94m|[0m
+2026-08-30T09:32:51.9493157Z [1m[94m169[0m [1m[94m| [0m                            tasks.push(receive[92md_in[0m_task);
+2026-08-30T09:32:51.9493893Z     [1m[94m|[0m                                               [92m++++[0m
+2026-08-30T09:32:51.9494240Z 
+2026-08-30T09:32:51.9703976Z [1m[33mwarning[0m[1m: unused import: `MissedTickBehavior`[0m
+2026-08-30T09:32:51.9704825Z  [1m[94m--> [0mkizuna-voice/src/audio/scheduler.rs:7:29
+2026-08-30T09:32:51.9705327Z   [1m[94m|[0m
+2026-08-30T09:32:51.9711501Z [1m[94m7[0m [1m[94m|[0m use tokio::time::{interval, MissedTickBehavior};
+2026-08-30T09:32:51.9712100Z   [1m[94m|[0m                             [1m[33m^^^^^^^^^^^^^^^^^^[0m
+2026-08-30T09:32:51.9712460Z   [1m[94m|[0m
+2026-08-30T09:32:51.9713235Z   [1m[94m= [0m[1mnote[0m: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+2026-08-30T09:32:51.9713606Z 
+2026-08-30T09:32:51.9713953Z [1m[33mwarning[0m[1m: unused imports: `DaveClientMessage` and `DaveGatewayMessage`[0m
+2026-08-30T09:32:51.9714613Z  [1m[94m--> [0mkizuna-voice/src/connection/manager.rs:2:29
+2026-08-30T09:32:51.9715019Z   [1m[94m|[0m
+2026-08-30T09:32:51.9715741Z [1m[94m2[0m [1m[94m|[0m use crate::dave::protocol::{DaveClientMessage, DaveGatewayMessage, DaveSession};
+2026-08-30T09:32:51.9716459Z   [1m[94m|[0m                             [1m[33m^^^^^^^^^^^^^^^^^[0m  [1m[33m^^^^^^^^^^^^^^^^^^[0m
+2026-08-30T09:32:51.9716747Z 
+2026-08-30T09:32:52.0163085Z [1m[33mwarning[0m[1m: unused import: `crate::gateway::payload::SessionDescription`[0m
+2026-08-30T09:32:52.0164163Z  [1m[94m--> [0mkizuna-voice/src/connection/manager.rs:4:5
+2026-08-30T09:32:52.0164834Z   [1m[94m|[0m
+2026-08-30T09:32:52.0165522Z [1m[94m4[0m [1m[94m|[0m use crate::gateway::payload::SessionDescription;
+2026-08-30T09:32:52.0166247Z   [1m[94m|[0m     [1m[33m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+2026-08-30T09:32:52.0166725Z 
+2026-08-30T09:32:52.0173354Z [1m[33mwarning[0m[1m: unused import: `super::*`[0m
+2026-08-30T09:32:52.0175209Z  [1m[94m--> [0mkizuna-voice/src/dave/mod.rs:5:9
+2026-08-30T09:32:52.0175869Z   [1m[94m|[0m
+2026-08-30T09:32:52.0177131Z [1m[94m5[0m [1m[94m|[0m     use super::*;
+2026-08-30T09:32:52.0177507Z   [1m[94m|[0m         [1m[33m^^^^^^^^[0m
+2026-08-30T09:32:52.0177694Z 
+2026-08-30T09:32:52.0178050Z [1m[33mwarning[0m[1m: unused import: `std::time::Duration`[0m
+2026-08-30T09:32:52.0178441Z  [1m[94m--> [0mkizuna-voice/src/gateway/connection.rs:3:5
+2026-08-30T09:32:52.0178757Z   [1m[94m|[0m
+2026-08-30T09:32:52.0179115Z [1m[94m3[0m [1m[94m|[0m use std::time::Duration;
+2026-08-30T09:32:52.0179470Z   [1m[94m|[0m     [1m[33m^^^^^^^^^^^^^^^^^^^[0m
+2026-08-30T09:32:52.0179704Z 
+2026-08-30T09:32:52.0180014Z [1m[33mwarning[0m[1m: unused import: `tokio::sync::mpsc`[0m
+2026-08-30T09:32:52.0180381Z  [1m[94m--> [0mkizuna-voice/src/gateway/connection.rs:5:5
+2026-08-30T09:32:52.0180766Z   [1m[94m|[0m
+2026-08-30T09:32:52.0181327Z [1m[94m5[0m [1m[94m|[0m use tokio::sync::mpsc;
+2026-08-30T09:32:52.0181658Z   [1m[94m|[0m     [1m[33m^^^^^^^^^^^^^^^^^[0m
+2026-08-30T09:32:52.0181909Z 
+2026-08-30T09:32:52.0182169Z [1m[33mwarning[0m[1m: unused import: `tokio::time`[0m
+2026-08-30T09:32:52.0182800Z  [1m[94m--> [0mkizuna-voice/src/gateway/connection.rs:6:5
+2026-08-30T09:32:52.0183216Z   [1m[94m|[0m
+2026-08-30T09:32:52.0183656Z [1m[94m6[0m [1m[94m|[0m use tokio::time;
+2026-08-30T09:32:52.0184065Z   [1m[94m|[0m     [1m[33m^^^^^^^^^^^[0m
+2026-08-30T09:32:52.0184314Z 
+2026-08-30T09:32:52.0184591Z [1m[33mwarning[0m[1m: unused imports: `error` and `warn`[0m
+2026-08-30T09:32:52.0185145Z   [1m[94m--> [0mkizuna-voice/src/gateway/connection.rs:10:22
+2026-08-30T09:32:52.0185612Z    [1m[94m|[0m
+2026-08-30T09:32:52.0186117Z [1m[94m10[0m [1m[94m|[0m use tracing::{debug, error, info, warn};
+2026-08-30T09:32:52.0186602Z    [1m[94m|[0m                      [1m[33m^^^^^[0m        [1m[33m^^^^[0m
+2026-08-30T09:32:52.0187342Z 
+2026-08-30T09:32:52.0187722Z [1m[33mwarning[0m[1m: unused import: `Value`[0m
+2026-08-30T09:32:52.0188241Z  [1m[94m--> [0mkizuna-voice/src/test_harness/fake_gateway.rs:2:24
+2026-08-30T09:32:52.0188754Z   [1m[94m|[0m
+2026-08-30T09:32:52.0189279Z [1m[94m2[0m [1m[94m|[0m use serde_json::{json, Value};
+2026-08-30T09:32:52.0190075Z   [1m[94m|[0m                        [1m[33m^^^^^[0m
+2026-08-30T09:32:52.0190570Z   [1m[94m|[0m
+2026-08-30T09:32:52.0191147Z [1m[96mhelp[0m: if this is a test module, consider adding a `#[cfg(test)]` to the containing module
+2026-08-30T09:32:52.0191846Z  [1m[94m--> [0mkizuna-voice/src/test_harness/mod.rs:1:1
+2026-08-30T09:32:52.0192287Z   [1m[94m|[0m
+2026-08-30T09:32:52.0192915Z [1m[94m1[0m [1m[94m|[0m pub mod fake_gateway;
+2026-08-30T09:32:52.0193424Z   [1m[94m|[0m [1m[96m^^^^^^^^^^^^^^^^^^^^^[0m
+2026-08-30T09:32:52.0193670Z 
+2026-08-30T09:32:52.0194032Z [1m[33mwarning[0m[1m: unused import: `Value`[0m
+2026-08-30T09:32:52.0194667Z  [1m[94m--> [0mkizuna-voice/src/test_harness/fake_gateway.rs:2:24
+2026-08-30T09:32:52.0195161Z   [1m[94m|[0m
+2026-08-30T09:32:52.0195678Z [1m[94m2[0m [1m[94m|[0m use serde_json::{json, Value};
+2026-08-30T09:32:52.0196139Z   [1m[94m|[0m                        [1m[33m^^^^^[0m
+2026-08-30T09:32:52.0196554Z 
+2026-08-30T09:32:52.6180351Z [1m[33mwarning[0m[1m: value assigned to `state` is never read[0m
+2026-08-30T09:32:52.6194590Z   [1m[94m--> [0mkizuna-voice/src/audio/scheduler.rs:62:29
+2026-08-30T09:32:52.6195187Z    [1m[94m|[0m
+2026-08-30T09:32:52.6195920Z [1m[94m62[0m [1m[94m|[0m [1m[94m...[0m                   state = TrackState::Stopped;
+2026-08-30T09:32:52.6196505Z    [1m[94m|[0m                       [1m[33m^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+2026-08-30T09:32:52.6196979Z    [1m[94m|[0m
+2026-08-30T09:32:52.6197493Z    [1m[94m= [0m[1mhelp[0m: maybe it is overwritten before being read?
+2026-08-30T09:32:52.6198150Z    [1m[94m= [0m[1mnote[0m: `#[warn(unused_assignments)]` (part of `#[warn(unused)]`) on by default
+2026-08-30T09:32:52.6198607Z 
+2026-08-30T09:32:52.6198860Z [1m[33mwarning[0m[1m: value assigned to `state` is never read[0m
+2026-08-30T09:32:52.6199527Z    [1m[94m--> [0mkizuna-voice/src/audio/scheduler.rs:113:33
+2026-08-30T09:32:52.6200071Z     [1m[94m|[0m
+2026-08-30T09:32:52.6200716Z [1m[94m113[0m [1m[94m|[0m [1m[94m...[0m                   state = TrackState::Ended;
+2026-08-30T09:32:52.6201259Z     [1m[94m|[0m                       [1m[33m^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+2026-08-30T09:32:52.6201697Z     [1m[94m|[0m
+2026-08-30T09:32:52.6202129Z     [1m[94m= [0m[1mhelp[0m: maybe it is overwritten before being read?
+2026-08-30T09:32:52.6202733Z 
+2026-08-30T09:32:52.6542489Z [1m[33mwarning[0m[1m: value assigned to `ready_data` is never read[0m
+2026-08-30T09:32:52.6543516Z    [1m[94m--> [0mkizuna-voice/src/connection/manager.rs:292:30
+2026-08-30T09:32:52.6543956Z     [1m[94m|[0m
+2026-08-30T09:32:52.6544791Z [1m[94m292[0m [1m[94m|[0m         let mut ready_data = None;
+2026-08-30T09:32:52.6545472Z     [1m[94m|[0m                              [1m[33m^^^^[0m [1m[33mthis value is reassigned later and never used[0m
+2026-08-30T09:32:52.6546048Z [1m[94m...[0m
+2026-08-30T09:32:52.6546483Z [1m[94m300[0m [1m[94m|[0m                     ready_data = Some(ready);
+2026-08-30T09:32:52.6547206Z     [1m[94m|[0m                     [1m[94m----------[0m [1m[94m`ready_data` is overwritten here before the previous value is read[0m
+2026-08-30T09:32:52.6547687Z 
+2026-08-30T09:32:52.7858534Z [1mFor more information about this error, try `rustc --explain E0425`.[0m
+2026-08-30T09:32:52.7913393Z [1m[33mwarning[0m: `kizuna-voice` (lib test) generated 12 warnings (7 duplicates)
+2026-08-30T09:32:52.7914350Z [1m[91merror[0m: could not compile `kizuna-voice` (lib test) due to 1 previous error; 12 warnings emitted
+2026-08-30T09:32:52.7915046Z [1m[33mwarning[0m: build failed, waiting for other jobs to finish...
+2026-08-30T09:32:52.7915635Z [1m[33mwarning[0m: `kizuna-voice` (lib) generated 11 warnings (3 duplicates)
+2026-08-30T09:32:52.7916357Z [1m[91merror[0m: could not compile `kizuna-voice` (lib) due to 1 previous error; 11 warnings emitted
+2026-08-30T09:32:52.8780103Z ##[error]Process completed with exit code 101.
+2026-08-30T09:32:52.8892463Z Node 20 is being deprecated. This workflow is running with Node 24 by default. If you need to temporarily use Node 20, you can set the ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true environment variable. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+2026-08-30T09:32:52.8893640Z Post job cleanup.
+2026-08-30T09:32:52.9487249Z [command]/usr/bin/git version
+2026-08-30T09:32:52.9517375Z git version 2.55.0
+2026-08-30T09:32:52.9547056Z Temporarily overriding HOME='/home/runner/work/_temp/e9bd9697-a83d-465c-a9d7-53030aa8209f' before making global git config changes
+2026-08-30T09:32:52.9547957Z Adding repository directory to the temporary git global config as a safe directory
+2026-08-30T09:32:52.9551908Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/Kizunalink/Kizunalink
+2026-08-30T09:32:52.9581213Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-08-30T09:32:52.9607181Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-08-30T09:32:52.9769678Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-08-30T09:32:52.9787266Z http.https://github.com/.extraheader
+2026-08-30T09:32:52.9795592Z [command]/usr/bin/git config --local --unset-all http.https://github.com/.extraheader
+2026-08-30T09:32:52.9816737Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-08-30T09:32:52.9977524Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-08-30T09:32:53.0031572Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-08-30T09:32:53.0269483Z Cleaning up orphan processes
+2026-08-30T09:32:53.0459591Z ##[warning]Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/

@@ -69,8 +69,8 @@ impl FakeVoiceGateway {
                             let tasks_in_task = tasks_clone.clone();
                             let cfg = config.clone();
 
-                            tokio::spawn(async move {
-                                if let Ok(mut ws) = tokio_tungstenite::accept_async(stream).await {
+                            let connection_task = tokio::spawn(async move {
+                                if let Ok(ws) = tokio_tungstenite::accept_async(stream).await {
                                     let (mut ws_tx, mut ws_rx) = ws.split();
                                     let (msg_tx, mut msg_rx) = mpsc::channel::<VoicePayload>(32);
 
@@ -116,7 +116,6 @@ impl FakeVoiceGateway {
                                                 if cfg.auto_handshake {
                                                     match payload.op {
                                                         0 => {
-                                                            // Identify -> send Ready (Op 2)
                                                             let ready = VoicePayload {
                                                                 op: 2,
                                                                 d: json!({
@@ -129,7 +128,6 @@ impl FakeVoiceGateway {
                                                             let _ = msg_tx_in_task.send(ready).await;
                                                         }
                                                         1 => {
-                                                            // Select Protocol -> send Session Description (Op 4)
                                                             let sd = VoicePayload {
                                                                 op: 4,
                                                                 d: json!({
@@ -140,7 +138,6 @@ impl FakeVoiceGateway {
                                                             let _ = msg_tx_in_task.send(sd).await;
                                                         }
                                                         3 => {
-                                                            // Heartbeat -> send Heartbeat ACK (Op 6)
                                                             let ack = VoicePayload {
                                                                 op: 6,
                                                                 d: payload.d,
@@ -166,7 +163,7 @@ impl FakeVoiceGateway {
                             });
 
                             let mut tasks = tasks_in_task.lock().await;
-                            tasks.push(receive_task);
+                            tasks.push(connection_task);
                         }
                     }
                 }
