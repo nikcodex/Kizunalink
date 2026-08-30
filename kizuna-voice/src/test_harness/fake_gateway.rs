@@ -101,6 +101,16 @@ impl FakeVoiceGateway {
                                         }
                                     });
 
+                                    struct AbortOnDrop(Option<tokio::task::JoinHandle<()>>);
+                                    impl Drop for AbortOnDrop {
+                                        fn drop(&mut self) {
+                                            if let Some(jh) = self.0.take() {
+                                                jh.abort();
+                                            }
+                                        }
+                                    }
+                                    let _guard = AbortOnDrop(Some(send_task));
+
                                     // Process incoming messages
                                     while let Some(msg) = ws_rx.next().await {
                                         if let Ok(Message::Text(text)) = msg {
@@ -157,8 +167,6 @@ impl FakeVoiceGateway {
                                             }
                                         }
                                     }
-
-                                    send_task.abort();
                                 }
                             });
 
