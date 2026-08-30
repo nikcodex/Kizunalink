@@ -4,7 +4,7 @@ use kizuna_voice::audio::{
 use kizuna_voice::connection::session::VoiceSession;
 use kizuna_voice::dave::protocol::DaveSession;
 use kizuna_voice::gateway::{connection::GatewayEvent, VoiceGatewayClient};
-use kizuna_voice::transport::{RtpHeader, VoiceUdp};
+use kizuna_voice::transport::{RtpHeader, TransportCrypto, VoiceUdp};
 use std::sync::Arc;
 use tokio::sync::{broadcast, mpsc, Mutex};
 use tracing::{error, info};
@@ -13,6 +13,7 @@ pub struct KizunaVoiceAdapter {
     session: VoiceSession,
     udp: Option<Arc<VoiceUdp>>,
     dave: Arc<Mutex<DaveSession>>,
+    transport_crypto: Arc<Mutex<Option<TransportCrypto>>>,
     ssrc: u32,
     sequence: u16,
     timestamp: u32,
@@ -24,6 +25,7 @@ impl KizunaVoiceAdapter {
             session: VoiceSession::new(session_id, token, endpoint),
             udp: None,
             dave: Arc::new(Mutex::new(DaveSession::new(guild_id))),
+            transport_crypto: Arc::new(Mutex::new(None)),
             ssrc: 0,
             sequence: 0,
             timestamp: 0,
@@ -47,6 +49,7 @@ impl KizunaVoiceAdapter {
         .map_err(|e| e.to_string())?;
 
         let dave_clone = self.dave.clone();
+        let tc_clone = self.transport_crypto.clone();
 
         let mut ready_data = None;
         while let Ok(event) = gw.receive_event().await {
@@ -98,6 +101,15 @@ impl KizunaVoiceAdapter {
                     }
                     Ok(GatewayEvent::SessionDescription(_sd)) => {
                         info!("Received Session Description. Handshake complete.");
+                        match TransportCrypto::new(&_sd.secret_key) {
+                            Ok(crypto) => {
+                                let mut tc_guard = tc_clone.lock().await;
+                                *tc_guard = Some(crypto);
+                            }
+                            Err(e) => {
+                                error!("Failed to setup transport crypto: {}", e);
+                            }
+                        }
                     }
                     Err(e) => {
                         error!("Gateway disconnected: {}", e);
@@ -124,6 +136,7 @@ impl KizunaVoiceAdapter {
         let scheduler = FrameScheduler::new(source);
         let udp = self.udp.clone().expect("UDP not connected");
         let dave = self.dave.clone();
+        let transport_crypto = self.transport_crypto.clone();
         let ssrc = self.ssrc;
         let sequence = Arc::new(std::sync::atomic::AtomicU16::new(self.sequence));
         let timestamp = Arc::new(std::sync::atomic::AtomicU32::new(self.timestamp));
@@ -137,6 +150,7 @@ impl KizunaVoiceAdapter {
                 .run(cmd_rx, event_tx, |frame| {
                     let udp = udp.clone();
                     let dave = dave.clone();
+                    let transport_crypto = transport_crypto.clone();
                     let sender_id_clone = sender_id.clone();
                     let enc_clone = encoder.clone();
                     let seq_atomic = seq_clone.clone();
@@ -163,21 +177,31 @@ impl KizunaVoiceAdapter {
                         let mut header_buf = Vec::new();
                         header.write_to(&mut header_buf).unwrap();
 
-                        let mut dave_guard = dave.lock().await;
-                        if dave_guard.is_active() {
-                            if let Ok(encrypted) = dave_guard.encrypt_frame(
-                                &sender_id_clone,
-                                &opus_data,
-                                cur_seq as u32,
-                                &header_buf,
-                            ) {
-                                let mut packet = header_buf;
-                                packet.extend(encrypted);
-                                let _ = udp.send_packet(&packet).await;
+                        let packet_payload = {
+                            let mut dave_guard = dave.lock().await;
+                            if dave_guard.is_active() {
+                                match dave_guard.encrypt_frame(
+                                    &sender_id_clone,
+                                    &opus_data,
+                                    cur_seq as u32,
+                                    &header_buf,
+                                ) {
+                                    Ok(encrypted) => encrypted,
+                                    Err(_) => opus_data,
+                                }
+                            } else {
+                                opus_data
+                            }
+                        };
+
+                        let mut tc_guard = transport_crypto.lock().await;
+                        if let Some(ref mut tc) = *tc_guard {
+                            if let Ok(encrypted_packet) = tc.encrypt_rtp_packet(&header_buf, &packet_payload) {
+                                let _ = udp.send_packet(&encrypted_packet).await;
                             }
                         } else {
                             let mut packet = header_buf;
-                            packet.extend(opus_data);
+                            packet.extend(packet_payload);
                             let _ = udp.send_packet(&packet).await;
                         }
                     }
