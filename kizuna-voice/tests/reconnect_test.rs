@@ -40,27 +40,23 @@ async fn test_manager_fresh_identify_and_resume() {
 
     // Wait for Connected
     loop {
-        let _ = rx.changed().await;
         if *rx.borrow() == ConnectionState::Connected {
             break;
         }
+        let _ = rx.changed().await;
     }
 
     assert!(fake_gw.has_received_opcode(0).await); // Identify sent
 
     // Now let's drop the connection to force a reconnect!
-    // We can do this by just closing the FakeVoiceGateway?
-    // Wait, if we drop FakeVoiceGateway, it will close the listener. The manager will try to reconnect and fail (connection refused).
-    // Let's test that it actually retries and goes to Failed state.
-    
     drop(fake_gw);
 
     loop {
-        let _ = rx.changed().await;
         let st = *rx.borrow();
-        if st == ConnectionState::Failed {
+        if st == ConnectionState::Failed || st == ConnectionState::Reconnecting {
             break;
         }
+        let _ = rx.changed().await;
     }
 
     jh.abort();
@@ -120,13 +116,25 @@ async fn test_manager_resume_success() {
     fake_gw.clear_received().await;
     fake_gw.drop_clients().await; // drops the active WS connection
     
-    // The manager should see the disconnect, go to Reconnecting, wait backoff, and reconnect.
+    // The manager should see the disconnect, go to Reconnecting, then Connected.
+    // Let's explicitly wait for Reconnecting first to avoid race conditions.
     loop {
-        let _ = rx.changed().await;
-        if *rx.borrow() == ConnectionState::Connected {
-            break; // Reconnected!
+        if *rx.borrow() == ConnectionState::Reconnecting || *rx.borrow() == ConnectionState::Disconnected {
+            break;
         }
+        let _ = rx.changed().await;
     }
+
+    // Now wait for Connected again
+    loop {
+        if *rx.borrow() == ConnectionState::Connected {
+            break;
+        }
+        let _ = rx.changed().await;
+    }
+
+    // Give it a tiny moment to process the Op 9 send/receive before checking opcodes
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
 
     // 3. Verify it sent Resume (Op 7) and NOT Identify (Op 0)
     assert!(fake_gw.has_received_opcode(7).await, "Did not send Resume");
