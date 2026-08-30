@@ -62,3 +62,18 @@ jobs:
         with:
           name: kizunalink-linux-amd64
           path: target/release/kizunalink
+
+  test-e2e:
+    name: Real Discord E2E
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+    env:
+      KIZUNA_DISCORD_E2E: "1"
+      DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
+      DISCORD_GUILD_ID: ${{ secrets.DISCORD_GUILD_ID }}
+      DISCORD_CHANNEL_ID: ${{ secrets.DISCORD_CHANNEL_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test test_real_discord_voice_connection --workspace --all-features -- --nocapture
