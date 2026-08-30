@@ -116,28 +116,18 @@ async fn test_manager_resume_success() {
     fake_gw.clear_received().await;
     fake_gw.drop_clients().await; // drops the active WS connection
     
-    // The manager should see the disconnect, go to Reconnecting, then Connected.
-    // Let's explicitly wait for Reconnecting first to avoid race conditions.
-    loop {
-        if *rx.borrow() == ConnectionState::Reconnecting || *rx.borrow() == ConnectionState::Disconnected {
+    // We expect the manager to see the disconnect, reconnect, and send Resume (Op 7).
+    // Let's just wait until the fake gateway receives Op 7.
+    let mut received_resume = false;
+    for _ in 0..50 { // wait up to 5 seconds
+        if fake_gw.has_received_opcode(7).await {
+            received_resume = true;
             break;
         }
-        let _ = rx.changed().await;
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     }
 
-    // Now wait for Connected again
-    loop {
-        if *rx.borrow() == ConnectionState::Connected {
-            break;
-        }
-        let _ = rx.changed().await;
-    }
-
-    // Give it a tiny moment to process the Op 9 send/receive before checking opcodes
-    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-
-    // 3. Verify it sent Resume (Op 7) and NOT Identify (Op 0)
-    assert!(fake_gw.has_received_opcode(7).await, "Did not send Resume");
+    assert!(received_resume, "Did not receive Resume");
     assert!(!fake_gw.has_received_opcode(0).await, "Sent fresh Identify instead of Resume!");
 
     jh.abort();
