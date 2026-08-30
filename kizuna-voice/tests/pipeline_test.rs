@@ -72,6 +72,8 @@ async fn test_full_pipeline_mock() {
         })
         .await;
 
+    drop(udp_tx);
+
     let mut packets_received = 0;
     while let Some(_) = udp_rx.recv().await {
         packets_received += 1;
