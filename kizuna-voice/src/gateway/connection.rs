@@ -67,7 +67,6 @@ impl VoiceGatewayClient {
             session_id: session_id.to_string(),
             token: token.to_string(),
             dave_protocol_version: Some(1),
-            dave_protocol_version: Some(1),
         };
 
         let payload = VoicePayload {
@@ -88,7 +87,6 @@ impl VoiceGatewayClient {
             server_id: server_id.to_string(),
             session_id: session_id.to_string(),
             token: token.to_string(),
-            dave_protocol_version: Some(1),
         };
 
         let payload = VoicePayload {
