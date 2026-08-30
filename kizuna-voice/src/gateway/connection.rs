@@ -72,7 +72,7 @@ impl VoiceGatewayClient {
         
         let payload = VoicePayload {
             op: 0,
-            d: serde_json::to_value(identify).unwrap(),
+            d: { let val = serde_json::to_value(identify).unwrap(); println!("Identify payload: {}", val); val },
         };
 
         self.send_payload(&payload).await

@@ -23,3 +23,8 @@ hmac = "0.12"
 openmls = "0.9"
 openmls_rust_crypto = "0.6"
 openmls_basic_credential = "0.6"
+
+[[bin]]
+name = "test_bin"
+path = "src/bin.rs"
+
