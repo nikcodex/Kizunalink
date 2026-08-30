@@ -76,6 +76,26 @@ impl VoiceGatewayClient {
         self.send_payload(&payload).await
     }
 
+    pub async fn send_resume(
+        &mut self,
+        server_id: &str,
+        session_id: &str,
+        token: &str,
+    ) -> Result<()> {
+        let resume = super::payload::Resume {
+            server_id: server_id.to_string(),
+            session_id: session_id.to_string(),
+            token: token.to_string(),
+        };
+
+        let payload = VoicePayload {
+            op: 7,
+            d: serde_json::to_value(resume).unwrap(),
+        };
+
+        self.send_payload(&payload).await
+    }
+
     pub async fn send_select_protocol(
         &mut self,
         protocol: &str,

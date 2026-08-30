@@ -17,6 +17,13 @@ pub struct Identify {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct Resume {
+    pub server_id: String,
+    pub session_id: String,
+    pub token: String,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct SelectProtocol {
     pub protocol: String,
     pub data: ProtocolData,

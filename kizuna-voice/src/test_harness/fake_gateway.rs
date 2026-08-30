@@ -143,6 +143,13 @@ impl FakeVoiceGateway {
                                                             };
                                                             let _ = msg_tx_in_task.send(ack).await;
                                                         }
+                                                        7 => {
+                                                            let resumed = VoicePayload {
+                                                                op: 9,
+                                                                d: json!(null),
+                                                            };
+                                                            let _ = msg_tx_in_task.send(resumed).await;
+                                                        }
                                                         _ => {}
                                                     }
                                                 }
@@ -229,6 +236,12 @@ impl FakeVoiceGateway {
     pub async fn clear_received(&self) {
         let mut list = self.received_payloads.lock().await;
         list.clear();
+    }
+
+    pub async fn drop_clients(&self) {
+        // To drop clients, we just drop the outgoing sender which causes the send_task to exit and ws to close.
+        let mut out = self.outgoing_tx.lock().await;
+        *out = None;
     }
 }
 

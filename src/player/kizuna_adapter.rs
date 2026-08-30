@@ -5,122 +5,90 @@ use kizuna_voice::connection::session::VoiceSession;
 use kizuna_voice::dave::protocol::DaveSession;
 use kizuna_voice::gateway::{connection::GatewayEvent, VoiceGatewayClient};
 use kizuna_voice::transport::{RtpHeader, TransportCrypto, VoiceUdp};
+use kizuna_voice::connection::manager::{VoiceConnectionManager, VoiceCredentials};
+use kizuna_voice::connection::state::ConnectionState;
 use std::sync::Arc;
-use tokio::sync::{broadcast, mpsc, Mutex};
+use tokio::sync::{broadcast, mpsc, Mutex, RwLock};
 use tracing::{error, info};
 
 pub struct KizunaVoiceAdapter {
     session: VoiceSession,
-    udp: Option<Arc<VoiceUdp>>,
+    udp: Arc<RwLock<Option<Arc<VoiceUdp>>>>,
     dave: Arc<Mutex<DaveSession>>,
     transport_crypto: Arc<Mutex<Option<TransportCrypto>>>,
-    ssrc: u32,
-    sequence: u16,
-    timestamp: u32,
+    ssrc: Arc<std::sync::atomic::AtomicU32>,
+    sequence: Arc<std::sync::atomic::AtomicU16>,
+    timestamp: Arc<std::sync::atomic::AtomicU32>,
+    manager: Option<Arc<VoiceConnectionManager>>,
 }
 
 impl KizunaVoiceAdapter {
     pub fn new(session_id: String, token: String, endpoint: String, guild_id: String) -> Self {
         Self {
             session: VoiceSession::new(session_id, token, endpoint),
-            udp: None,
+            udp: Arc::new(RwLock::new(None)),
             dave: Arc::new(Mutex::new(DaveSession::new(guild_id))),
             transport_crypto: Arc::new(Mutex::new(None)),
-            ssrc: 0,
-            sequence: 0,
-            timestamp: 0,
+            ssrc: Arc::new(std::sync::atomic::AtomicU32::new(0)),
+            sequence: Arc::new(std::sync::atomic::AtomicU16::new(0)),
+            timestamp: Arc::new(std::sync::atomic::AtomicU32::new(0)),
+            manager: None,
         }
     }
 
     pub async fn connect(&mut self, server_id: String, user_id: String) -> Result<(), String> {
-        info!("Connecting using KizunaVoice adapter...");
+        info!("Connecting using KizunaVoice adapter with reconnect support...");
 
-        let mut gw = VoiceGatewayClient::connect(&self.session.endpoint)
-            .await
-            .map_err(|e| e.to_string())?;
+        let credentials = VoiceCredentials {
+            endpoint: self.session.endpoint.clone(),
+            server_id: server_id.clone(),
+            user_id: user_id.clone(),
+            session_id: self.session.session_id.clone(),
+            token: self.session.token.clone(),
+        };
 
-        gw.send_identify(
-            &server_id,
-            &user_id,
-            &self.session.session_id,
-            &self.session.token,
-        )
-        .await
-        .map_err(|e| e.to_string())?;
+        let manager = Arc::new(VoiceConnectionManager::new(
+            credentials,
+            self.dave.clone(),
+            self.transport_crypto.clone(),
+        ));
 
-        let dave_clone = self.dave.clone();
-        let tc_clone = self.transport_crypto.clone();
+        let udp_ref = self.udp.clone();
+        let ssrc_ref = self.ssrc.clone();
 
-        let mut ready_data = None;
-        while let Ok(event) = gw.receive_event().await {
-            match event {
-                GatewayEvent::Ready(ready) => {
-                    ready_data = Some(ready);
-                    break;
-                }
-                GatewayEvent::DaveMessage(dave_msg) => {
-                    let mut dave = dave_clone.lock().await;
-                    let client_messages = dave.handle_gateway_message(dave_msg);
-                    for msg in client_messages {
-                        let _ = gw.send_dave_message(msg).await;
-                    }
-                }
-                _ => {}
-            }
-        }
+        manager.set_on_fresh_identify(move |new_ssrc, new_udp| {
+            info!("Adapter: Session established, new SSRC={}, UDP socket created", new_ssrc);
+            ssrc_ref.store(new_ssrc, std::sync::atomic::Ordering::SeqCst);
+            let udp_ref = udp_ref.clone();
+            tokio::spawn(async move {
+                let mut guard = udp_ref.write().await;
+                *guard = Some(new_udp);
+            });
+        }).await;
 
-        let ready = ready_data.ok_or("Did not receive Ready event")?;
-        self.ssrc = ready.ssrc;
+        self.manager = Some(manager.clone());
+        let mut rx = manager.state_receiver();
 
-        let (udp, _external_ip, _external_port) =
-            VoiceUdp::bind_and_discover(&ready.ip, ready.port, ready.ssrc)
-                .await
-                .map_err(|e| e.to_string())?;
-
-        let udp_arc = Arc::new(udp);
-        self.udp = Some(udp_arc.clone());
-
-        gw.send_select_protocol(
-            "udp",
-            &_external_ip,
-            _external_port,
-            "aead_aes256_gcm_rtpsize",
-        )
-        .await
-        .map_err(|e| e.to_string())?;
-
+        // Spawn manager background task
+        let manager_clone = manager.clone();
         tokio::spawn(async move {
-            loop {
-                match gw.receive_event().await {
-                    Ok(GatewayEvent::DaveMessage(dave_msg)) => {
-                        let mut dave = dave_clone.lock().await;
-                        let client_messages = dave.handle_gateway_message(dave_msg);
-                        for msg in client_messages {
-                            let _ = gw.send_dave_message(msg).await;
-                        }
-                    }
-                    Ok(GatewayEvent::SessionDescription(_sd)) => {
-                        info!("Received Session Description. Handshake complete.");
-                        match TransportCrypto::new(&_sd.secret_key) {
-                            Ok(crypto) => {
-                                let mut tc_guard = tc_clone.lock().await;
-                                *tc_guard = Some(crypto);
-                            }
-                            Err(e) => {
-                                error!("Failed to setup transport crypto: {}", e);
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        error!("Gateway disconnected: {}", e);
-                        break;
-                    }
-                    _ => {}
-                }
+            if let Err(e) = manager_clone.run_gateway_loop().await {
+                error!("VoiceConnectionManager stopped with error: {}", e);
             }
         });
 
-        Ok(())
+        // Wait until Connected or Failed
+        loop {
+            // we must wait for state change
+            let _ = rx.changed().await;
+            let current = *rx.borrow();
+            if current == ConnectionState::Connected {
+                info!("KizunaVoice Adapter fully connected!");
+                return Ok(());
+            } else if current == ConnectionState::Failed {
+                return Err("Failed to connect to Discord Voice Gateway".into());
+            }
+        }
     }
 
     pub fn play_source(
@@ -134,27 +102,25 @@ impl KizunaVoiceAdapter {
         let handle = KizunaTrackHandle::new(cmd_tx, event_rx);
 
         let scheduler = FrameScheduler::new(source);
-        let udp = self.udp.clone().expect("UDP not connected");
+        let udp_ref = self.udp.clone();
         let dave = self.dave.clone();
         let transport_crypto = self.transport_crypto.clone();
-        let ssrc = self.ssrc;
-        let sequence = Arc::new(std::sync::atomic::AtomicU16::new(self.sequence));
-        let timestamp = Arc::new(std::sync::atomic::AtomicU32::new(self.timestamp));
-
-        let seq_clone = sequence.clone();
-        let ts_clone = timestamp.clone();
+        let ssrc_ref = self.ssrc.clone();
+        let sequence = self.sequence.clone();
+        let timestamp = self.timestamp.clone();
 
         tokio::spawn(async move {
             let encoder = std::sync::Arc::new(tokio::sync::Mutex::new(OpusEncoder::new().unwrap()));
             scheduler
                 .run(cmd_rx, event_tx, |frame| {
-                    let udp = udp.clone();
+                    let udp_ref = udp_ref.clone();
                     let dave = dave.clone();
                     let transport_crypto = transport_crypto.clone();
                     let sender_id_clone = sender_id.clone();
                     let enc_clone = encoder.clone();
-                    let seq_atomic = seq_clone.clone();
-                    let ts_atomic = ts_clone.clone();
+                    let seq_atomic = sequence.clone();
+                    let ts_atomic = timestamp.clone();
+                    let current_ssrc = ssrc_ref.load(std::sync::atomic::Ordering::SeqCst);
 
                     async move {
                         let cur_seq = seq_atomic.fetch_add(1, std::sync::atomic::Ordering::SeqCst).wrapping_add(1);
@@ -173,7 +139,7 @@ impl KizunaVoiceAdapter {
                             }
                         };
 
-                        let header = RtpHeader::new(cur_seq, cur_ts, ssrc);
+                        let header = RtpHeader::new(cur_seq, cur_ts, current_ssrc);
                         let mut header_buf = Vec::new();
                         header.write_to(&mut header_buf).unwrap();
 
@@ -194,23 +160,24 @@ impl KizunaVoiceAdapter {
                             }
                         };
 
-                        let mut tc_guard = transport_crypto.lock().await;
-                        if let Some(ref mut tc) = *tc_guard {
-                            if let Ok(encrypted_packet) = tc.encrypt_rtp_packet(&header_buf, &packet_payload) {
-                                let _ = udp.send_packet(&encrypted_packet).await;
+                        // Send if UDP is connected
+                        let udp_guard = udp_ref.read().await;
+                        if let Some(ref current_udp) = *udp_guard {
+                            let mut tc_guard = transport_crypto.lock().await;
+                            if let Some(ref mut tc) = *tc_guard {
+                                if let Ok(encrypted_packet) = tc.encrypt_rtp_packet(&header_buf, &packet_payload) {
+                                    let _ = current_udp.send_packet(&encrypted_packet).await;
+                                }
+                            } else {
+                                let mut packet = header_buf;
+                                packet.extend(packet_payload);
+                                let _ = current_udp.send_packet(&packet).await;
                             }
-                        } else {
-                            let mut packet = header_buf;
-                            packet.extend(packet_payload);
-                            let _ = udp.send_packet(&packet).await;
                         }
                     }
                 })
                 .await;
         });
-
-        self.sequence = sequence.load(std::sync::atomic::Ordering::SeqCst);
-        self.timestamp = timestamp.load(std::sync::atomic::Ordering::SeqCst);
 
         handle
     }
