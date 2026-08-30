@@ -1,3 +1,4 @@
+let _ = tracing_subscriber::fmt::try_init();
 use futures_util::{SinkExt, StreamExt};
 use serde_json::{json, Value};
 use std::env;
@@ -17,6 +18,7 @@ use kizuna_voice::transport::crypto::TransportCrypto;
 
 #[tokio::test]
 async fn test_real_discord_voice_connection() {
+    let _ = tracing_subscriber::fmt().with_env_filter("kizuna_voice=debug").try_init();
 
     if env::var("KIZUNA_DISCORD_E2E").unwrap_or_default() != "1" {
         println!("Skipping real Discord E2E test. Set KIZUNA_DISCORD_E2E=1 to run.");
