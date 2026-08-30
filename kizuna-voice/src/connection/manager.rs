@@ -140,7 +140,7 @@ impl VoiceConnectionManager {
             {
                 let shut = self.is_shutdown.lock().await;
                 if *shut {
-                    info!("VoiceConnectionManager: shutdown requested, exiting");
+                    println!("VoiceConnectionManager: shutdown requested, exiting");
                     self.set_state(ConnectionState::Disconnected).await;
                     return Ok(());
                 }
@@ -148,7 +148,7 @@ impl VoiceConnectionManager {
 
             if attempt > 0 {
                 self.set_state(ConnectionState::Reconnecting).await;
-                info!(
+                println!(
                     "VoiceConnectionManager: reconnect attempt {}/{}",
                     attempt, self.config.max_retries
                 );
@@ -164,10 +164,10 @@ impl VoiceConnectionManager {
                         return Ok(());
                     }
                     // Connection ended unexpectedly but without error — treat as disconnect
-                    warn!("VoiceConnectionManager: gateway loop ended without error, reconnecting");
+                    println!("VoiceConnectionManager: gateway loop ended without error, reconnecting");
                 }
                 Err(e) => {
-                    warn!("VoiceConnectionManager: gateway error: {}", e);
+                    println!("VoiceConnectionManager: gateway error: {}", e);
                 }
             }
 
@@ -181,7 +181,7 @@ impl VoiceConnectionManager {
 
             attempt += 1;
             if attempt > self.config.max_retries {
-                error!(
+                println!(
                     "VoiceConnectionManager: max retries ({}) exceeded",
                     self.config.max_retries
                 );
@@ -197,7 +197,7 @@ impl VoiceConnectionManager {
             };
             let sleep_duration = delay.min(self.config.max_delay) + jitter;
 
-            info!(
+            println!(
                 "VoiceConnectionManager: waiting {:?} before reconnect attempt {}",
                 sleep_duration, attempt
             );
@@ -205,7 +205,7 @@ impl VoiceConnectionManager {
             tokio::select! {
                 _ = tokio::time::sleep(sleep_duration) => {}
                 _ = self.shutdown.notified() => {
-                    info!("VoiceConnectionManager: shutdown during backoff");
+                    println!("VoiceConnectionManager: shutdown during backoff");
                     self.set_state(ConnectionState::Disconnected).await;
                     return Ok(());
                 }
@@ -234,7 +234,7 @@ impl VoiceConnectionManager {
             _ => return Err("Expected Hello event".into()),
         };
         
-        info!("VoiceConnectionManager: heartbeat interval is {} ms", heartbeat_interval);
+        println!("VoiceConnectionManager: heartbeat interval is {} ms", heartbeat_interval);
 
         let has_session = {
             let hs = self.has_established_session.lock().await;
@@ -243,7 +243,7 @@ impl VoiceConnectionManager {
 
         if is_reconnect && has_session {
             // Attempt Resume (Op 7)
-            info!("VoiceConnectionManager: attempting Resume");
+            println!("VoiceConnectionManager: attempting Resume");
             gw.send_resume(
                 &self.credentials.server_id,
                 &self.credentials.session_id,
@@ -255,16 +255,16 @@ impl VoiceConnectionManager {
             // Wait for Resumed (Op 9) or an error
             match tokio::time::timeout(Duration::from_secs(5), gw.receive_event()).await {
                 Ok(Ok(GatewayEvent::Resumed)) => {
-                    info!("VoiceConnectionManager: Resume successful");
+                    println!("VoiceConnectionManager: Resume successful");
                     self.set_state(ConnectionState::Connected).await;
                 }
                 Ok(Ok(_other)) => {
                     // Resume was rejected or we got something else — do fresh Identify
-                    warn!("VoiceConnectionManager: Resume rejected, falling back to fresh Identify");
+                    println!("VoiceConnectionManager: Resume rejected, falling back to fresh Identify");
                     return self.do_fresh_identify(&mut gw, heartbeat_interval).await;
                 }
                 Ok(Err(e)) => {
-                    warn!("VoiceConnectionManager: Resume failed: {}, falling back to fresh Identify", e);
+                    println!("VoiceConnectionManager: Resume failed: {}, falling back to fresh Identify", e);
                     // Need a new connection for fresh identify since this one errored
                     return Err(format!("Resume failed: {}", e));
                 }
@@ -369,7 +369,7 @@ impl VoiceConnectionManager {
         loop {
             tokio::select! {
                 _ = self.shutdown.notified() => {
-                    info!("VoiceConnectionManager: shutdown in event loop");
+                    println!("VoiceConnectionManager: shutdown in event loop");
                     self.set_state(ConnectionState::Disconnected).await;
                     return Ok(());
                 }
@@ -383,14 +383,14 @@ impl VoiceConnectionManager {
                             }
                         }
                         Ok(Ok(GatewayEvent::SessionDescription(sd))) => {
-                            info!("VoiceConnectionManager: received SessionDescription");
+                            println!("VoiceConnectionManager: received SessionDescription");
                             match TransportCrypto::new(&sd.secret_key) {
                                 Ok(crypto) => {
                                     let mut tc = self.transport_crypto.lock().await;
                                     *tc = Some(crypto);
                                 }
                                 Err(e) => {
-                                    error!("Failed to setup transport crypto: {}", e);
+                                    println!("Failed to setup transport crypto: {}", e);
                                 }
                             }
                         }
@@ -398,11 +398,11 @@ impl VoiceConnectionManager {
                             // Heartbeat acknowledged — connection is healthy
                         }
                         Ok(Ok(GatewayEvent::Resumed)) => {
-                            info!("VoiceConnectionManager: resumed");
+                            println!("VoiceConnectionManager: resumed");
                         }
                         Ok(Ok(_)) => {}
                         Ok(Err(e)) => {
-                            warn!("VoiceConnectionManager: gateway error in event loop: {}", e);
+                            println!("VoiceConnectionManager: gateway error in event loop: {}", e);
                             self.set_state(ConnectionState::Reconnecting).await;
                             return Err(format!("Gateway disconnected: {}", e));
                         }
@@ -413,7 +413,7 @@ impl VoiceConnectionManager {
                                 .unwrap_or_default()
                                 .as_millis() as u64;
                             if let Err(e) = gw.send_heartbeat(nonce).await {
-                                warn!("Failed to send heartbeat: {}", e);
+                                println!("Failed to send heartbeat: {}", e);
                                 return Err(format!("Failed to send heartbeat: {}", e));
                             }
                         }
