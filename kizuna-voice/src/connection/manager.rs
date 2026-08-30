@@ -224,9 +224,9 @@ impl VoiceConnectionManager {
             .map_err(|e| format!("Gateway connect failed: {}", e))?;
 
         // Wait for Hello
-        let hello = gw
-            .receive_event()
+        let hello = tokio::time::timeout(Duration::from_secs(5), gw.receive_event())
             .await
+            .map_err(|_| "Timeout waiting for Hello")?
             .map_err(|e| format!("Failed to receive Hello: {}", e))?;
 
         let heartbeat_interval = match hello {
@@ -253,17 +253,17 @@ impl VoiceConnectionManager {
             .map_err(|e| format!("Resume send failed: {}", e))?;
 
             // Wait for Resumed (Op 9) or an error
-            match gw.receive_event().await {
-                Ok(GatewayEvent::Resumed) => {
+            match tokio::time::timeout(Duration::from_secs(5), gw.receive_event()).await {
+                Ok(Ok(GatewayEvent::Resumed)) => {
                     info!("VoiceConnectionManager: Resume successful");
                     self.set_state(ConnectionState::Connected).await;
                 }
-                Ok(_other) => {
+                Ok(Ok(_other)) => {
                     // Resume was rejected or we got something else — do fresh Identify
                     warn!("VoiceConnectionManager: Resume rejected, falling back to fresh Identify");
                     return self.do_fresh_identify(&mut gw, heartbeat_interval).await;
                 }
-                Err(e) => {
+                Ok(Err(e)) => {
                     warn!("VoiceConnectionManager: Resume failed: {}, falling back to fresh Identify", e);
                     // Need a new connection for fresh identify since this one errored
                     return Err(format!("Resume failed: {}", e));

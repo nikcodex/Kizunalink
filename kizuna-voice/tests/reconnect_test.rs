@@ -39,25 +39,31 @@ async fn test_manager_fresh_identify_and_resume() {
     let mut rx = manager.state_receiver();
 
     // Wait for Connected
-    loop {
+    let mut connected = false;
+    for _ in 0..50 {
         if *rx.borrow() == ConnectionState::Connected {
+            connected = true;
             break;
         }
-        let _ = rx.changed().await;
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     }
+    assert!(connected, "Did not reach Connected state");
 
     assert!(fake_gw.has_received_opcode(0).await); // Identify sent
 
     // Now let's drop the connection to force a reconnect!
     drop(fake_gw);
 
-    loop {
+    let mut reconnected = false;
+    for _ in 0..50 {
         let st = *rx.borrow();
         if st == ConnectionState::Failed || st == ConnectionState::Reconnecting {
+            reconnected = true;
             break;
         }
-        let _ = rx.changed().await;
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     }
+    assert!(reconnected, "Did not reach Reconnecting state");
 
     jh.abort();
 }
@@ -103,12 +109,15 @@ async fn test_manager_resume_success() {
     let mut rx = manager.state_receiver();
 
     // 1. Wait for initial connection (Identify)
-    loop {
+    let mut connected = false;
+    for _ in 0..50 {
         if *rx.borrow() == ConnectionState::Connected {
+            connected = true;
             break;
         }
-        let _ = rx.changed().await;
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     }
+    assert!(connected, "Did not reach Connected state");
 
     assert!(fake_gw.has_received_opcode(0).await, "Did not send Identify");
     
