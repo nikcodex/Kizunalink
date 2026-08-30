@@ -53,7 +53,7 @@ async fn test_real_discord_voice_connection() {
                     "op": 2,
                     "d": {
                         "token": token,
-                        "intents": 0,
+                        "intents": 128,
                         "properties": {
                             "os": "linux",
                             "browser": "kizunalink",
