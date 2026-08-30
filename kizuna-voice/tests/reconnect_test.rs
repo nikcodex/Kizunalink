@@ -10,7 +10,6 @@ use std::time::Duration;
 
 #[tokio::test]
 async fn test_manager_fresh_identify_and_resume() {
-    let _ = tracing_subscriber::fmt::try_init();
     
     let ssrc = 778899;
     let config = GatewaySessionConfig {
@@ -72,7 +71,6 @@ async fn test_manager_fresh_identify_and_resume() {
 
 #[tokio::test]
 async fn test_manager_resume_success() {
-    let _ = tracing_subscriber::fmt::try_init();
     
     let ssrc = 111222;
     let mut config = GatewaySessionConfig {

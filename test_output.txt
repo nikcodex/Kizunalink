@@ -75,3 +75,35 @@
    Compiling ml-dsa v0.1.1
    Compiling x-wing v0.1.0
    Compiling hkdf v0.13.0
+   Compiling futures-macro v0.3.34
+   Compiling rand v0.8.8
+   Compiling icu_provider v2.3.1
+   Compiling serde v1.0.229
+   Compiling x25519-dalek v2.0.1
+   Compiling k256 v0.13.4
+   Compiling icu_normalizer v2.3.0
+   Compiling icu_properties v2.3.0
+   Compiling sha2 v0.11.0
+   Compiling sha1 v0.10.7
+   Compiling tls_codec v0.5.0
+   Compiling futures-sink v0.3.34
+   Compiling slab v0.4.12
+   Compiling futures-core v0.3.34
+   Compiling tracing-core v0.1.36
+   Compiling hpke-rs-rust-crypto v0.7.0
+   Compiling openmls_serialization_helpers v0.1.0
+   Compiling futures-util v0.3.34
+   Compiling async-trait v0.1.92
+   Compiling idna_adapter v1.2.2
+   Compiling openmls_traits v0.6.0
+   Compiling tokio-rustls v0.25.0
+   Compiling idna v1.1.0
+   Compiling openmls_memory_storage v0.6.0
+   Compiling hpke-rs v0.7.0
+   Compiling url v2.5.8
+   Compiling openmls v0.9.0
+   Compiling openmls_rust_crypto v0.6.0
+   Compiling openmls_basic_credential v0.6.0
+   Compiling tracing v0.1.44
+   Compiling tungstenite v0.21.0
+   Compiling tokio-tungstenite v0.21.0
