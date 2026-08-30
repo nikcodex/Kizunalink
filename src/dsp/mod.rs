@@ -17,6 +17,7 @@ pub mod wsola;
 pub mod testutil;
 
 #[cfg(test)]
+// pub mod verification_tests;
 
 pub use filters::FilterChain;
 pub use pipeline::{new_shared_chain, SharedChain};
