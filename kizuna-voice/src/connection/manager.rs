@@ -311,7 +311,11 @@ impl VoiceConnectionManager {
                 Ok(Err(e)) => return Err(format!("Waiting for Ready failed: {}", e)),
                 Err(_) => {
                     // Timeout -> send heartbeat
-                    let _ = gw.send_heartbeat(rand::random()).await;
+                    let nonce = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_millis() as u64;
+                    let _ = gw.send_heartbeat(nonce).await;
                 }
             }
         }
@@ -401,7 +405,11 @@ impl VoiceConnectionManager {
                         }
                         Err(_) => {
                             // Timeout -> send heartbeat
-                            if let Err(e) = gw.send_heartbeat(rand::random()).await {
+                            let nonce = std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .unwrap_or_default()
+                                .as_millis() as u64;
+                            if let Err(e) = gw.send_heartbeat(nonce).await {
                                 warn!("Failed to send heartbeat: {}", e);
                                 return Err(format!("Failed to send heartbeat: {}", e));
                             }
