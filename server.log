@@ -1,5 +1,0 @@
-[2m2026-08-23T13:57:51.857156Z[0m [32m INFO[0m [2mkizunalink[0m[2m:[0m Loaded config: host=0.0.0.0, port=2333
-[2m2026-08-23T13:57:51.873786Z[0m [32m INFO[0m [2mkizunalink::plugins[0m[2m:[0m 🚀 Loaded Plugin: "gaana.rhai"
-[2m2026-08-23T13:57:51.880695Z[0m [32m INFO[0m [2mkizunalink::plugins[0m[2m:[0m 🚀 Loaded Plugin: "itunes.rhai"
-[2m2026-08-23T13:57:51.881054Z[0m [32m INFO[0m [2mkizunalink::plugins[0m[2m:[0m Successfully loaded 2 active plugins
-[2m2026-08-23T13:57:51.903879Z[0m [32m INFO[0m [2mkizunalink[0m[2m:[0m ⛩️ KizunaLink v4.2.1 listening on 0.0.0.0:2333
