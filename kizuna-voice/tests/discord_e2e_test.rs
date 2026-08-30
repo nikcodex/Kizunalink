@@ -1,4 +1,3 @@
-let _ = tracing_subscriber::fmt::try_init();
 use futures_util::{SinkExt, StreamExt};
 use serde_json::{json, Value};
 use std::env;
