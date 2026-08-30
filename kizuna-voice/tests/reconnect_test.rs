@@ -12,9 +12,10 @@ use std::time::Duration;
 async fn test_manager_fresh_identify_and_resume() {
     
     let ssrc = 778899;
+    let fake_udp = kizuna_voice::test_harness::FakeVoiceUdpServer::start(ssrc).await.expect("Start fake UDP");
     let config = GatewaySessionConfig {
         ssrc,
-        udp_port: 0, // Not testing UDP in this layer directly
+        udp_port: fake_udp.port(),
         heartbeat_interval: 1000.0,
         auto_handshake: true,
     };
@@ -73,9 +74,10 @@ async fn test_manager_fresh_identify_and_resume() {
 async fn test_manager_resume_success() {
     
     let ssrc = 111222;
+    let fake_udp = kizuna_voice::test_harness::FakeVoiceUdpServer::start(ssrc).await.expect("Start fake UDP");
     let mut config = GatewaySessionConfig {
         ssrc,
-        udp_port: 0,
+        udp_port: fake_udp.port(),
         heartbeat_interval: 1000.0,
         auto_handshake: true,
     };

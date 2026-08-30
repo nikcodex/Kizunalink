@@ -107,3 +107,180 @@
    Compiling tracing v0.1.44
    Compiling tungstenite v0.21.0
    Compiling tokio-tungstenite v0.21.0
+   Compiling kizuna-voice v0.1.0 (/root/kizunalink/kizuna-voice)
+warning: unused import: `MissedTickBehavior`
+ --> kizuna-voice/src/audio/scheduler.rs:7:29
+  |
+7 | use tokio::time::{interval, MissedTickBehavior};
+  |                             ^^^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused imports: `DaveClientMessage` and `DaveGatewayMessage`
+ --> kizuna-voice/src/connection/manager.rs:2:29
+  |
+2 | use crate::dave::protocol::{DaveClientMessage, DaveGatewayMessage, DaveSe...
+  |                             ^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::gateway::payload::SessionDescription`
+ --> kizuna-voice/src/connection/manager.rs:4:5
+  |
+4 | use crate::gateway::payload::SessionDescription;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `std::time::Duration`
+ --> kizuna-voice/src/gateway/connection.rs:3:5
+  |
+3 | use std::time::Duration;
+  |     ^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `tokio::sync::mpsc`
+ --> kizuna-voice/src/gateway/connection.rs:5:5
+  |
+5 | use tokio::sync::mpsc;
+  |     ^^^^^^^^^^^^^^^^^
+
+warning: unused import: `tokio::time`
+ --> kizuna-voice/src/gateway/connection.rs:6:5
+  |
+6 | use tokio::time;
+  |     ^^^^^^^^^^^
+
+warning: unused imports: `error` and `warn`
+  --> kizuna-voice/src/gateway/connection.rs:10:22
+   |
+10 | use tracing::{debug, error, info, warn};
+   |                      ^^^^^        ^^^^
+
+warning: unused import: `Value`
+ --> kizuna-voice/src/test_harness/fake_gateway.rs:2:24
+  |
+2 | use serde_json::{json, Value};
+  |                        ^^^^^
+  |
+help: if this is a test module, consider adding a `#[cfg(test)]` to the containing module
+ --> kizuna-voice/src/test_harness/mod.rs:1:1
+  |
+1 | pub mod fake_gateway;
+  | ^^^^^^^^^^^^^^^^^^^^^
+
+warning: value assigned to `state` is never read
+  --> kizuna-voice/src/audio/scheduler.rs:62:29
+   |
+62 | ...                   state = TrackState::Stopped;
+   |                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: maybe it is overwritten before being read?
+   = note: `#[warn(unused_assignments)]` (part of `#[warn(unused)]`) on by default
+
+warning: value assigned to `state` is never read
+   --> kizuna-voice/src/audio/scheduler.rs:113:33
+    |
+113 | ...                   state = TrackState::Ended;
+    |                       ^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: maybe it is overwritten before being read?
+
+warning: value assigned to `ready_data` is never read
+   --> kizuna-voice/src/connection/manager.rs:295:30
+    |
+295 |         let mut ready_data = None;
+    |                              ^^^^ this value is reassigned later and never used
+...
+303 |                     ready_data = Some(ready);
+    |                     ---------- `ready_data` is overwritten here before the previous value is read
+
+warning: constant `FRAME_HEADER_SIZE` is never used
+  --> kizuna-voice/src/dave/protocol.rs:52:7
+   |
+52 | const FRAME_HEADER_SIZE: usize = 6;
+   |       ^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: constant `FRAME_NONCE_SIZE` is never used
+  --> kizuna-voice/src/dave/protocol.rs:53:7
+   |
+53 | const FRAME_NONCE_SIZE: usize = 12;
+   |       ^^^^^^^^^^^^^^^^
+
+warning: unused import: `super::*`
+ --> kizuna-voice/src/dave/mod.rs:5:9
+  |
+5 |     use super::*;
+  |         ^^^^^^^^
+
+warning: unused import: `Value`
+ --> kizuna-voice/src/test_harness/fake_gateway.rs:2:24
+  |
+2 | use serde_json::{json, Value};
+  |                        ^^^^^
+
+warning: `kizuna-voice` (lib) generated 13 warnings (run `cargo fix --lib -p kizuna-voice` to apply 8 suggestions)
+warning: variable does not need to be mutable
+  --> kizuna-voice/tests/reconnect_test.rs:40:9
+   |
+40 |     let mut rx = manager.state_receiver();
+   |         ----^^
+   |         |
+   |         help: remove this `mut`
+   |
+   = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: variable does not need to be mutable
+  --> kizuna-voice/tests/reconnect_test.rs:76:9
+   |
+76 |     let mut config = GatewaySessionConfig {
+   |         ----^^^^^^
+   |         |
+   |         help: remove this `mut`
+
+warning: variable does not need to be mutable
+  --> kizuna-voice/tests/reconnect_test.rs:82:9
+   |
+82 |     let mut fake_gw = FakeVoiceGateway::start(config.clone()).await.expe...
+   |         ----^^^^^^^
+   |         |
+   |         help: remove this `mut`
+
+warning: variable does not need to be mutable
+   --> kizuna-voice/tests/reconnect_test.rs:111:9
+    |
+111 |     let mut rx = manager.state_receiver();
+    |         ----^^
+    |         |
+    |         help: remove this `mut`
+
+warning: `kizuna-voice` (lib test) generated 14 warnings (12 duplicates) (run `cargo fix --lib -p kizuna-voice --tests` to apply 2 suggestions)
+warning: unused import: `kizuna_voice::transport::VoiceUdp`
+ --> kizuna-voice/tests/discord_e2e_test.rs:3:5
+  |
+3 | use kizuna_voice::transport::VoiceUdp;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `std::sync::Arc`
+ --> kizuna-voice/tests/discord_e2e_test.rs:5:5
+  |
+5 | use std::sync::Arc;
+  |     ^^^^^^^^^^^^^^
+
+warning: unused import: `tokio::sync::Mutex`
+ --> kizuna-voice/tests/discord_e2e_test.rs:6:5
+  |
+6 | use tokio::sync::Mutex;
+  |     ^^^^^^^^^^^^^^^^^^
+
+
+
+
+
+thread 'rustc' (16933) panicked at /rustc/88d9e12ae178fab0fb5cc050a94da85685d449ea/library/std/src/process.rs:2487:21:
+called `Result::unwrap()` on an `Err` value: Os { code: 38, kind: Unsupported, message: "Function not implemented" }
+stack backtrace:
+The futex facility returned an unexpected error code.
+error: could not compile `kizuna-voice` (test "track_test")
+
+Caused by:
+The futex facility returned an unexpected error code.
