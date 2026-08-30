@@ -69,7 +69,7 @@ impl VoiceGatewayClient {
             dave_protocol_version: Some(1),
         };
 
-        println!("Sending payload: {}", serde_json::to_string(&identify).unwrap());
+        
         let payload = VoicePayload {
             op: 0,
             d: serde_json::to_value(identify).unwrap(),
@@ -90,7 +90,7 @@ impl VoiceGatewayClient {
             token: token.to_string(),
         };
 
-        println!("Sending payload: {}", serde_json::to_string(&identify).unwrap());
+        
         let payload = VoicePayload {
             op: 7,
             d: serde_json::to_value(resume).unwrap(),
@@ -115,13 +115,13 @@ impl VoiceGatewayClient {
             }
         });
 
-        println!("Sending payload: {}", serde_json::to_string(&identify).unwrap());
+        
         let payload = VoicePayload { op: 1, d: data };
         self.send_payload(&payload).await
     }
 
     pub async fn send_heartbeat(&mut self, nonce: u64) -> Result<()> {
-        println!("Sending payload: {}", serde_json::to_string(&identify).unwrap());
+        
         let payload = VoicePayload {
             op: 3,
             d: json!(nonce),
