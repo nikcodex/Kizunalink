@@ -133,7 +133,7 @@ async fn test_real_discord_voice_connection() {
 
     println!("Starting VoiceConnectionManager...");
     // Replace wss:// endpoint formatting
-    let wss_endpoint = format!("wss://{}?v=8", voice_endpoint);
+    let wss_endpoint = format!("wss://{}/?v=8", voice_endpoint);
     let credentials = VoiceCredentials {
         endpoint: wss_endpoint,
         server_id: guild_id,
