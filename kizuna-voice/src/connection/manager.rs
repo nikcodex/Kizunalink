@@ -331,7 +331,6 @@ impl VoiceConnectionManager {
                 .map_err(|e| e.to_string())?;
 
         let udp_arc = Arc::new(udp);
-        let _ = self.state_tx.send(ConnectionState::Reconnecting); 
 
         gw.send_select_protocol(
             "udp",

@@ -28,6 +28,38 @@ pub struct VoiceGatewayClient {
     ws_stream: WebSocketStream<MaybeTlsStream<TcpStream>>,
 }
 
+
+fn parse_bytes(val: Option<&serde_json::Value>) -> Vec<u8> {
+    if let Some(v) = val {
+        if let Some(s) = v.as_str() {
+            // First try base64
+            use base64::{Engine as _, engine::general_purpose::STANDARD};
+            if let Ok(b) = STANDARD.decode(s) {
+                return b;
+            }
+            // Then try hex
+            if s.len() % 2 == 0 {
+                let mut decoded = Vec::new();
+                for i in (0..s.len()).step_by(2) {
+                    if let Ok(byte) = u8::from_str_radix(&s[i..i+2], 16) {
+                        decoded.push(byte);
+                    } else {
+                        break;
+                    }
+                }
+                if decoded.len() == s.len() / 2 {
+                    return decoded;
+                }
+            }
+            // fallback: string bytes
+            return s.as_bytes().to_vec();
+        } else if let Some(arr) = v.as_array() {
+            return arr.iter().filter_map(|x| x.as_u64().map(|n| n as u8)).collect();
+        }
+    }
+    vec![]
+}
+
 impl VoiceGatewayClient {
     pub async fn connect(endpoint: &str) -> Result<Self> {
         let clean_endpoint = endpoint.strip_suffix(":80").unwrap_or(endpoint);
@@ -35,16 +67,16 @@ impl VoiceGatewayClient {
             if clean_endpoint.contains('?') {
                 clean_endpoint.to_string()
             } else if clean_endpoint.ends_with('/') {
-                format!("{}?v=4", clean_endpoint)
+                format!("{}?v=8", clean_endpoint)
             } else {
-                format!("{}/?v=4", clean_endpoint)
+                format!("{}/?v=8", clean_endpoint)
             }
         } else if clean_endpoint.starts_with("127.0.0.1") || clean_endpoint.starts_with("localhost") {
             let host_port = clean_endpoint.trim_end_matches('/');
-            format!("ws://{}/?v=4", host_port)
+            format!("ws://{}/?v=8", host_port)
         } else {
             let host_port = clean_endpoint.trim_end_matches('/');
-            format!("wss://{}/?v=4", host_port)
+            format!("wss://{}/?v=8", host_port)
         };
         info!("Connecting to voice gateway: {}", url);
         let (ws_stream, _) = connect_async(&url)
@@ -66,13 +98,12 @@ impl VoiceGatewayClient {
             user_id: user_id.to_string(),
             session_id: session_id.to_string(),
             token: token.to_string(),
-            dave_protocol_version: Some(1),
+            max_dave_protocol_version: Some(1),
         };
 
-        
         let payload = VoicePayload {
             op: 0,
-            d: { let val = serde_json::to_value(identify).unwrap(); println!("Identify payload: {}", val); val },
+            d: serde_json::to_value(identify).unwrap(),
         };
 
         self.send_payload(&payload).await
@@ -90,7 +121,6 @@ impl VoiceGatewayClient {
             token: token.to_string(),
         };
 
-        
         let payload = VoicePayload {
             op: 7,
             d: serde_json::to_value(resume).unwrap(),
@@ -115,16 +145,14 @@ impl VoiceGatewayClient {
             }
         });
 
-        
         let payload = VoicePayload { op: 1, d: data };
         self.send_payload(&payload).await
     }
 
     pub async fn send_heartbeat(&mut self, nonce: u64) -> Result<()> {
-        
         let payload = VoicePayload {
             op: 3,
-            d: json!(nonce),
+            d: json!({ "t": nonce }),
         };
         self.send_payload(&payload).await
     }
@@ -222,9 +250,8 @@ impl VoiceGatewayClient {
                             ))
                         }
                         25 => {
-                            // Stub parse logic
-                            let credential = vec![];
-                            let signature_key = vec![];
+                            let credential = parse_bytes(payload.d.get("credential"));
+                            let signature_key = parse_bytes(payload.d.get("signature_key"));
                             Ok(GatewayEvent::DaveMessage(
                                 DaveGatewayMessage::MlsExternalSenderPackage {
                                     credential,
@@ -233,7 +260,7 @@ impl VoiceGatewayClient {
                             ))
                         }
                         26 => {
-                            let key_package = vec![];
+                            let key_package = parse_bytes(payload.d.get("key_package"));
                             Ok(GatewayEvent::DaveMessage(
                                 DaveGatewayMessage::MlsKeyPackage { key_package },
                             ))

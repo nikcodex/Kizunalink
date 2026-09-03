@@ -78,9 +78,11 @@ impl KizunaVoiceAdapter {
         });
 
         // Wait until Connected or Failed
-        loop {
-            // we must wait for state change
-            let _ = rx.changed().await;
+        if *rx.borrow() == ConnectionState::Connected {
+            info!("KizunaVoice Adapter fully connected!");
+            return Ok(());
+        }
+        while rx.changed().await.is_ok() {
             let current = *rx.borrow();
             if current == ConnectionState::Connected {
                 info!("KizunaVoice Adapter fully connected!");
@@ -89,6 +91,7 @@ impl KizunaVoiceAdapter {
                 return Err("Failed to connect to Discord Voice Gateway".into());
             }
         }
+        Err("Failed to connect: state receiver closed".into())
     }
 
     pub fn play_source(

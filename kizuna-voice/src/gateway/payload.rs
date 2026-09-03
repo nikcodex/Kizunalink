@@ -14,9 +14,9 @@ pub struct Identify {
     pub user_id: String,
     pub session_id: String,
     pub token: String,
-    // Add DAVE support
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub dave_protocol_version: Option<u8>,
+    // Add DAVE support (Discord requires field name `max_dave_protocol_version`)
+    #[serde(skip_serializing_if = "Option::is_none", rename = "max_dave_protocol_version", alias = "dave_protocol_version", default)]
+    pub max_dave_protocol_version: Option<u8>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
