@@ -1,13 +1,10 @@
 use futures_util::{SinkExt, StreamExt};
 use serde_json::{json, Value};
-use std::time::Duration;
 use tokio::net::TcpStream;
-use tokio::sync::mpsc;
-use tokio::time;
 use tokio_tungstenite::{
     connect_async, tungstenite::protocol::Message, MaybeTlsStream, WebSocketStream,
 };
-use tracing::{debug, error, info, warn};
+use tracing::{debug, info};
 
 use super::payload::{Identify, Ready, SessionDescription, VoicePayload};
 use crate::dave::protocol::{DaveClientMessage, DaveGatewayMessage};

@@ -81,19 +81,19 @@ impl YouTubeSource {
         let po_token = std::env::var("YOUTUBE_PO_TOKEN").ok();
         let oauth_token = std::env::var("YOUTUBE_OAUTH_TOKEN").ok();
 
+        if po_token.is_some() {
+            info!("YouTube: PO token loaded from environment");
+        }
+        if oauth_token.is_some() {
+            info!("YouTube: OAuth2 token loaded from environment");
+        }
+
         let source = Arc::new(Self {
             default_client,
             route_planner,
             po_token: RwLock::new(po_token),
             oauth_token: RwLock::new(oauth_token),
         });
-
-        if source.po_token.blocking_read().is_some() {
-            info!("YouTube: PO token loaded from environment");
-        }
-        if source.oauth_token.blocking_read().is_some() {
-            info!("YouTube: OAuth2 token loaded from environment");
-        }
 
         source
     }

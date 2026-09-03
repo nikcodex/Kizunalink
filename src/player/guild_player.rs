@@ -10,7 +10,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use tokio::sync::{broadcast, mpsc, Mutex};
-use tracing::info;
+use tracing::{info, warn};
 
 use crate::dsp::pipeline::{self, SharedChain};
 
@@ -230,8 +230,7 @@ impl GuildPlayer {
         let filtered = self.shared_chain.lock().unwrap().is_active();
 
         if let Some(adapter_arc) = &self.kizuna_voice_adapter {
-            // To prove the architecture, we rebuild the source for Kizuna
-            if let Ok(k_source) = crate::dsp::pipeline::create_kizuna_source(
+            match crate::dsp::pipeline::create_kizuna_source(
                 crate::config::http_client(),
                 url.clone(),
                 None,
@@ -240,29 +239,35 @@ impl GuildPlayer {
             )
             .await
             {
-                let k_src = Arc::new(Mutex::new(k_source));
-                let mut adapter = adapter_arc.lock().await;
-                let k_handle = adapter.play_source(k_src, self.user_id.clone());
+                Ok(k_source) => {
+                    let k_src = Arc::new(Mutex::new(k_source));
+                    let mut adapter = adapter_arc.lock().await;
+                    let k_handle = adapter.play_source(k_src, self.user_id.clone());
 
-                let guild_id = self.guild_id.clone();
-                let tx = self.track_end_tx.clone();
-                let kh_clone = k_handle.clone();
+                    let guild_id = self.guild_id.clone();
+                    let tx = self.track_end_tx.clone();
+                    let kh_clone = k_handle.clone();
 
-                // TrackEndNotifier replacement loop
-                tokio::spawn(async move {
-                    while let Ok(event) = kh_clone.next_event().await {
-                        if matches!(
-                            event,
-                            kizuna_voice::audio::TrackEvent::Ended
-                                | kizuna_voice::audio::TrackEvent::Error(_)
-                        ) {
-                            let _ = tx.send(guild_id.clone());
-                            break;
+                    // TrackEndNotifier replacement loop
+                    tokio::spawn(async move {
+                        while let Ok(event) = kh_clone.next_event().await {
+                            if matches!(
+                                event,
+                                kizuna_voice::audio::TrackEvent::Ended
+                                    | kizuna_voice::audio::TrackEvent::Error(_)
+                            ) {
+                                let _ = tx.send(guild_id.clone());
+                                break;
+                            }
                         }
-                    }
-                });
+                    });
 
-                self.kizuna_track_handle = Some(k_handle);
+                    self.kizuna_track_handle = Some(k_handle);
+                }
+                Err(e) => {
+                    warn!("Failed to recreate audio source on restart for guild {}: {}", self.guild_id, e);
+                    return;
+                }
             }
         }
 
@@ -318,8 +323,7 @@ impl GuildPlayer {
         let filtered = self.shared_chain.lock().unwrap().is_active();
 
         if let Some(adapter_arc) = &self.kizuna_voice_adapter {
-            // To prove the architecture, we rebuild the source for Kizuna
-            if let Ok(k_source) = crate::dsp::pipeline::create_kizuna_source(
+            match crate::dsp::pipeline::create_kizuna_source(
                 crate::config::http_client(),
                 stream_url.clone(),
                 None,
@@ -328,30 +332,41 @@ impl GuildPlayer {
             )
             .await
             {
-                let k_src = Arc::new(Mutex::new(k_source));
-                let mut adapter = adapter_arc.lock().await;
-                let k_handle = adapter.play_source(k_src, self.user_id.clone());
+                Ok(k_source) => {
+                    let k_src = Arc::new(Mutex::new(k_source));
+                    let mut adapter = adapter_arc.lock().await;
+                    let k_handle = adapter.play_source(k_src, self.user_id.clone());
 
-                let guild_id = self.guild_id.clone();
-                let tx = self.track_end_tx.clone();
-                let kh_clone = k_handle.clone();
+                    let guild_id = self.guild_id.clone();
+                    let tx = self.track_end_tx.clone();
+                    let kh_clone = k_handle.clone();
 
-                // TrackEndNotifier replacement loop
-                tokio::spawn(async move {
-                    while let Ok(event) = kh_clone.next_event().await {
-                        if matches!(
-                            event,
-                            kizuna_voice::audio::TrackEvent::Ended
-                                | kizuna_voice::audio::TrackEvent::Error(_)
-                        ) {
-                            let _ = tx.send(guild_id.clone());
-                            break;
+                    // TrackEndNotifier replacement loop
+                    tokio::spawn(async move {
+                        while let Ok(event) = kh_clone.next_event().await {
+                            if matches!(
+                                event,
+                                kizuna_voice::audio::TrackEvent::Ended
+                                    | kizuna_voice::audio::TrackEvent::Error(_)
+                            ) {
+                                let _ = tx.send(guild_id.clone());
+                                break;
+                            }
                         }
-                    }
-                });
+                    });
 
-                self.kizuna_track_handle = Some(k_handle);
+                    self.kizuna_track_handle = Some(k_handle);
+                }
+                Err(e) => {
+                    warn!("Failed to create audio source for guild {}: {}", self.guild_id, e);
+                    self.emit_track_load_failed(&track, &format!("Failed to open audio stream: {}", e));
+                    return false;
+                }
             }
+        } else {
+            warn!("Cannot play track: voice not connected for guild {}", self.guild_id);
+            self.emit_track_load_failed(&track, "Voice connection not established");
+            return false;
         }
 
         if let Some(k_handle) = &self.kizuna_track_handle {

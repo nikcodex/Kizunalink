@@ -48,8 +48,9 @@ const SENDER_KEY_LABEL: &[u8] = b"Discord Secure Frames v0";
 /// How many generations to retain old keys (for out-of-order frames)
 const KEY_RETENTION_GENERATIONS: u64 = 10;
 
-/// DAVE frame header: version (1 byte) + flags (1 byte) + nonce (4 bytes)
+#[allow(dead_code)]
 const FRAME_HEADER_SIZE: usize = 6;
+#[allow(dead_code)]
 const FRAME_NONCE_SIZE: usize = 12;
 
 // ---------------------------------------------------------------------------
@@ -418,6 +419,10 @@ impl DaveSession {
     ) -> Result<Vec<u8>, String> {
         let uid: u64 = sender_id.parse().unwrap_or(0);
 
+        if !self.sender_ratchets.contains_key(sender_id) {
+            self.add_sender(sender_id);
+        }
+
         let ratchet = self
             .sender_ratchets
             .get_mut(sender_id)
@@ -517,6 +522,10 @@ impl DaveSession {
 
         let uid: u64 = sender_id.parse().unwrap_or(0);
         let generation = (nonce_val as u64 >> 24) & 0xFF;
+
+        if !self.sender_ratchets.contains_key(sender_id) {
+            self.add_sender(sender_id);
+        }
 
         let ratchet = self
             .sender_ratchets

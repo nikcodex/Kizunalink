@@ -1,12 +1,10 @@
 use crate::connection::state::ConnectionState;
-use crate::dave::protocol::{DaveClientMessage, DaveGatewayMessage, DaveSession};
+use crate::dave::protocol::DaveSession;
 use crate::gateway::connection::{GatewayEvent, VoiceGatewayClient};
-use crate::gateway::payload::SessionDescription;
 use crate::transport::crypto::TransportCrypto;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{watch, Mutex, Notify};
-use tracing::{error, info, warn};
 
 /// Configuration for reconnect behavior
 #[derive(Clone, Debug)]
@@ -252,25 +250,46 @@ impl VoiceConnectionManager {
             .await
             .map_err(|e| format!("Resume send failed: {}", e))?;
 
-            // Wait for Resumed (Op 9) or an error
-            match tokio::time::timeout(Duration::from_secs(5), gw.receive_event()).await {
-                Ok(Ok(GatewayEvent::Resumed)) => {
-                    println!("VoiceConnectionManager: Resume successful");
-                    self.set_state(ConnectionState::Connected).await;
+            // Wait for Resumed (Op 9) with tolerant event loop
+            let mut resume_success = false;
+            let resume_deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+            while tokio::time::Instant::now() < resume_deadline {
+                match tokio::time::timeout(Duration::from_millis(1500), gw.receive_event()).await {
+                    Ok(Ok(GatewayEvent::Resumed)) => {
+                        println!("VoiceConnectionManager: Resume successful");
+                        self.set_state(ConnectionState::Connected).await;
+                        resume_success = true;
+                        break;
+                    }
+                    Ok(Ok(GatewayEvent::HeartbeatAck)) => {
+                        continue;
+                    }
+                    Ok(Ok(GatewayEvent::DaveMessage(dave_msg))) => {
+                        let mut dave = self.dave.lock().await;
+                        let out_msgs = dave.handle_gateway_message(dave_msg);
+                        drop(dave);
+                        for out in out_msgs {
+                            let _ = gw.send_dave_message(out).await;
+                        }
+                        continue;
+                    }
+                    Ok(Ok(other)) => {
+                        println!("VoiceConnectionManager: Resume got unexpected event: {:?}", other);
+                        break;
+                    }
+                    Ok(Err(e)) => {
+                        println!("VoiceConnectionManager: Gateway error during resume: {}", e);
+                        return Err(format!("Resume failed: {}", e));
+                    }
+                    Err(_) => {
+                        continue;
+                    }
                 }
-                Ok(Ok(_other)) => {
-                    // Resume was rejected or we got something else — do fresh Identify
-                    println!("VoiceConnectionManager: Resume rejected, falling back to fresh Identify");
-                    return self.do_fresh_identify(&mut gw, heartbeat_interval).await;
-                }
-                Ok(Err(e)) => {
-                    println!("VoiceConnectionManager: Resume failed: {}, falling back to fresh Identify", e);
-                    // Need a new connection for fresh identify since this one errored
-                    return Err(format!("Resume failed: {}", e));
-                }
-                Err(_) => {
-                    return Err("Timeout waiting for Resumed".to_string());
-                }
+            }
+
+            if !resume_success {
+                println!("VoiceConnectionManager: Resume not confirmed, falling back to fresh Identify");
+                return self.do_fresh_identify(&mut gw, heartbeat_interval).await;
             }
         } else {
             // Fresh Identify
@@ -292,17 +311,12 @@ impl VoiceConnectionManager {
         .await
         .map_err(|e| format!("Identify failed: {}", e))?;
 
-        let mut ready_data = None;
-
         // Wait for Ready
-        loop {
+        let ready = loop {
             // Include heartbeat while waiting for Ready
             let interval = Duration::from_millis(heartbeat_interval as u64);
             match tokio::time::timeout(interval, gw.receive_event()).await {
-                Ok(Ok(GatewayEvent::Ready(ready))) => {
-                    ready_data = Some(ready);
-                    break;
-                }
+                Ok(Ok(GatewayEvent::Ready(ready))) => break ready,
                 Ok(Ok(GatewayEvent::DaveMessage(dave_msg))) => {
                     let mut dave = self.dave.lock().await;
                     let responses = dave.handle_gateway_message(dave_msg);
@@ -321,9 +335,7 @@ impl VoiceConnectionManager {
                     let _ = gw.send_heartbeat(nonce).await;
                 }
             }
-        }
-
-        let ready = ready_data.unwrap();
+        };
 
         let (udp, external_ip, external_port) =
             crate::transport::VoiceUdp::bind_and_discover(&ready.ip, ready.port, ready.ssrc)

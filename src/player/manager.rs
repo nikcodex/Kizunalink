@@ -295,12 +295,30 @@ impl PlayerManager {
                         return Some(url.clone());
                     }
                 }
-                self.youtube
+                let yt_url = self.youtube
                     .resolve_video(identifier)
                     .await
                     .ok()
                     .flatten()
-                    .and_then(|t| t.info.uri)
+                    .and_then(|t| t.info.uri);
+
+                if let Some(ref u) = yt_url {
+                    if u.starts_with("http") && !u.contains("youtube.com") && !u.contains("youtu.be") {
+                        return Some(u.clone());
+                    }
+                }
+
+                // Fallback: Mirror to JioSaavn for 320kbps audio if YouTube stream is ciphered/blocked
+                let query = format!("{} {}", track.info.title, track.info.author);
+                if let Ok(js_tracks) = self.jiosaavn.search(&query, 1).await {
+                    if let Some(first) = js_tracks.into_iter().next() {
+                        if let Ok(js_url) = self.jiosaavn.resolve_stream_url(&first.info.identifier).await {
+                            info!("⚡ YouTube fallback -> JioSaavn 320kbps for '{}'", track.info.title);
+                            return Some(js_url);
+                        }
+                    }
+                }
+                None
             }
             "soundcloud" => self.soundcloud.resolve_stream(identifier).await.ok(),
             "spotify" => self.resolve_spotify_mirror(track).await,

@@ -287,13 +287,13 @@ impl AudioDecoder {
 /// Byte source backed by a channel fed from an async HTTP task.
 /// Implements Read+Send+Sync so it can be wrapped in a MediaSourceStream.
 pub struct ChannelByteSource {
-    rx: Mutex<std::sync::mpsc::Receiver<Vec<u8>>>,
+    rx: Mutex<tokio::sync::mpsc::Receiver<Vec<u8>>>,
     pending: Mutex<Vec<u8>>,
     eof: Mutex<bool>,
 }
 
 impl ChannelByteSource {
-    pub fn new(rx: std::sync::mpsc::Receiver<Vec<u8>>) -> Self {
+    pub fn new(rx: tokio::sync::mpsc::Receiver<Vec<u8>>) -> Self {
         Self {
             rx: Mutex::new(rx),
             pending: Mutex::new(Vec::new()),
@@ -339,13 +339,12 @@ impl Read for ChannelByteSource {
                 return Ok(0);
             }
 
-            let rx = self.rx.lock().unwrap();
-            match rx.recv_timeout(std::time::Duration::from_millis(100)) {
-                Ok(chunk) => {
+            let mut rx = self.rx.lock().unwrap();
+            match rx.blocking_recv() {
+                Some(chunk) => {
                     self.pending.lock().unwrap().extend_from_slice(&chunk);
                 }
-                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
-                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                None => {
                     *self.eof.lock().unwrap() = true;
                     return Ok(0);
                 }
@@ -356,7 +355,6 @@ impl Read for ChannelByteSource {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
 
     #[test]
     fn opus_detection_via_string() {

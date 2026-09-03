@@ -60,7 +60,6 @@ impl FrameScheduler {
                             }
                         }
                         Some(TrackCommand::Stop) | None => {
-                            state = TrackState::Stopped;
                             let _ = event_tx.send(TrackEvent::Stopped);
                             break;
                         }
@@ -111,12 +110,10 @@ impl FrameScheduler {
                                 Some(frame)
                             }
                             Ok(None) => {
-                                state = TrackState::Ended;
                                 let _ = event_tx.send(TrackEvent::Ended);
                                 break;
                             }
                             Err(e) => {
-                                let _ = TrackState::Error;
                                 let _ = event_tx.send(TrackEvent::Error(e.to_string()));
                                 break;
                             }

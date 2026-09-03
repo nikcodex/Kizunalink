@@ -103,7 +103,7 @@ mod tests {
         trem.set_depth(0.5);
         trem.set_frequency(2.0);
 
-        let sample_rate = 48000.0;
+        let _sample_rate = 48000.0;
         let input: Vec<f32> = vec![1.0; 1000]; // DC signal
 
         let mut output = input;

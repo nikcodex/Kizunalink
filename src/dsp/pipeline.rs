@@ -15,8 +15,6 @@ use super::decoder::{AudioDecoder, ChannelByteSource};
 use super::filters::FilterChain;
 use symphonia::core::io::MediaSource;
 
-#[cfg(test)]
-use crate::models::filters::Filters;
 
 /// Filter chain shared between a live pipeline reader and GuildPlayer so REST
 /// filter updates propagate into running audio without restarts (except when
@@ -168,7 +166,7 @@ pub async fn create_kizuna_source(
     shared_chain: SharedChain,
     skip_frames: u64,
 ) -> Result<KizunaFilteredSource, String> {
-    let (tx, rx) = std::sync::mpsc::sync_channel::<Vec<u8>>(256);
+    let (tx, rx) = tokio::sync::mpsc::channel::<Vec<u8>>(128);
     let url = stream_url.clone();
     tokio::spawn(async move {
         let resp = match http.get(&url).send().await {
@@ -183,7 +181,7 @@ pub async fn create_kizuna_source(
         while let Some(chunk) = stream.next().await {
             match chunk {
                 Ok(bytes) => {
-                    if tx.send(bytes.to_vec()).is_err() {
+                    if tx.send(bytes.to_vec()).await.is_err() {
                         break;
                     }
                 }

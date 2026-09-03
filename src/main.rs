@@ -239,7 +239,13 @@ async fn main() {
         }
     });
 
-    let listener = tokio::net::TcpListener::bind(&addr).await.unwrap();
+    let listener = match tokio::net::TcpListener::bind(&addr).await {
+        Ok(l) => l,
+        Err(e) => {
+            tracing::error!("Failed to bind server to {}: {}", addr, e);
+            std::process::exit(1);
+        }
+    };
 
     // Graceful shutdown via Ctrl+C
     let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
@@ -255,10 +261,12 @@ async fn main() {
 
     info!("⛩️ KizunaLink v4.2.1 listening on {}", addr);
 
-    axum::serve(listener, app)
+    if let Err(e) = axum::serve(listener, app)
         .with_graceful_shutdown(shutdown_signal)
         .await
-        .unwrap();
+    {
+        tracing::error!("Server error: {}", e);
+    }
 
     // Cleanup on shutdown
     info!("Shutting down players...");
