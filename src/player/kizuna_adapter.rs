@@ -3,7 +3,6 @@ use kizuna_voice::audio::{
 };
 use kizuna_voice::connection::session::VoiceSession;
 use kizuna_voice::dave::protocol::DaveSession;
-use kizuna_voice::gateway::{connection::GatewayEvent, VoiceGatewayClient};
 use kizuna_voice::transport::{RtpHeader, TransportCrypto, VoiceUdp};
 use kizuna_voice::connection::manager::{VoiceConnectionManager, VoiceCredentials};
 use kizuna_voice::connection::state::ConnectionState;
@@ -132,12 +131,10 @@ impl KizunaVoiceAdapter {
                         let opus_data = match frame {
                             AudioFrame::Opus(data) => data,
                             AudioFrame::Pcm(pcm) => {
-                                let mut enc = enc_clone.try_lock().unwrap();
-                                let encoded = enc.encode(OpusSource::Pcm(pcm)).unwrap();
-                                if let AudioFrame::Opus(data) = encoded {
-                                    data
-                                } else {
-                                    vec![]
+                                let mut enc = enc_clone.lock().await;
+                                match enc.encode(OpusSource::Pcm(pcm)) {
+                                    Ok(AudioFrame::Opus(data)) => data,
+                                    _ => vec![],
                                 }
                             }
                         };

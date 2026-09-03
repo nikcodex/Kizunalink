@@ -176,16 +176,6 @@ impl GuildPlayer {
             return false;
         }
 
-        let endpoint_raw = merged.endpoint.clone();
-        let endpoint = endpoint_raw
-            .trim_start_matches("wss://")
-            .trim_start_matches("ws://")
-            .split(':')
-            .next()
-            .unwrap_or(&endpoint_raw)
-            .to_string();
-
-        let guild_num = self.guild_id.parse::<u64>().unwrap_or(0);
 
         let mut adapter = crate::player::kizuna_adapter::KizunaVoiceAdapter::new(
             merged.session_id.clone(),
