@@ -6,7 +6,7 @@ use axum::{
 use serde::Deserialize;
 use tracing::{info, warn};
 
-use crate::models::track::LoadResult;
+use crate::models::track::{LavalinkTrack, LoadResult, TrackInfo};
 use crate::ratelimit::extract_ip;
 use crate::rest::auth::require_auth;
 use crate::rest::error::LavalinkError;
