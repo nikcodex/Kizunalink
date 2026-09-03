@@ -33,6 +33,9 @@ pub struct PlayerUpdatePayload {
     pub paused: Option<bool>,
     pub filters: Option<Filters>,
     pub voice: Option<VoiceStateUpdate>,
+    pub autoplay: Option<bool>,
+    #[serde(rename = "loop", default)]
+    pub loop_mode: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -53,6 +56,9 @@ pub struct PlayerResponse {
     pub state: PlayerState,
     pub voice: VoiceStateUpdate,
     pub filters: Filters,
+    pub autoplay: bool,
+    #[serde(rename = "loop")]
+    pub loop_mode: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

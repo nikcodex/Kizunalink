@@ -197,6 +197,21 @@ impl PlayerManager {
             player.apply_filters().await;
         }
 
+        if let Some(autoplay) = payload.autoplay {
+            player.autoplay.enabled = autoplay;
+            info!("Set autoplay to {} for guild: {}", autoplay, guild_id);
+        }
+
+        if let Some(ref l_mode) = payload.loop_mode {
+            let mode = match l_mode.to_lowercase().as_str() {
+                "track" => crate::player::queue::LoopMode::Track,
+                "queue" => crate::player::queue::LoopMode::Queue,
+                _ => crate::player::queue::LoopMode::None,
+            };
+            player.set_loop(mode);
+            info!("Set loop mode to {:?} for guild: {}", mode, guild_id);
+        }
+
         if should_stop_track {
             info!("Stopping player for guild: {}", guild_id);
             player.stop();

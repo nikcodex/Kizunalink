@@ -611,6 +611,12 @@ impl GuildPlayer {
             },
             voice: self.voice.clone().unwrap_or_default(),
             filters: self.filters.clone(),
+            autoplay: self.autoplay.enabled,
+            loop_mode: match self.queue.loop_mode {
+                LoopMode::None => "none".to_string(),
+                LoopMode::Track => "track".to_string(),
+                LoopMode::Queue => "queue".to_string(),
+            },
         }
     }
 }

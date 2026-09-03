@@ -143,7 +143,12 @@ async fn main() {
             "/v4/sessions/:session_id/players/:guild_id",
             patch(rest::players::update_player).delete(rest::players::destroy_player),
         )
+        .route("/v4/lyrics", get(rest::lyrics::get_lyrics_query))
         .route("/v4/lyrics/:song_id", get(rest::lyrics::get_lyrics))
+        .route(
+            "/v4/sessions/:session_id/players/:guild_id/track/lyrics",
+            get(rest::lyrics::get_player_current_lyrics),
+        )
         .route("/v4/sessions", get(rest::sessions::list_sessions))
         .route("/v4/metrics", get(rest::metrics::get_metrics))
         .route(
