@@ -1,14 +1,25 @@
 use crate::models::track::{LavalinkTrack, TrackInfo};
 use base64::{engine::general_purpose::STANDARD, Engine as _};
+use dashmap::DashMap;
 use std::io::{Cursor, Read};
+use std::sync::LazyLock;
 
 const TRACK_INFO_VERSIONED: i32 = 1;
 const TRACK_INFO_VERSION: i32 = 3;
 
+static TRACK_CACHE: LazyLock<DashMap<String, LavalinkTrack>> =
+    LazyLock::new(|| DashMap::with_capacity(1024));
+const MAX_CACHE_ENTRIES: usize = 4096;
+
 /// Decode Lavalink binary encoded track (supports v1, v2, and v3).
 pub fn decode_track(encoded: &str) -> Result<LavalinkTrack, TrackDecodeError> {
+    let clean = encoded.trim();
+    if let Some(cached) = TRACK_CACHE.get(clean) {
+        return Ok(cached.clone());
+    }
+
     let data = STANDARD
-        .decode(encoded.trim())
+        .decode(clean)
         .map_err(|e| TrackDecodeError::Base64Error(e.to_string()))?;
 
     if data.len() < 4 {
@@ -99,7 +110,7 @@ pub fn decode_track(encoded: &str) -> Result<LavalinkTrack, TrackDecodeError> {
         plugin_info.insert("isrc".to_string(), serde_json::Value::String(code.clone()));
     }
 
-    Ok(LavalinkTrack {
+    let track = LavalinkTrack {
         encoded: encoded.to_string(),
         info: TrackInfo {
             identifier,
@@ -116,7 +127,13 @@ pub fn decode_track(encoded: &str) -> Result<LavalinkTrack, TrackDecodeError> {
         },
         plugin_info: serde_json::Value::Object(plugin_info),
         user_data: serde_json::Value::Object(Default::default()),
-    })
+    };
+
+    if TRACK_CACHE.len() < MAX_CACHE_ENTRIES {
+        TRACK_CACHE.insert(clean.to_string(), track.clone());
+    }
+
+    Ok(track)
 }
 
 /// Encode a track into Lavalink v3 binary format.

@@ -147,8 +147,12 @@ impl VoiceGatewayClient {
     }
 
     pub async fn send_speaking(&mut self, speaking: bool, ssrc: u32) -> Result<()> {
+        // Bitmask: 1 = Microphone, 2 = Soundshare (High-Quality Stereo Audio Stream), 4 = Priority Speaker.
+        // For music streaming, sending (1 | 2) = 3 signals Discord's media servers to optimize jitter buffers
+        // and audio packet delivery for stereo music rather than mono speech.
+        let bitmask = if speaking { 1 | 2 } else { 0 };
         let data = json!({
-            "speaking": if speaking { 1 } else { 0 },
+            "speaking": bitmask,
             "delay": 0,
             "ssrc": ssrc
         });

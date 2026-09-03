@@ -226,6 +226,19 @@ impl FilterChain {
             low_pass.process_buffer(&mut work);
         }
 
+        // Audiophile Soft-Knee Peak Limiting (Anti-Clipping Headroom Protection)
+        // When heavy EQ, Bass Boost, or volume > 1.0 is applied, digital audio samples can exceed +/-1.0.
+        // Instead of hard-clamping which causes harsh buzzing square waves, apply smooth tanh saturation
+        // for peaks above 0.95 (approx -0.45 dBFS).
+        for sample in work.iter_mut() {
+            let abs_val = sample.abs();
+            if abs_val > 0.95 {
+                let sign = sample.signum();
+                let compressed = 0.95 + 0.05 * ((abs_val - 0.95) / 0.05).tanh();
+                *sample = sign * compressed.min(1.0);
+            }
+        }
+
         work
     }
 
