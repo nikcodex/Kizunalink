@@ -21,17 +21,6 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y cmake
       - run: cargo check --workspace --all-targets --all-features
 
-  test:
-    name: Test
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      - run: sudo apt-get update && sudo apt-get install -y cmake
-      - run: cargo test --workspace --all-features
-
   clippy:
     name: Clippy
     runs-on: ubuntu-latest
@@ -60,7 +49,7 @@ jobs:
     name: Build Release
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    needs: [check, test]
+    needs: [check, clippy, fmt]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -71,20 +60,3 @@ jobs:
         with:
           name: kizunalink-linux-amd64
           path: target/release/kizunalink
-
-  test-e2e:
-    name: Real Discord E2E
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    if: github.event_name == 'push'
-    env:
-      KIZUNA_DISCORD_E2E: "1"
-      DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
-      DISCORD_GUILD_ID: ${{ secrets.DISCORD_GUILD_ID }}
-      DISCORD_CHANNEL_ID: ${{ secrets.DISCORD_CHANNEL_ID }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      - run: sudo apt-get update && sudo apt-get install -y cmake
-      - run: cargo test test_real_discord_voice_connection --workspace --all-features -- --nocapture

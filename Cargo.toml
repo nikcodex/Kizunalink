@@ -51,9 +51,6 @@ sysinfo = "0.31"
 ctrlc = "3.4"
 prometheus = { version = "0.13", features = ["process"] }
 
-[dev-dependencies]
-tower = { version = "0.4", features = ["util"] }
-http-body-util = "0.1"
 
 [profile.release]
 opt-level = 3
