@@ -230,12 +230,13 @@ impl GuildPlayer {
         let filtered = self.shared_chain.lock().unwrap().is_active();
 
         if let Some(adapter_arc) = &self.kizuna_voice_adapter {
+            let skip_frames = position_ms.saturating_mul(48); // 48kHz audio = 48 samples per millisecond
             match crate::dsp::pipeline::create_kizuna_source(
                 crate::config::http_client(),
                 url.clone(),
                 None,
                 self.shared_chain.clone(),
-                0,
+                skip_frames,
             )
             .await
             {

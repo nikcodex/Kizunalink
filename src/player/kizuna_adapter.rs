@@ -172,12 +172,20 @@ impl KizunaVoiceAdapter {
                             let mut tc_guard = transport_crypto.lock().await;
                             if let Some(ref mut tc) = *tc_guard {
                                 if let Ok(encrypted_packet) = tc.encrypt_rtp_packet(&header_buf, &packet_payload) {
-                                    let _ = current_udp.send_packet(&encrypted_packet).await;
+                                    if current_udp.send_packet(&encrypted_packet).await.is_ok() {
+                                        crate::stats::FrameCounters::global().record_sent(1);
+                                    } else {
+                                        crate::stats::FrameCounters::global().record_deficit(1);
+                                    }
                                 }
                             } else {
                                 let mut packet = header_buf;
                                 packet.extend(packet_payload);
-                                let _ = current_udp.send_packet(&packet).await;
+                                if current_udp.send_packet(&packet).await.is_ok() {
+                                    crate::stats::FrameCounters::global().record_sent(1);
+                                } else {
+                                    crate::stats::FrameCounters::global().record_deficit(1);
+                                }
                             }
                         }
                     }
