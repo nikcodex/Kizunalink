@@ -112,6 +112,12 @@ impl KizunaVoiceAdapter {
         let timestamp = self.timestamp.clone();
 
         tokio::spawn(async move {
+            // Ensure talker is registered in DAVE session
+            {
+                let mut dave_guard = dave.lock().await;
+                dave_guard.add_sender(&sender_id);
+            }
+
             let encoder = std::sync::Arc::new(tokio::sync::Mutex::new(OpusEncoder::new().unwrap()));
             scheduler
                 .run(cmd_rx, event_tx, |frame| {

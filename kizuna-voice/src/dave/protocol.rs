@@ -523,10 +523,6 @@ impl DaveSession {
         let uid: u64 = sender_id.parse().unwrap_or(0);
         let generation = (nonce_val as u64 >> 24) & 0xFF;
 
-        if !self.sender_ratchets.contains_key(sender_id) {
-            self.add_sender(sender_id);
-        }
-
         let ratchet = self
             .sender_ratchets
             .get_mut(sender_id)
