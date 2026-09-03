@@ -177,6 +177,23 @@ impl KizunaVoiceAdapter {
                     }
                 })
                 .await;
+
+            // Send 5 frames of Opus silence to flush Discord client-side jitter buffer smoothly
+            let udp_guard = udp_ref.read().await;
+            if let Some(ref current_udp) = *udp_guard {
+                for _ in 0..5 {
+                    let cur_seq = sequence.fetch_add(1, std::sync::atomic::Ordering::SeqCst).wrapping_add(1);
+                    let cur_ts = timestamp.fetch_add(960, std::sync::atomic::Ordering::SeqCst).wrapping_add(960);
+                    let current_ssrc = ssrc_ref.load(std::sync::atomic::Ordering::SeqCst);
+                    let header = RtpHeader::new(cur_seq, cur_ts, current_ssrc);
+                    let mut header_buf = Vec::new();
+                    if header.write_to(&mut header_buf).is_ok() {
+                        header_buf.extend_from_slice(&[0xF8, 0xFF, 0xFE]);
+                        let _ = current_udp.send_packet(&header_buf).await;
+                    }
+                    tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+                }
+            }
         });
 
         handle

@@ -49,10 +49,6 @@ impl FrameScheduler {
                             if state == TrackState::Playing {
                                 state = TrackState::Paused;
                                 let _ = event_tx.send(TrackEvent::Paused);
-                                // Flush 5 frames of Opus silence to clear Discord client jitter buffer
-                                for _ in 0..5 {
-                                    send_callback(AudioFrame::Opus(vec![0xF8, 0xFF, 0xFE])).await;
-                                }
                             }
                         }
                         Some(TrackCommand::Resume) => {
@@ -66,10 +62,6 @@ impl FrameScheduler {
                         Some(TrackCommand::Stop) | None => {
                             state = TrackState::Stopped;
                             let _ = event_tx.send(TrackEvent::Stopped);
-                            // Flush 5 frames of Opus silence on stop
-                            for _ in 0..5 {
-                                send_callback(AudioFrame::Opus(vec![0xF8, 0xFF, 0xFE])).await;
-                            }
                             break;
                         }
                         Some(TrackCommand::Seek(pos)) => {
@@ -121,10 +113,6 @@ impl FrameScheduler {
                             Ok(None) => {
                                 state = TrackState::Ended;
                                 let _ = event_tx.send(TrackEvent::Ended);
-                                // Flush 5 frames of Opus silence on track end
-                                for _ in 0..5 {
-                                    send_callback(AudioFrame::Opus(vec![0xF8, 0xFF, 0xFE])).await;
-                                }
                                 break;
                             }
                             Err(e) => {
