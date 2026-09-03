@@ -352,7 +352,9 @@ impl VoiceConnectionManager {
         )
         .await
         .map_err(|e| format!("Select Protocol failed: {}", e))?;
-        
+
+        let _ = gw.send_speaking(true, ready.ssrc).await;
+
         let mut cb = self.on_fresh_identify.lock().await;
         if let Some(cb_fn) = cb.as_mut() {
             cb_fn(ready.ssrc, udp_arc);
@@ -404,6 +406,7 @@ impl VoiceConnectionManager {
                                     println!("Failed to setup transport crypto: {}", e);
                                 }
                             }
+                            let _ = gw.send_speaking(true, 0).await;
                         }
                         Ok(Ok(GatewayEvent::HeartbeatAck)) => {
                             // Heartbeat acknowledged — connection is healthy

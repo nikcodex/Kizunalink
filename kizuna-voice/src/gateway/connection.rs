@@ -146,6 +146,16 @@ impl VoiceGatewayClient {
         self.send_payload(&payload).await
     }
 
+    pub async fn send_speaking(&mut self, speaking: bool, ssrc: u32) -> Result<()> {
+        let data = json!({
+            "speaking": if speaking { 1 } else { 0 },
+            "delay": 0,
+            "ssrc": ssrc
+        });
+        let payload = VoicePayload { op: 5, d: data };
+        self.send_payload(&payload).await
+    }
+
     pub async fn send_heartbeat(&mut self, nonce: u64) -> Result<()> {
         let payload = VoicePayload {
             op: 3,

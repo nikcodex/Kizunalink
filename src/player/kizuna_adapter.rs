@@ -194,8 +194,16 @@ impl KizunaVoiceAdapter {
                     let header = RtpHeader::new(cur_seq, cur_ts, current_ssrc);
                     let mut header_buf = Vec::new();
                     if header.write_to(&mut header_buf).is_ok() {
-                        header_buf.extend_from_slice(&[0xF8, 0xFF, 0xFE]);
-                        let _ = current_udp.send_packet(&header_buf).await;
+                        let silence_payload = [0xF8, 0xFF, 0xFE];
+                        let mut tc_guard = transport_crypto.lock().await;
+                        if let Some(ref mut tc) = *tc_guard {
+                            if let Ok(encrypted) = tc.encrypt_rtp_packet(&header_buf, &silence_payload) {
+                                let _ = current_udp.send_packet(&encrypted).await;
+                            }
+                        } else {
+                            header_buf.extend_from_slice(&silence_payload);
+                            let _ = current_udp.send_packet(&header_buf).await;
+                        }
                     }
                     tokio::time::sleep(std::time::Duration::from_millis(20)).await;
                 }
