@@ -188,6 +188,51 @@ impl SoundCloudSource {
         )
         .await
     }
+
+    pub async fn resolve_set(
+        &self,
+        set_url: &str,
+    ) -> Result<Option<crate::models::track::PlaylistData>, String> {
+        self.request_with_retry(
+            |client_id| {
+                format!(
+                    "{}/resolve?url={}&client_id={}",
+                    SOUNDCLOUD_API,
+                    urlencoding::encode(set_url),
+                    client_id,
+                )
+            },
+            |json| {
+                let title = json
+                    .get("title")
+                    .and_then(|t| t.as_str())
+                    .unwrap_or("SoundCloud Playlist")
+                    .to_string();
+
+                let tracks_val = json.get("tracks").and_then(|t| t.as_array())?;
+                let tracks: Vec<LavalinkTrack> = tracks_val
+                    .iter()
+                    .filter_map(|item| parse_track(item))
+                    .collect();
+
+                if tracks.is_empty() {
+                    return None;
+                }
+
+                Some(crate::models::track::PlaylistData {
+                    info: crate::models::track::PlaylistInfo {
+                        name: title,
+                        selected_track: 0,
+                    },
+                    plugin_info: serde_json::Value::Null,
+                    tracks,
+                })
+            },
+        )
+        .await
+        .map(Some)
+        .or(Ok(None))
+    }
 }
 
 fn parse_track(item: &Value) -> Option<LavalinkTrack> {

@@ -169,6 +169,19 @@ pub async fn create_kizuna_source(
     let (tx, rx) = tokio::sync::mpsc::channel::<Vec<u8>>(128);
     let url = stream_url.clone();
     tokio::spawn(async move {
+        if let Some(file_path) = url.strip_prefix("file://").or_else(|| if url.starts_with('/') { Some(url.as_str()) } else { None }) {
+            // Local file streaming
+            use tokio::io::AsyncReadExt;
+            if let Ok(mut file) = tokio::fs::File::open(file_path).await {
+                let mut buf = [0u8; 8192];
+                while let Ok(n) = file.read(&mut buf).await {
+                    if n == 0 { break; }
+                    if tx.send(buf[..n].to_vec()).await.is_err() { break; }
+                }
+            }
+            return;
+        }
+
         let resp = match http.get(&url).send().await {
             Ok(r) => r,
             Err(_) => return,

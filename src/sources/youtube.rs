@@ -437,6 +437,189 @@ impl YouTubeSource {
 
         Some(track)
     }
+
+    pub async fn resolve_playlist(
+        &self,
+        playlist_id: &str,
+    ) -> Result<Option<crate::models::track::PlaylistData>, String> {
+        let browse_id = if playlist_id.starts_with("VL") {
+            playlist_id.to_string()
+        } else {
+            format!("VL{}", playlist_id)
+        };
+
+        let mut payload = serde_json::json!({
+            "context": {
+                "client": {
+                    "clientName": "WEB",
+                    "clientVersion": "2.20241126.01.00",
+                    "hl": "en",
+                    "gl": "US"
+                }
+            },
+            "browseId": browse_id,
+        });
+
+        if let Some(po) = self.po_token.read().await.as_ref() {
+            if let Some(obj) = payload.as_object_mut() {
+                obj.insert(
+                    "serviceIntegrityDimensions".to_string(),
+                    serde_json::json!({ "poToken": po }),
+                );
+            }
+        }
+
+        let json = self.innertube_request("browse", &payload).await?;
+
+        let playlist_name = json
+            .get("header")
+            .and_then(|h| h.get("playlistHeaderRenderer"))
+            .and_then(|p| p.get("title"))
+            .and_then(|t| {
+                t.get("simpleText")
+                    .and_then(|s| s.as_str())
+                    .or_else(|| {
+                        t.get("runs")
+                            .and_then(|r| r.as_array())
+                            .and_then(|a| a.first())
+                            .and_then(|r| r.get("text"))
+                            .and_then(|s| s.as_str())
+                    })
+            })
+            .unwrap_or("YouTube Playlist")
+            .to_string();
+
+        let mut tracks = Vec::new();
+
+        if let Some(tabs) = json
+            .get("contents")
+            .and_then(|c| c.get("twoColumnBrowseResultsRenderer"))
+            .and_then(|c| c.get("tabs"))
+            .and_then(|t| t.as_array())
+        {
+            for tab in tabs {
+                if let Some(sections) = tab
+                    .get("tabRenderer")
+                    .and_then(|tr| tr.get("content"))
+                    .and_then(|c| c.get("sectionListRenderer"))
+                    .and_then(|sl| sl.get("contents"))
+                    .and_then(|c| c.as_array())
+                {
+                    for section in sections {
+                        if let Some(items) = section
+                            .get("itemSectionRenderer")
+                            .and_then(|isr| isr.get("contents"))
+                            .and_then(|c| c.as_array())
+                        {
+                            for item in items {
+                                if let Some(video_list) = item
+                                    .get("playlistVideoListRenderer")
+                                    .and_then(|pvl| pvl.get("contents"))
+                                    .and_then(|c| c.as_array())
+                                {
+                                    for v_item in video_list {
+                                        if let Some(video) = v_item.get("playlistVideoRenderer") {
+                                            if let Some(track) = self.parse_playlist_video_renderer(video) {
+                                                tracks.push(track);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if tracks.is_empty() {
+            return Ok(None);
+        }
+
+        Ok(Some(crate::models::track::PlaylistData {
+            info: crate::models::track::PlaylistInfo {
+                name: playlist_name,
+                selected_track: 0,
+            },
+            plugin_info: serde_json::Value::Null,
+            tracks,
+        }))
+    }
+
+    fn parse_playlist_video_renderer(&self, video: &Value) -> Option<LavalinkTrack> {
+        let video_id = video.get("videoId").and_then(|v| v.as_str())?;
+        let title = video
+            .get("title")
+            .and_then(|t| {
+                t.get("simpleText")
+                    .and_then(|s| s.as_str())
+                    .or_else(|| {
+                        t.get("runs")
+                            .and_then(|r| r.as_array())
+                            .and_then(|a| a.first())
+                            .and_then(|r| r.get("text"))
+                            .and_then(|s| s.as_str())
+                    })
+            })
+            .unwrap_or("Unknown Title")
+            .to_string();
+
+        let author = video
+            .get("shortBylineText")
+            .and_then(|o| o.get("runs"))
+            .and_then(|r| r.as_array())
+            .and_then(|a| a.first())
+            .and_then(|r| r.get("text"))
+            .and_then(|t| t.as_str())
+            .unwrap_or("Unknown Artist")
+            .to_string();
+
+        let length_sec: u64 = video
+            .get("lengthSeconds")
+            .and_then(|l| l.as_str())
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(0);
+
+        let artwork = video
+            .get("thumbnail")
+            .and_then(|t| t.get("thumbnails"))
+            .and_then(|t| t.as_array())
+            .and_then(|t| t.last())
+            .and_then(|t| t.get("url"))
+            .and_then(|u| u.as_str())
+            .map(|s| {
+                if s.starts_with("//") {
+                    format!("https:{}", s)
+                } else {
+                    s.to_string()
+                }
+            });
+
+        let mut track = LavalinkTrack {
+            encoded: String::new(),
+            info: TrackInfo {
+                identifier: video_id.to_string(),
+                is_seekable: true,
+                author,
+                length: length_sec * 1000,
+                is_stream: false,
+                position: 0,
+                title,
+                uri: Some(format!("https://www.youtube.com/watch?v={}", video_id)),
+                artwork_url: artwork,
+                isrc: None,
+                source_name: "youtube".to_string(),
+            },
+            plugin_info: serde_json::Value::Null,
+            user_data: serde_json::Value::Null,
+        };
+
+        if let Ok(enc) = crate::track_encoding::encode_track(&track) {
+            track.encoded = enc;
+        }
+
+        Some(track)
+    }
 }
 
 /// Parse "M:SS" or "MM:SS" or "HH:MM:SS" to milliseconds

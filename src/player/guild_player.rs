@@ -135,6 +135,28 @@ impl GuildPlayer {
         );
     }
 
+    pub fn emit_track_stuck(&self, track: &LavalinkTrack, threshold_ms: u64) {
+        self.emit_event(
+            "TrackStuckEvent",
+            serde_json::json!({
+                "track": track,
+                "thresholdMs": threshold_ms,
+            }),
+        );
+    }
+
+    pub fn emit_websocket_closed(&self, code: u16, reason: &str, by_remote: bool) {
+        let event = serde_json::json!({
+            "op": "event",
+            "type": "WebSocketClosedEvent",
+            "guildId": self.guild_id,
+            "code": code,
+            "reason": reason,
+            "byRemote": by_remote,
+        });
+        let _ = self.event_tx.send(event.to_string());
+    }
+
     pub fn emit_player_update(&self) {
         let resp = self.to_response();
         if let Ok(json) = serde_json::to_value(&resp) {

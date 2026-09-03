@@ -132,6 +132,8 @@ impl PlayerManager {
         let mut resolved_track = None;
         let mut resolved_stream_url = None;
 
+        let user_data_override = payload.track.as_ref().and_then(|t| t.user_data.clone());
+
         if let Some(ref enc) = encoded_value {
             if enc.trim().is_empty() {
                 should_stop_track = true;
@@ -140,6 +142,9 @@ impl PlayerManager {
                 match crate::track_encoding::decode_track(enc) {
                     Ok(mut track) => {
                         track.encoded = enc.clone();
+                        if let Some(ref ud) = user_data_override {
+                            track.user_data = ud.clone();
+                        }
                         let stream_url = self.resolve_stream_url(&track).await;
                         resolved_track = Some(track);
                         resolved_stream_url = stream_url;
@@ -154,7 +159,10 @@ impl PlayerManager {
                 should_stop_track = true;
             } else {
                 // Resolve identifier
-                if let Some(track) = self.resolve_identifier(id).await {
+                if let Some(mut track) = self.resolve_identifier(id).await {
+                    if let Some(ref ud) = user_data_override {
+                        track.user_data = ud.clone();
+                    }
                     let stream_url = self.resolve_stream_url(&track).await;
                     resolved_track = Some(track);
                     resolved_stream_url = stream_url;

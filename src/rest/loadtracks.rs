@@ -51,6 +51,50 @@ pub async fn load_tracks(
 
     info!("Resolving track query: \"{}\"", identifier);
 
+    // Local audio file playback (e.g. /media/song.mp3 or file:///media/song.mp3)
+    let local_path = if let Some(stripped) = identifier.strip_prefix("file://") {
+        Some(stripped)
+    } else if identifier.starts_with('/') && is_direct_audio_url(&identifier) {
+        Some(identifier.as_str())
+    } else {
+        None
+    };
+
+    if let Some(path_str) = local_path {
+        let path = std::path::Path::new(path_str);
+        if path.is_file() {
+            let file_name = path
+                .file_name()
+                .and_then(|f| f.to_str())
+                .unwrap_or("Local Audio");
+            let mut track = LavalinkTrack {
+                encoded: String::new(),
+                info: TrackInfo {
+                    identifier: path_str.to_string(),
+                    is_seekable: true,
+                    author: "Local File".to_string(),
+                    length: 0,
+                    is_stream: false,
+                    position: 0,
+                    title: file_name.to_string(),
+                    uri: Some(format!("file://{}", path_str)),
+                    artwork_url: None,
+                    isrc: None,
+                    source_name: "local".to_string(),
+                },
+                plugin_info: serde_json::Value::Null,
+                user_data: serde_json::Value::Null,
+            };
+            if let Ok(enc) = crate::track_encoding::encode_track(&track) {
+                track.encoded = enc;
+            }
+            let m = crate::metrics::Metrics::global();
+            m.inc_source("local");
+            m.tracks_loaded.inc();
+            return Ok(Json(LoadResult::Track(track)));
+        }
+    }
+
     // Direct HTTP(S) audio stream
     if (identifier.starts_with("http://") || identifier.starts_with("https://"))
         && is_direct_audio_url(&identifier)
@@ -151,6 +195,14 @@ pub async fn load_tracks(
         }
     }
 
+    // SoundCloud set / playlist URLs
+    if identifier.contains("soundcloud.com/") && identifier.contains("/sets/") {
+        if let Ok(Some(pl)) = state.soundcloud.resolve_set(&identifier).await {
+            crate::metrics::Metrics::global().inc_source("soundcloud");
+            return Ok(Json(LoadResult::Playlist(pl)));
+        }
+    }
+
     // Spotify URLs & search
     if identifier.contains("open.spotify.com/track/") {
         if let Some(track_id) = extract_spotify_id(&identifier, "track") {
@@ -175,6 +227,12 @@ pub async fn load_tracks(
 
     // YouTube URLs & search
     if is_youtube_url(&identifier) {
+        if let Some(list_id) = extract_youtube_playlist_id(&identifier) {
+            if let Ok(Some(pl)) = state.youtube.resolve_playlist(&list_id).await {
+                crate::metrics::Metrics::global().inc_source("youtube");
+                return Ok(Json(LoadResult::Playlist(pl)));
+            }
+        }
         let video_id = extract_youtube_id(&identifier);
         if let Ok(Some(track)) = state.youtube.resolve_video(&video_id).await {
             crate::metrics::Metrics::global().inc_source("youtube");
@@ -351,6 +409,11 @@ fn is_youtube_url(url: &str) -> bool {
         || url.contains("youtu.be/")
         || url.contains("youtube.com/shorts/")
         || url.contains("music.youtube.com/watch")
+        || url.contains("youtube.com/playlist")
+}
+
+fn extract_youtube_playlist_id(url: &str) -> Option<String> {
+    url.split("list=").nth(1).and_then(|s| s.split('&').next()).map(|s| s.to_string())
 }
 
 fn extract_youtube_id(url: &str) -> String {
