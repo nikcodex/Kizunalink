@@ -81,21 +81,34 @@ impl KizunaVoiceAdapter {
             }
         });
 
-        // Wait until Connected or Failed
-        if *rx.borrow() == ConnectionState::Connected {
-            info!("KizunaVoice Adapter fully connected!");
-            return Ok(());
-        }
-        while rx.changed().await.is_ok() {
-            let current = *rx.borrow();
-            if current == ConnectionState::Connected {
+        let connect_result =
+            tokio::time::timeout(std::time::Duration::from_secs(15), async {
+                if *rx.borrow() == ConnectionState::Connected {
+                    return Ok(());
+                }
+                while rx.changed().await.is_ok() {
+                    let current = *rx.borrow();
+                    if current == ConnectionState::Connected {
+                        return Ok(());
+                    } else if current == ConnectionState::Failed {
+                        return Err("Failed to connect to Discord Voice Gateway");
+                    }
+                }
+                Err("state receiver closed")
+            })
+            .await;
+
+        match connect_result {
+            Ok(Ok(())) => {
                 info!("KizunaVoice Adapter fully connected!");
-                return Ok(());
-            } else if current == ConnectionState::Failed {
-                return Err("Failed to connect to Discord Voice Gateway".into());
+                Ok(())
+            }
+            Ok(Err(e)) => Err(e.to_string()),
+            Err(_) => {
+                manager.shutdown().await;
+                Err("Voice connection timed out".into())
             }
         }
-        Err("Failed to connect: state receiver closed".into())
     }
 
     pub fn play_source(

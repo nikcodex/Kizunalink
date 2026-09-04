@@ -67,6 +67,7 @@ pub struct PlayerManager {
     deezer: Arc<DeezerSource>,
     apple_music: Arc<AppleMusicSource>,
     pub queue_max_history: usize,
+    sources: crate::config::SourcesConfig,
 }
 
 pub struct SourceBundle {
@@ -84,6 +85,7 @@ impl PlayerManager {
         sources: SourceBundle,
         queue_max_history: usize,
         max_players: usize,
+        sources_config: crate::config::SourcesConfig,
     ) -> Self {
         let (track_end_tx, mut track_end_rx) = mpsc::unbounded_channel::<String>();
 
@@ -101,6 +103,7 @@ impl PlayerManager {
             deezer: sources.deezer,
             apple_music: sources.apple_music,
             queue_max_history,
+            sources: sources_config,
         };
 
         let manager_arc = Arc::new(manager);
@@ -396,7 +399,7 @@ impl PlayerManager {
     async fn resolve_identifier(&self, id: &str) -> Option<crate::models::track::LavalinkTrack> {
         let clean = id.trim();
         if clean.starts_with("http://") || clean.starts_with("https://") {
-            if clean.contains("spotify.com") {
+            if clean.contains("spotify.com") && self.sources.spotify {
                 if let Some(track_id) = clean
                     .split("/track/")
                     .nth(1)
@@ -404,7 +407,9 @@ impl PlayerManager {
                 {
                     return self.spotify.resolve_track(track_id).await.ok().flatten();
                 }
-            } else if clean.contains("youtube.com") || clean.contains("youtu.be") {
+            } else if (clean.contains("youtube.com") || clean.contains("youtu.be"))
+                && self.sources.youtube
+            {
                 let vid =
                     if let Some(v) = clean.split("v=").nth(1).and_then(|s| s.split('&').next()) {
                         v
@@ -418,7 +423,7 @@ impl PlayerManager {
                         clean
                     };
                 return self.youtube.resolve_video(vid).await.ok().flatten();
-            } else if clean.contains("deezer.com/") {
+            } else if clean.contains("deezer.com/") && self.sources.deezer {
                 if let Some(track_id) = clean
                     .split("/track/")
                     .nth(1)
@@ -426,7 +431,7 @@ impl PlayerManager {
                 {
                     return self.deezer.resolve_track(track_id).await.ok().flatten();
                 }
-            } else if clean.contains("music.apple.com/") {
+            } else if clean.contains("music.apple.com/") && self.sources.applemusic {
                 let track_id = if let Some(i_param) =
                     clean.split("i=").nth(1).and_then(|s| s.split('&').next())
                 {

@@ -575,7 +575,7 @@ impl YouTubeSource {
                 name: playlist_name,
                 selected_track: 0,
             },
-            plugin_info: serde_json::Value::Null,
+            plugin_info: serde_json::json!({}),
             tracks,
         }))
     }
@@ -642,8 +642,8 @@ impl YouTubeSource {
                 isrc: None,
                 source_name: "youtube".to_string(),
             },
-            plugin_info: serde_json::Value::Null,
-            user_data: serde_json::Value::Null,
+            plugin_info: serde_json::json!({}),
+            user_data: serde_json::json!({}),
         };
 
         if let Ok(enc) = crate::track_encoding::encode_track(&track) {

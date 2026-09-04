@@ -66,6 +66,7 @@ async fn main() {
             tracing_subscriber::EnvFilter::try_from_default_env()
                 .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new(&log_level)),
         )
+        .with_ansi(config.logging.colored)
         .with_target(true)
         .with_thread_ids(false)
         .init();
@@ -122,6 +123,7 @@ async fn main() {
         },
         config.queue_max_history,
         kizunalink::player::manager::MAX_PLAYERS,
+        config.sources.clone(),
     ));
 
     let dave_manager = dave::DaveManager::new();
@@ -277,7 +279,7 @@ async fn main() {
     // Periodic cleanup task for rate limiter and stale sessions
     let cleanup_pm = state.player_manager.clone();
     tokio::spawn(async move {
-        let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(300));
+        let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(60));
         loop {
             interval.tick().await;
             rate_limiter.cleanup().await;

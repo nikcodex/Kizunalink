@@ -153,8 +153,8 @@ mod tests {
                 isrc: None,
                 source_name: "test".to_string(),
             },
-            plugin_info: serde_json::Value::Null,
-            user_data: serde_json::Value::Null,
+            plugin_info: serde_json::json!({}),
+            user_data: serde_json::json!({}),
         }
     }
 

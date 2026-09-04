@@ -83,8 +83,6 @@ pub struct RatelimitConfig {
     pub strategy: String,
     #[serde(default)]
     pub excluded_ips: Vec<String>,
-    #[serde(default = "default_retry_limit")]
-    pub retry_limit: u32,
     #[serde(default = "default_max_requests")]
     pub max_requests: u32,
     #[serde(default = "default_window_secs")]
@@ -95,10 +93,6 @@ pub struct RatelimitConfig {
 
 fn default_strategy() -> String {
     "RotatingIpRoutePlanner".to_string()
-}
-
-fn default_retry_limit() -> u32 {
-    4
 }
 
 fn default_max_requests() -> u32 {
@@ -119,7 +113,6 @@ impl Default for RatelimitConfig {
             ip_blocks: Vec::new(),
             strategy: default_strategy(),
             excluded_ips: Vec::new(),
-            retry_limit: default_retry_limit(),
             max_requests: default_max_requests(),
             window_secs: default_window_secs(),
             burst: default_burst(),
@@ -131,8 +124,6 @@ impl Default for RatelimitConfig {
 pub struct LoggingConfig {
     #[serde(default = "default_log_level")]
     pub level: String,
-    #[serde(default)]
-    pub file: Option<String>,
     #[serde(default = "default_true")]
     pub colored: bool,
 }
@@ -145,7 +136,6 @@ impl Default for LoggingConfig {
     fn default() -> Self {
         Self {
             level: default_log_level(),
-            file: None,
             colored: true,
         }
     }
@@ -155,20 +145,11 @@ impl Default for LoggingConfig {
 pub struct MetricsConfig {
     #[serde(default = "default_true")]
     pub enabled: bool,
-    #[serde(default = "default_metrics_port")]
-    pub port: u16,
-}
-
-fn default_metrics_port() -> u16 {
-    9090
 }
 
 impl Default for MetricsConfig {
     fn default() -> Self {
-        Self {
-            enabled: true,
-            port: default_metrics_port(),
-        }
+        Self { enabled: true }
     }
 }
 
@@ -176,8 +157,6 @@ impl Default for MetricsConfig {
 pub struct SecurityConfig {
     #[serde(default = "default_max_body_size")]
     pub max_body_size: usize,
-    #[serde(default = "default_true")]
-    pub ssrf_protection: bool,
     #[serde(default)]
     pub blocked_hosts: Vec<String>,
 }
@@ -190,7 +169,6 @@ impl Default for SecurityConfig {
     fn default() -> Self {
         Self {
             max_body_size: default_max_body_size(),
-            ssrf_protection: true,
             blocked_hosts: Vec::new(),
         }
     }
@@ -204,12 +182,6 @@ pub struct ProxyConfig {
     pub username: Option<String>,
     #[serde(default)]
     pub password: Option<String>,
-    #[serde(default = "default_proxy_timeout")]
-    pub timeout_secs: u64,
-}
-
-fn default_proxy_timeout() -> u64 {
-    30
 }
 
 impl Default for ProxyConfig {
@@ -218,7 +190,6 @@ impl Default for ProxyConfig {
             url: None,
             username: None,
             password: None,
-            timeout_secs: default_proxy_timeout(),
         }
     }
 }
@@ -390,9 +361,6 @@ impl AppConfig {
         if let Ok(level) = std::env::var("KIZUNA_LOG_LEVEL") {
             config.logging.level = level;
         }
-        if let Ok(file) = std::env::var("KIZUNA_LOG_FILE") {
-            config.logging.file = Some(file);
-        }
         if let Ok(colored) = std::env::var("KIZUNA_LOG_COLORED") {
             config.logging.colored = colored != "false";
         }
@@ -404,12 +372,6 @@ impl AppConfig {
         }
         if let Ok(proxy_pass) = std::env::var("KIZUNA_PROXY_PASS") {
             config.proxy.password = Some(proxy_pass);
-        }
-        if let Some(proxy_timeout) = std::env::var("KIZUNA_PROXY_TIMEOUT")
-            .ok()
-            .and_then(|v| v.parse().ok())
-        {
-            config.proxy.timeout_secs = proxy_timeout;
         }
         if let Some(max_conn) = std::env::var("KIZUNA_MAX_CONNECTIONS")
             .ok()

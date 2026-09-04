@@ -37,6 +37,7 @@ fn mock_player_manager_with_limit(max_players: usize) -> PlayerManager {
         },
         50,
         max_players,
+        kizunalink::config::SourcesConfig::default(),
     )
 }
 

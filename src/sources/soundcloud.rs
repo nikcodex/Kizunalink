@@ -219,7 +219,7 @@ impl SoundCloudSource {
                         name: title,
                         selected_track: 0,
                     },
-                    plugin_info: serde_json::Value::Null,
+                    plugin_info: serde_json::json!({}),
                     tracks,
                 })
             },

@@ -26,6 +26,6 @@ pub async fn get_stats(
         uptime,
         memory,
         cpu,
-        frame_stats: None,
+        frame_stats: Some(crate::stats::FrameCounters::global().snapshot()),
     }))
 }

@@ -27,27 +27,22 @@ deezer = true
 ip_blocks = []
 strategy = "RotatingIpRoutePlanner"
 excluded_ips = []
-retry_limit = 4
 max_requests = 60
 window_secs = 60
 burst = 10
 
 [logging]
 level = "info"
-# file = "kizunalink.log"
 colored = true
 
 [metrics]
 enabled = true
-port = 9090
 
 [security]
 max_body_size = 1048576
-ssrf_protection = true
 blocked_hosts = []
 
 [proxy]
 # url = "socks5://proxy:1080"
 # username = ""
 # password = ""
-timeout_secs = 30

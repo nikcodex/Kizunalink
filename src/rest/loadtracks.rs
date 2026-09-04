@@ -109,8 +109,8 @@ pub async fn load_tracks(
                     isrc: None,
                     source_name: "local".to_string(),
                 },
-                plugin_info: serde_json::Value::Null,
-                user_data: serde_json::Value::Null,
+                plugin_info: serde_json::json!({}),
+                user_data: serde_json::json!({}),
             };
             if let Ok(enc) = crate::track_encoding::encode_track(&track) {
                 track.encoded = enc;
