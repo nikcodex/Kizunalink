@@ -202,7 +202,23 @@ impl KizunaVoiceAdapter {
                     let header = RtpHeader::new(cur_seq, cur_ts, current_ssrc);
                     let mut header_buf = Vec::new();
                     if header.write_to(&mut header_buf).is_ok() {
-                        let silence_payload = [0xF8, 0xFF, 0xFE];
+                        let silence_raw = [0xF8, 0xFF, 0xFE];
+                        let silence_payload = {
+                            let mut dave_guard = dave.lock().await;
+                            if dave_guard.is_active() {
+                                match dave_guard.encrypt_frame(
+                                    &sender_id,
+                                    &silence_raw,
+                                    cur_seq as u32,
+                                    &header_buf,
+                                ) {
+                                    Ok(encrypted) => encrypted,
+                                    Err(_) => silence_raw.to_vec(),
+                                }
+                            } else {
+                                silence_raw.to_vec()
+                            }
+                        };
                         let mut tc_guard = transport_crypto.lock().await;
                         if let Some(ref mut tc) = *tc_guard {
                             if let Ok(encrypted) = tc.encrypt_rtp_packet(&header_buf, &silence_payload) {
@@ -211,8 +227,9 @@ impl KizunaVoiceAdapter {
                                 }
                             }
                         } else {
-                            header_buf.extend_from_slice(&silence_payload);
-                            if current_udp.send_packet(&header_buf).await.is_ok() {
+                            let mut packet = header_buf;
+                            packet.extend(silence_payload);
+                            if current_udp.send_packet(&packet).await.is_ok() {
                                 crate::stats::FrameCounters::global().record_nulled(1);
                             }
                         }

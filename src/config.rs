@@ -342,7 +342,7 @@ impl AppConfig {
         if let Ok(host) = std::env::var("KIZUNA_HOST") {
             config.server.host = host;
         }
-        if let Ok(port) = std::env::var("KIZUNA_PORT").ok().and_then(|p| p.parse().ok()) {
+        if let Some(port) = std::env::var("KIZUNA_PORT").ok().and_then(|p| p.parse().ok()) {
             config.server.port = port;
         }
         if let Ok(password) = std::env::var("KIZUNA_PASSWORD") {
@@ -358,7 +358,7 @@ impl AppConfig {
         if let Ok(strategy) = std::env::var("KIZUNA_ROUTEPLANNER_STRATEGY") {
             config.ratelimit.strategy = strategy;
         }
-        if let Ok(max_req) = std::env::var("KIZUNA_MAX_REQUESTS").ok().and_then(|v| v.parse().ok()) {
+        if let Some(max_req) = std::env::var("KIZUNA_MAX_REQUESTS").ok().and_then(|v| v.parse().ok()) {
             config.ratelimit.max_requests = max_req;
         }
         if let Ok(level) = std::env::var("KIZUNA_LOG_LEVEL") {
@@ -379,13 +379,13 @@ impl AppConfig {
         if let Ok(proxy_pass) = std::env::var("KIZUNA_PROXY_PASS") {
             config.proxy.password = Some(proxy_pass);
         }
-        if let Ok(proxy_timeout) = std::env::var("KIZUNA_PROXY_TIMEOUT").ok().and_then(|v| v.parse().ok()) {
+        if let Some(proxy_timeout) = std::env::var("KIZUNA_PROXY_TIMEOUT").ok().and_then(|v| v.parse().ok()) {
             config.proxy.timeout_secs = proxy_timeout;
         }
-        if let Ok(max_conn) = std::env::var("KIZUNA_MAX_CONNECTIONS").ok().and_then(|v| v.parse().ok()) {
+        if let Some(max_conn) = std::env::var("KIZUNA_MAX_CONNECTIONS").ok().and_then(|v| v.parse().ok()) {
             config.server.max_connections = max_conn;
         }
-        if let Ok(history) = std::env::var("KIZUNA_QUEUE_MAX_HISTORY").ok().and_then(|v| v.parse().ok()) {
+        if let Some(history) = std::env::var("KIZUNA_QUEUE_MAX_HISTORY").ok().and_then(|v| v.parse().ok()) {
             config.queue_max_history = history;
             config.server.queue_max_history = history;
         }
