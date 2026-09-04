@@ -4,7 +4,6 @@ pub mod dsp;
 pub mod metrics;
 pub mod models;
 pub mod player;
-pub mod plugins;
 pub mod ratelimit;
 pub mod rest;
 pub mod security;
@@ -26,6 +25,7 @@ use sources::{
 };
 use std::sync::Arc;
 use tokio::sync::broadcast;
+use ws::session::SessionManager;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -40,7 +40,7 @@ pub struct AppState {
     pub niconico: Arc<NicoNicoSource>,
     pub apple_music: Arc<AppleMusicSource>,
     pub deezer: Arc<DeezerSource>,
-    pub plugin_manager: Arc<plugins::PluginManager>,
+    pub session_manager: Arc<SessionManager>,
     pub dave_manager: dave::DaveManager,
     pub route_planner: Option<Arc<RoutePlanner>>,
     pub rate_limiter: Arc<RateLimiter>,

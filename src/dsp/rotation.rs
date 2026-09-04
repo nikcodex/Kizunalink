@@ -21,12 +21,20 @@ impl Rotation {
 
     /// Set rotation speed in Hz. 0 disables.
     pub fn set_rotation_hz(&mut self, hz: f64) {
+        if !hz.is_finite() || hz <= 0.0 {
+            self.rotation_hz = 0.0;
+            return;
+        }
         self.rotation_hz = hz.clamp(0.0, 10.0);
     }
 
     /// Process stereo interleaved buffer in place.
     pub fn process_buffer(&mut self, buffer: &mut [f32]) {
-        if self.rotation_hz == 0.0 || self.rotation_hz.abs() < 1e-6 || self.sample_rate <= 0.0 {
+        if self.rotation_hz <= 0.0
+            || self.rotation_hz.abs() < 1e-6
+            || !self.sample_rate.is_finite()
+            || self.sample_rate <= 0.0
+        {
             return;
         }
         for chunk in buffer.as_chunks_mut::<2>().0 {
@@ -140,5 +148,27 @@ mod tests {
             buf, input,
             "Near-zero Hz rotation should not modify samples"
         );
+    }
+
+    #[test]
+    fn test_rotation_handles_nan_and_inf() {
+        let mut rot = Rotation::new(48000.0);
+        rot.set_rotation_hz(f64::NAN);
+        assert_eq!(rot.rotation_hz, 0.0);
+
+        rot.set_rotation_hz(f64::INFINITY);
+        assert_eq!(rot.rotation_hz, 0.0);
+
+        rot.set_rotation_hz(-5.0);
+        assert_eq!(rot.rotation_hz, 0.0);
+    }
+
+    #[test]
+    fn test_rotation_odd_length_buffer() {
+        let mut rot = Rotation::new(48000.0);
+        rot.set_rotation_hz(1.0);
+        let mut buf = vec![0.5f32; 199];
+        rot.process_buffer(&mut buf);
+        assert_eq!(buf.len(), 199);
     }
 }

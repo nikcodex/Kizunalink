@@ -37,16 +37,12 @@ openmls_rust_crypto = "0.6"
 openmls_basic_credential = "0.6"
 tls_codec = "0.5"
 
-# Native plugin loading (.so / .dylib / .dll)
-libloading = "0.8"
-
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 dashmap = "5.5"
 dotenvy = "0.15"
 num_cpus = "1.16"
 rand = "0.8"
-rhai = { version = "1.25.1", features = ["sync"] }
 sysinfo = "0.31"
 ctrlc = "3.4"
 prometheus = { version = "0.13", features = ["process"] }

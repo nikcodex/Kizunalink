@@ -1,24 +1,54 @@
 use crate::models::protocol::{GitInfo, ServerInfo, VersionInfo};
-use axum::response::Json;
+use crate::rest::auth::require_auth;
+use crate::rest::error::LavalinkError;
+use crate::AppState;
+use axum::{extract::State, http::HeaderMap, response::Json};
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
-pub const BUILD_TIME: u64 = 1724284800000;
+
+pub const fn parse_u64_or_zero(s: &str) -> u64 {
+    let bytes = s.as_bytes();
+    let mut val = 0u64;
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] >= b'0' && bytes[i] <= b'9' {
+            val = val * 10 + (bytes[i] - b'0') as u64;
+        } else {
+            return 0;
+        }
+        i += 1;
+    }
+    val
+}
+
+pub const BUILD_TIME: u64 = match option_env!("BUILD_TIME") {
+    Some(s) => parse_u64_or_zero(s),
+    None => 0,
+};
 pub const GIT_BRANCH: &str = match option_env!("GIT_BRANCH") {
     Some(b) => b,
     None => "main",
 };
 pub const GIT_COMMIT: &str = match option_env!("GIT_COMMIT") {
     Some(c) => c,
-    None => "kizuna-core",
+    None => "unknown",
 };
-pub const GIT_COMMIT_TIME: u64 = BUILD_TIME;
+pub const GIT_COMMIT_TIME: u64 = match option_env!("GIT_COMMIT_TIME") {
+    Some(s) => parse_u64_or_zero(s),
+    None => BUILD_TIME,
+};
 
 pub async fn get_version() -> &'static str {
     VERSION
 }
 
-pub async fn get_info() -> Json<ServerInfo> {
-    Json(ServerInfo {
+pub async fn get_info(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<ServerInfo>, LavalinkError> {
+    require_auth(&headers, &state.password, "/v4/info")?;
+
+    Ok(Json(ServerInfo {
         version: VersionInfo {
             semver: VERSION.to_string(),
             major: env!("CARGO_PKG_VERSION_MAJOR").parse().unwrap_or(4),
@@ -59,7 +89,6 @@ pub async fn get_info() -> Json<ServerInfo> {
             "channelMix".to_string(),
             "lowPass".to_string(),
         ],
-        // Plugin list is currently empty because the plugin system is not yet fully wired to report metadata in ServerInfo.
         plugins: vec![],
-    })
+    }))
 }

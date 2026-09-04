@@ -294,6 +294,7 @@ impl VoiceConnectionManager {
                             "VoiceConnectionManager: Gateway error during resume: {}",
                             e
                         );
+                        self.set_has_session(false).await;
                         return Err(format!("Resume failed: {}", e));
                     }
                     Err(_) => {
@@ -306,7 +307,8 @@ impl VoiceConnectionManager {
                 tracing::warn!(
                     "VoiceConnectionManager: Resume not confirmed, falling back to fresh Identify"
                 );
-                return self.do_fresh_identify(&mut gw, heartbeat_interval).await;
+                self.set_has_session(false).await;
+                self.do_fresh_identify(&mut gw, heartbeat_interval).await?;
             }
         } else {
             // Fresh Identify

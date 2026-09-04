@@ -344,58 +344,91 @@ pub fn parse_lrc(lrc: &str) -> Vec<LyricLine> {
     let mut lines = Vec::new();
     for raw_line in lrc.lines() {
         let trimmed = raw_line.trim();
-        if let Some(rest) = trimmed.strip_prefix('[') {
-            if let Some((time_part, text)) = rest.split_once(']') {
-                let (min_part, sec_part) = if let Some((m, s)) = time_part.split_once(':') {
-                    (m, s)
-                } else {
-                    // Fallback for timestamps using dots instead of colon, e.g. "01.23.45"
-                    let dot_parts: Vec<&str> = time_part.split('.').collect();
-                    if dot_parts.len() >= 3 {
-                        (
-                            dot_parts[0],
-                            time_part
-                                .strip_prefix(dot_parts[0])
-                                .unwrap_or("")
-                                .trim_start_matches('.'),
-                        )
-                    } else {
-                        continue;
-                    }
-                };
+        let Some(rest) = trimmed.strip_prefix('[') else {
+            continue;
+        };
+        let Some((time_part, text)) = rest.split_once(']') else {
+            continue;
+        };
 
-                // Clean min part (strip any extra dots)
-                let min_str = min_part.split('.').next().unwrap_or(min_part);
+        let (min_str, sec_rest) = if let Some((m, s)) = time_part.split_once(':') {
+            (m, s)
+        } else if let Some((m, s)) = time_part.split_once('.') {
+            (m, s)
+        } else {
+            continue;
+        };
 
-                // Handle malformed extra dots in seconds gracefully (e.g. "23.45.67" -> "23.45", "23..45" -> "23.45")
-                let sec_cleaned = {
-                    let non_empty: Vec<&str> =
-                        sec_part.split('.').filter(|s| !s.is_empty()).collect();
-                    match non_empty.len() {
-                        0 => "0".to_string(),
-                        1 => non_empty[0].to_string(),
-                        _ => format!("{}.{}", non_empty[0], non_empty[1]),
-                    }
-                };
-
-                if let (Ok(min), Ok(sec)) = (min_str.parse::<f64>(), sec_cleaned.parse::<f64>()) {
-                    if !min.is_finite()
-                        || !sec.is_finite()
-                        || min < 0.0
-                        || min > 99.0
-                        || sec < 0.0
-                        || sec > 59.99
-                    {
-                        continue;
-                    }
-                    let ms = ((min * 60.0 + sec) * 1000.0).round() as u64;
-                    lines.push(LyricLine {
-                        timestamp: ms,
-                        line: text.trim().to_string(),
-                    });
-                }
-            }
+        let Ok(minutes) = min_str.trim().parse::<u64>() else {
+            continue;
+        };
+        if minutes > 999 {
+            continue;
         }
+
+        let (seconds, millis) = if let Some((sec_s, frac_s)) = sec_rest.split_once('.') {
+            let Ok(s) = sec_s.trim().parse::<u64>() else {
+                continue;
+            };
+            if s >= 60 {
+                continue;
+            }
+            let frac_clean: String = frac_s.chars().filter(|c| c.is_ascii_digit()).collect();
+            let ms = match frac_clean.len() {
+                0 => 0,
+                1 => frac_clean.parse::<u64>().unwrap_or(0) * 100,
+                2 => frac_clean.parse::<u64>().unwrap_or(0) * 10,
+                3 => frac_clean[..3].parse::<u64>().unwrap_or(0),
+                _ => frac_clean[..3].parse::<u64>().unwrap_or(0),
+            };
+            (s, ms)
+        } else {
+            let Ok(s) = sec_rest.trim().parse::<u64>() else {
+                continue;
+            };
+            if s >= 60 {
+                continue;
+            }
+            (s, 0)
+        };
+
+        let total_ms = minutes
+            .saturating_mul(60)
+            .saturating_mul(1000)
+            .saturating_add(seconds.saturating_mul(1000))
+            .saturating_add(millis);
+
+        lines.push(LyricLine {
+            timestamp: total_ms,
+            line: text.trim().to_string(),
+        });
     }
     lines
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_lrc_standard_timestamps() {
+        let lrc = "[00:12.34]Line 1\n[01:02.500]Line 2\n[02:00]Line 3";
+        let parsed = parse_lrc(lrc);
+        assert_eq!(parsed.len(), 3);
+        assert_eq!(parsed[0].timestamp, 12340);
+        assert_eq!(parsed[0].line, "Line 1");
+        assert_eq!(parsed[1].timestamp, 62500);
+        assert_eq!(parsed[1].line, "Line 2");
+        assert_eq!(parsed[2].timestamp, 120000);
+        assert_eq!(parsed[2].line, "Line 3");
+    }
+
+    #[test]
+    fn test_parse_lrc_rejects_invalid() {
+        let lrc = "[invalid]No time\n[01:65.00]Invalid seconds\n[-01:20]Negative\n[00:05.12]Valid line";
+        let parsed = parse_lrc(lrc);
+        assert_eq!(parsed.len(), 1);
+        assert_eq!(parsed[0].timestamp, 5120);
+        assert_eq!(parsed[0].line, "Valid line");
+    }
 }

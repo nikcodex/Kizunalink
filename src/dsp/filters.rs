@@ -55,6 +55,13 @@ impl FilterChain {
         }
     }
 
+    /// Update output volume multiplier directly.
+    pub fn set_volume(&mut self, vol: f32) {
+        if vol.is_finite() && vol >= 0.0 {
+            self.volume = (vol as f64).clamp(0.0, 10.0);
+        }
+    }
+
     /// Update the chain from Lavalink filter settings.
     ///
     /// Returns `true` when the change is *structural* (Timescale graph changed),

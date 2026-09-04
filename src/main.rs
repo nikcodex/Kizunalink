@@ -60,11 +60,8 @@ async fn main() {
         config.server.host, config.server.port
     );
 
-    // Initialize the Cross-Platform WASM Plugin Manager
-    // TODO: Plugin system is dead code / never invoked. Re-enable load_all() when plugin hooks are integrated.
-    let plugin_manager = plugins::PluginManager::new();
-    // plugin_manager.load_all();
-    let plugin_manager = Arc::new(plugin_manager);
+    // Initialize the Session Manager
+    let session_manager = Arc::new(kizunalink::ws::session::SessionManager::default());
 
     // Initialize the Route Planner (if configured)
     let route_planner = RoutePlanner::new(
@@ -126,7 +123,7 @@ async fn main() {
         niconico,
         apple_music,
         deezer,
-        plugin_manager,
+        session_manager,
         dave_manager,
         route_planner,
         rate_limiter,
@@ -253,12 +250,14 @@ async fn main() {
         }
     });
 
-    // Rate limiter cleanup task
+    // Periodic cleanup task for rate limiter and stale sessions
+    let session_cleanup = state.session_manager.clone();
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(300));
         loop {
             interval.tick().await;
             rate_limiter.cleanup().await;
+            session_cleanup.cleanup_stale();
         }
     });
 

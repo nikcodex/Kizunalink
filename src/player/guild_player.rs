@@ -176,7 +176,7 @@ impl GuildPlayer {
         }
     }
 
-    pub async fn set_voice(&mut self, new_voice: VoiceStateUpdate) -> bool {
+    pub async fn set_voice(&mut self, new_voice: VoiceStateUpdate) -> Result<bool, String> {
         // Merge with existing voice update if partially received
         let merged = match &self.voice {
             Some(existing) => VoiceStateUpdate {
@@ -202,7 +202,7 @@ impl GuildPlayer {
 
         if merged.token.is_empty() || merged.endpoint.is_empty() || merged.session_id.is_empty() {
             self.voice = Some(merged);
-            return false;
+            return Ok(false);
         }
 
         let mut adapter = crate::player::kizuna_adapter::KizunaVoiceAdapter::new(
@@ -211,17 +211,27 @@ impl GuildPlayer {
             merged.endpoint.clone(),
             self.guild_id.clone(),
         );
-        let _ = adapter
+        match adapter
             .connect(self.guild_id.clone(), self.user_id.clone())
-            .await;
-        self.kizuna_voice_adapter = Some(std::sync::Arc::new(tokio::sync::Mutex::new(adapter)));
-
-        info!("Voice connected for guild: {}", self.guild_id);
-
-        self.voice = Some(merged);
-        self.last_update = util::current_timestamp();
-        self.emit_player_update();
-        true
+            .await
+        {
+            Ok(()) => {
+                self.kizuna_voice_adapter =
+                    Some(std::sync::Arc::new(tokio::sync::Mutex::new(adapter)));
+                info!("Voice connected for guild: {}", self.guild_id);
+                self.voice = Some(merged);
+                self.last_update = util::current_timestamp();
+                self.emit_player_update();
+                Ok(true)
+            }
+            Err(e) => {
+                warn!("Voice connection failed for guild {}: {}", self.guild_id, e);
+                // Keep the credentials in self.voice for retry, but do not store adapter or claim connected
+                self.voice = Some(merged);
+                self.emit_websocket_closed(4000, &format!("Voice connection failed: {}", e), true);
+                Err(e)
+            }
+        }
     }
 
     fn extension_hint(url: &str) -> Option<String> {
@@ -468,14 +478,46 @@ impl GuildPlayer {
         old_track
     }
 
-    pub fn set_paused(&mut self, paused: bool) {
+    pub async fn set_paused(&mut self, paused: bool) {
+        if self.paused == paused {
+            return;
+        }
         self.paused = paused;
+        if paused {
+            self.paused_position = self.get_position();
+            self.paused_at = Some(Instant::now());
+            self.play_started_at = None;
+            if let Some(ref handle) = self.kizuna_track_handle {
+                let _ = handle.pause().await;
+            }
+        } else {
+            let factor = if self.filtered_active {
+                self.shared_chain.lock().unwrap().duration_factor()
+            } else {
+                1.0
+            };
+            let wall_offset_ms = (self.paused_position as f64 / factor.max(1e-6)) as u64;
+            self.play_started_at = Some(Instant::now() - Duration::from_millis(wall_offset_ms));
+            self.paused_at = None;
+            if let Some(ref handle) = self.kizuna_track_handle {
+                let _ = handle.resume().await;
+            }
+        }
         self.last_update = util::current_timestamp();
         self.emit_player_update();
     }
 
     pub fn set_volume(&mut self, volume: u32) {
-        self.volume = volume.clamp(0, 1000);
+        let clamped = volume.clamp(0, 1000);
+        self.volume = clamped;
+        let vol_f32 = clamped as f32 / 100.0;
+        self.shared_chain.lock().unwrap().set_volume(vol_f32);
+        if let Some(ref handle) = self.kizuna_track_handle {
+            let h = handle.clone();
+            tokio::spawn(async move {
+                let _ = h.set_volume(vol_f32).await;
+            });
+        }
         self.last_update = util::current_timestamp();
         self.emit_player_update();
     }
@@ -614,7 +656,7 @@ impl GuildPlayer {
     }
 
     pub fn to_response(&self) -> PlayerResponse {
-        let is_connected = self.voice.is_some();
+        let is_connected = self.kizuna_voice_adapter.is_some();
         let current = self.queue.current.clone();
         PlayerResponse {
             guild_id: self.guild_id.clone(),

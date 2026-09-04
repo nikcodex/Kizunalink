@@ -118,17 +118,31 @@ impl PlayerManager {
         guild_id: &str,
     ) -> Result<Arc<RwLock<GuildPlayer>>, String> {
         if let Some(p) = self.players.get(guild_id) {
-            Ok(p.clone())
-        } else {
-            if self.players.len() >= MAX_PLAYERS {
-                return Err(format!(
-                    "Player limit reached: maximum {} players allowed",
-                    MAX_PLAYERS
-                ));
+            return Ok(p.clone());
+        }
+
+        let user_id = self.bot_user_id.read().await.clone();
+
+        match self.players.entry(guild_id.to_string()) {
+            dashmap::Entry::Occupied(entry) => Ok(entry.get().clone()),
+            dashmap::Entry::Vacant(entry) => {
+                if self.players.len() >= MAX_PLAYERS {
+                    return Err(format!(
+                        "Player limit reached: maximum {} players allowed",
+                        MAX_PLAYERS
+                    ));
+                }
+                let player = GuildPlayer::new(
+                    guild_id.to_string(),
+                    user_id,
+                    self.event_tx.clone(),
+                    self.track_end_tx.clone(),
+                    self.queue_max_history,
+                );
+                let p = Arc::new(RwLock::new(player));
+                entry.insert(p.clone());
+                Ok(p)
             }
-            let p = self.create_guild_player(guild_id).await;
-            self.players.insert(guild_id.to_string(), p.clone());
-            Ok(p)
         }
     }
 
@@ -200,41 +214,9 @@ impl PlayerManager {
 
         if let Some(voice) = payload.voice {
             info!("Received voice credentials for guild: {}", guild_id);
-            player.set_voice(voice).await;
-        }
-
-        if let Some(volume) = payload.volume {
-            player.set_volume(volume);
-        }
-
-        if let Some(paused) = payload.paused {
-            player.set_paused(paused);
-        }
-
-        if let Some(position) = payload.position {
-            player.seek(position).await;
-        }
-
-        player.end_time = payload.end_time;
-
-        if let Some(filters) = payload.filters {
-            player.filters = filters;
-            player.apply_filters().await;
-        }
-
-        if let Some(autoplay) = payload.autoplay {
-            player.autoplay.enabled = autoplay;
-            info!("Set autoplay to {} for guild: {}", autoplay, guild_id);
-        }
-
-        if let Some(ref l_mode) = payload.loop_mode {
-            let mode = match l_mode.to_lowercase().as_str() {
-                "track" => crate::player::queue::LoopMode::Track,
-                "queue" => crate::player::queue::LoopMode::Queue,
-                _ => crate::player::queue::LoopMode::None,
-            };
-            player.set_loop(mode);
-            info!("Set loop mode to {:?} for guild: {}", mode, guild_id);
+            if let Err(e) = player.set_voice(voice).await {
+                warn!("Voice update failed for guild {}: {}", guild_id, e);
+            }
         }
 
         if should_stop_track {
@@ -257,6 +239,40 @@ impl PlayerManager {
                 warn!("Failed to resolve stream URL for guild {}", guild_id);
                 player.emit_track_load_failed(&track, "Failed to resolve playable audio stream");
             }
+        }
+
+        if let Some(position) = payload.position {
+            player.seek(position).await;
+        }
+
+        if let Some(volume) = payload.volume {
+            player.set_volume(volume);
+        }
+
+        if let Some(paused) = payload.paused {
+            player.set_paused(paused).await;
+        }
+
+        player.end_time = payload.end_time;
+
+        if let Some(filters) = payload.filters {
+            player.filters = filters;
+            player.apply_filters().await;
+        }
+
+        if let Some(autoplay) = payload.autoplay {
+            player.autoplay.enabled = autoplay;
+            info!("Set autoplay to {} for guild: {}", autoplay, guild_id);
+        }
+
+        if let Some(ref l_mode) = payload.loop_mode {
+            let mode = match l_mode.to_lowercase().as_str() {
+                "track" => crate::player::queue::LoopMode::Track,
+                "queue" => crate::player::queue::LoopMode::Queue,
+                _ => crate::player::queue::LoopMode::None,
+            };
+            player.set_loop(mode);
+            info!("Set loop mode to {:?} for guild: {}", mode, guild_id);
         }
 
         Ok(player.to_response())

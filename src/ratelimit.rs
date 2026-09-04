@@ -124,20 +124,12 @@ impl RateLimiter {
             return false;
         }
 
-        // Fast match lookup for known source limits with fallback to configured source_limits
-        let limit = match source {
-            "spotify" | "youtube" | "jiosaavn" => {
-                self.config.source_limits.get(source).copied().or(Some(30))
-            }
-            "soundcloud" | "deezer" | "applemusic" => {
-                self.config.source_limits.get(source).copied().or(Some(20))
-            }
-            other => self.config.source_limits.get(other).copied(),
-        };
+        let limit = self.config.source_limits.get(source).copied();
 
         if let Some(limit) = limit {
             let key = format!("{}:{}", ip, source);
-            let rate = limit as f64 / self.config.window.as_secs() as f64;
+            let secs = self.config.window.as_secs().max(1) as f64;
+            let rate = limit as f64 / secs;
             let mut allowed = false;
             self.buckets
                 .entry(key)
@@ -165,15 +157,8 @@ impl RateLimiter {
 
     /// Cleanup old buckets periodically.
     pub async fn cleanup(&self) {
-        let mut to_remove = Vec::new();
-        for entry in self.buckets.iter() {
-            if entry.value().last_refill.elapsed() > self.config.window * 2 {
-                to_remove.push(entry.key().clone());
-            }
-        }
-        for key in to_remove {
-            self.buckets.remove(&key);
-        }
+        let ttl = self.config.window * 2;
+        self.buckets.retain(|_, bucket| bucket.last_refill.elapsed() <= ttl);
     }
 }
 
@@ -187,7 +172,8 @@ impl RateLimitConfig {
     }
 
     fn refill_rate(&self) -> f64 {
-        self.max_requests as f64 / self.window.as_secs() as f64
+        let secs = self.window.as_secs().max(1) as f64;
+        self.max_requests as f64 / secs
     }
 }
 
