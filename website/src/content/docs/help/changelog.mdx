@@ -1,0 +1,71 @@
+---
+title: Changelog
+description: Release history for KizunaLink — what changed in each version, upgrade notes, and the versioning policy.
+sidebar:
+  order: 3
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+KizunaLink follows the Lavalink **major** version it implements (4 = Lavalink v4 protocol). Minor versions add features or extensions without breaking clients; patch versions are fixes. `GET /version` returns the running version; `GET /v4/info` adds the git commit and build time embedded at compile time.
+
+<Aside type="note" title="History">
+The public repository was published with a squashed history, so release notes before 4.2.1 aren't reconstructible from git. This page starts at the first public version and will be maintained going forward; the GitHub [commit log](https://github.com/nikcodex/Kizunalink/commits/main) is the authoritative source between entries.
+</Aside>
+
+## 4.2.1 <span class="kz-only">current</span>
+
+_September 2026 · `kizunalink` 4.2.1 · `kizuna-voice` 0.1.0 · Rust edition 2021_
+
+First public version. Feature baseline as documented on this site:
+
+**Protocol**
+- Lavalink v4 REST API: `/v4/info`, `/v4/stats`, `/v4/loadtracks`, `/v4/decodetrack(s)`, sessions, players (GET/PATCH/DELETE with `noReplace`), route planner endpoints, `/v4/websocket`.
+- Lavalink v4 WebSocket: `ready`, `playerUpdate` (5 s), `stats` (60 s), `event` (`TrackStartEvent`, `TrackEndEvent`, `TrackExceptionEvent`, `TrackStuckEvent`, `WebSocketClosedEvent`), resuming with `Session-Id` and a 100-event replay buffer.
+- Byte-compatible track encoding (version 3, with `artworkUrl`/`isrc`/`sourceName`, source-specific trailers), 1 MiB body limit, Lavalink-shaped error objects with `?trace=true`.
+
+**Extensions**
+- Server-side queue: `queue`, `loop` (`none`/`track`/`queue`), `autoplay` fields on the player; WebSocket ops `queueTrack`, `skipTrack`, `previousTrack`, `shuffleQueue`, `clearQueue`, `loop`, `autoplay`, `updatePlayer`, `destroyPlayer`.
+- Autoplay: same-source recommendations with artist-relatedness scoring and Levenshtein dedupe; JioSaavn → YouTube → Spotify fallback.
+- `GET /v4/players/all`, `GET /v4/sessions`, `GET /v4/lyrics` and `/v4/sessions/:id/players/:guildId/lyrics`.
+- `GET /health`, `GET /version` (unauthenticated), Prometheus metrics at `/v4/metrics`.
+
+**Sources**
+- JioSaavn (default search, 320 kbps), YouTube (multi-client with PO-token/OAuth support, JioSaavn fallback), Spotify, Apple Music, Deezer (mirrored via JioSaavn/YouTube with ISRC matching, store previews as last resort), SoundCloud, Bandcamp, Twitch, Vimeo, Niconico, HTTP, local files.
+- Prefixes: `jssearch:`, `ytsearch:`, `ytmsearch:`, `spsearch:`, `scsearch:`, `amsearch:`, `dzsearch:`, `bcsearch:`, `twsearch:`, `vmsearch:`, `nisearch:`.
+- Route planner with `RotateOnBan`, `LoadBalance`, `NanoSwitch`, `RotatingNanoSwitch` strategies; HTTP/SOCKS proxy support.
+
+**Audio**
+- Symphonia decoding (MP3, AAC/M4A, Opus/OGG, Vorbis, FLAC, WAV) resampled to 48 kHz with rubato; libopus encoding.
+- Full Lavalink filter set — volume, equalizer (15 bands), karaoke, timescale (WSOLA), tremolo, vibrato, distortion, rotation, channelMix, lowPass — with Lavalink's order and parameter ranges, plus a soft limiter.
+- Seeking on non-live sources; live-stream support for Twitch and HTTP streams.
+
+**Voice (`kizuna-voice`)**
+- Discord voice gateway v8, `aead_aes256_gcm_rtpsize` transport encryption, IP discovery, automatic reconnect with resume, 20 ms scheduler with silence frames.
+- **DAVE** end-to-end encryption (protocol v1, OpenMLS 0.9): key packages, commit/welcome handling, sender-key ratchets, transitions, and encrypted-frame construction.
+
+**Operations**
+- `config.toml` + `KIZUNA_*` environment overrides; constant-time password auth; per-IP and per-source rate limiting; SSRF protection and local-path sandbox; log sanitising.
+- Graceful shutdown on SIGINT/SIGTERM; systemd unit; Dockerfile (Debian slim runtime); Termux/ARM64 builds; CI with fmt/clippy/check/test/release-build.
+
+**Fixes in this version**
+- Player creation now serialises through a `tokio::sync::Mutex`, making the `max_players` limit atomic under concurrent PATCHes (previously two racing requests could both pass the limit check). Covered by `test_player_manager_atomic_player_limit`.
+
+**Known limitations** (see [Migrating from Lavalink](/getting-started/migrating-from-lavalink/#compatibility-at-a-glance))
+- No plugin system; no `/v3` API.
+- `TrackEndEvent.reason` is one of `finished`, `replaced`, `stopped` — `loadFailed` and `cleanup` are not emitted.
+- Resume buffers and player state are in memory; a server restart ends all sessions.
+- `[metrics] enabled` in `config.toml` is parsed but not yet enforced (metrics are always served, behind the password).
+- No published Docker image or GitHub Release yet — build from source or use CI artifacts.
+
+## Upgrading
+
+Until a `5.x` exists, upgrading is a binary swap: stop the service, replace the binary (or rebuild the image), start it. Clients reconnect and re-create players; enable [resuming](/api/websocket/#resuming) on the client to soften the blip. Config files are forward-compatible within a major version — unknown keys are ignored and missing keys take defaults (but a file that fails to parse is silently replaced by defaults, so check `GET /v4/info` → `sourceManagers` after upgrading).
+
+## Versioning policy
+
+- **Major**: Lavalink protocol major version. A `5.0.0` would mean a Lavalink v5 protocol.
+- **Minor**: new sources, filters, extensions, config keys. Never removes or changes existing `/v4` behaviour.
+- **Patch**: bug fixes, dependency bumps, performance work.
+- Extension ops/fields may be marked deprecated for at least one minor version before removal.
+- `kizuna-voice` is versioned independently (`0.x` until its API stabilises) and is only consumed as a path dependency today.

@@ -1,0 +1,193 @@
+---
+title: Quick Start
+description: Install KizunaLink, configure a password, connect a client and play your first track — in about five minutes.
+sidebar:
+  order: 1
+---
+
+import { Tabs, TabItem, Steps, Aside } from '@astrojs/starlight/components';
+
+This guide gets you from nothing to audio playing in a voice channel. It assumes you already have a Discord bot application and a token.
+
+<Steps>
+
+1. **Install KizunaLink**
+
+   <Tabs syncKey="install">
+     <TabItem label="Linux (one-liner)">
+       ```bash title="Terminal"
+       curl -sL https://raw.githubusercontent.com/nikcodex/Kizunalink/main/install.sh | bash
+       ```
+       This detects your CPU (x86_64 / ARM64), downloads the matching binary to `~/kizunalink/` and writes a starter `config.toml`.
+     </TabItem>
+     <TabItem label="Docker">
+       ```bash title="Terminal"
+       git clone https://github.com/nikcodex/Kizunalink.git
+       cd Kizunalink
+       docker compose up -d
+       ```
+       See [Docker](/getting-started/docker/) for image details and a production compose file.
+     </TabItem>
+     <TabItem label="Manual binary">
+       Download `kizunalink-linux-x86_64` or `kizunalink-linux-arm64` from the [latest GitHub Actions build](https://github.com/nikcodex/Kizunalink/actions/workflows/build.yml?query=branch%3Amain+is%3Asuccess), then:
+       ```bash title="Terminal"
+       mkdir -p ~/kizunalink && cd ~/kizunalink
+       mv ~/Downloads/kizunalink-linux-x86_64 ./kizunalink
+       chmod +x kizunalink
+       ```
+       Details in [Binary Install](/getting-started/binary/).
+     </TabItem>
+   </Tabs>
+
+2. **Set a password**
+
+   KizunaLink reads `config.toml` from its working directory, and any `KIZUNA_*` environment variable overrides it. Change the password before exposing the port:
+
+   ```toml title="config.toml" {4}
+   [server]
+   host = "0.0.0.0"
+   port = 2333
+   password = "change-me-please"
+
+   [sources]
+   jiosaavn = true
+   spotify = true
+   youtube = true
+   ```
+
+   <Aside type="tip">
+     Prefer environment variables for secrets? Create a `.env` next to the binary with `KIZUNA_PASSWORD=change-me-please` — it's loaded automatically. Or use the [Config Generator](/configuration/generator/).
+   </Aside>
+
+3. **Start the server**
+
+   ```bash title="Terminal"
+   cd ~/kizunalink && ./kizunalink
+   ```
+
+   ```ansi title="Output"
+   [2m2026-09-04T09:12:41Z[0m [32m INFO[0m kizunalink: Loaded config: host=0.0.0.0, port=2333
+   [2m2026-09-04T09:12:41Z[0m [33m WARN[0m kizunalink::sources::spotify: Spotify: No SPOTIFY_CLIENT_ID/SPOTIFY_CLIENT_SECRET set. Using anonymous token (less reliable).
+   [2m2026-09-04T09:12:41Z[0m [32m INFO[0m kizunalink: ⛩️  KizunaLink v4.2.1 listening on 0.0.0.0:2333
+   ```
+
+4. **Verify it's alive**
+
+   ```bash title="Terminal"
+   curl http://localhost:2333/health
+   # {"status":"ok","version":"4.2.1","timestamp":1788000000000}
+
+   curl -H "Authorization: change-me-please" http://localhost:2333/v4/info | jq .sourceManagers
+   # ["jiosaavn","youtube","spotify","soundcloud","bandcamp","twitch","applemusic","deezer"]
+   ```
+
+5. **Connect your bot**
+
+   Any Lavalink v4 client works. Minimal examples:
+
+   <Tabs syncKey="lang">
+     <TabItem label="JavaScript" icon="seti:javascript">
+       ```bash
+       npm i discord.js shoukaku
+       ```
+       ```js title="bot.js"
+       import { Client, GatewayIntentBits } from 'discord.js';
+       import { Shoukaku, Connectors } from 'shoukaku';
+
+       const client = new Client({
+         intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildVoiceStates, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent],
+       });
+
+       const shoukaku = new Shoukaku(new Connectors.DiscordJS(client), [
+         { name: 'kizuna', url: 'localhost:2333', auth: 'change-me-please' },
+       ]);
+       shoukaku.on('ready', (name) => console.log(`⛩️ ${name} ready`));
+       shoukaku.on('error', (_, err) => console.error(err));
+
+       client.on('messageCreate', async (msg) => {
+         if (!msg.content.startsWith('!play ') || !msg.member?.voice.channel) return;
+         const query = msg.content.slice(6);
+
+         const player = await shoukaku.joinVoiceChannel({
+           guildId: msg.guildId,
+           channelId: msg.member.voice.channelId,
+           shardId: 0,
+         });
+
+         // Search JioSaavn (320 kbps) — or use ytsearch:, spsearch:, a URL, etc.
+         const result = await player.node.rest.resolve(`jssearch:${query}`);
+         if (!result || result.loadType === 'empty' || result.loadType === 'error') {
+           return msg.reply('Nothing found.');
+         }
+         const track = result.loadType === 'playlist' ? result.data.tracks[0] : Array.isArray(result.data) ? result.data[0] : result.data;
+
+         await player.playTrack({ track: { encoded: track.encoded } });
+         msg.reply(`▶️ Now playing **${track.info.title}** by ${track.info.author}`);
+       });
+
+       client.login(process.env.DISCORD_TOKEN);
+       ```
+     </TabItem>
+     <TabItem label="Python" icon="seti:python">
+       ```bash
+       pip install -U discord.py wavelink
+       ```
+       ```python title="bot.py"
+       import discord
+       import wavelink
+       from discord.ext import commands
+
+       class Bot(commands.Bot):
+           def __init__(self):
+               intents = discord.Intents.default()
+               intents.message_content = True
+               super().__init__(command_prefix="!", intents=intents)
+
+           async def setup_hook(self):
+               node = wavelink.Node(uri="http://localhost:2333", password="change-me-please")
+               await wavelink.Pool.connect(nodes=[node], client=self)
+
+           async def on_wavelink_node_ready(self, payload: wavelink.NodeReadyEventPayload):
+               print(f"⛩️ Node {payload.node.identifier} ready (resumed={payload.resumed})")
+
+       bot = Bot()
+
+       @bot.command()
+       async def play(ctx: commands.Context, *, query: str):
+           if not ctx.author.voice:
+               return await ctx.send("Join a voice channel first.")
+           player: wavelink.Player = ctx.voice_client or await ctx.author.voice.channel.connect(cls=wavelink.Player)
+
+           # Search JioSaavn — or "ytsearch:", "spsearch:", a URL, etc.
+           tracks = await wavelink.Playable.search(f"jssearch:{query}")
+           if not tracks:
+               return await ctx.send("Nothing found.")
+           track = tracks[0] if isinstance(tracks, list) else tracks.tracks[0]
+
+           await player.play(track)
+           await ctx.send(f"▶️ Now playing **{track.title}** by {track.author}")
+
+       bot.run("DISCORD_TOKEN")
+       ```
+     </TabItem>
+   </Tabs>
+
+6. **Play something**
+
+   Join a voice channel and type `!play Kesariya`. You should hear audio within a second, and the KizunaLink log will show:
+
+   ```ansi
+   [32m INFO[0m kizunalink::ws::handler: WebSocket connected: client=shoukaku/4.1.1 user=1234567890 ip=127.0.0.1
+   [32m INFO[0m kizunalink::player::manager: Received voice credentials for guild: 987654321
+   [32m INFO[0m kizunalink::sources::jiosaavn: ⚡ Resolved 320kbps JioSaavn stream for song ID: 3IoDK8qI
+   [32m INFO[0m kizunalink::player::guild_player: Started playback for guild: 987654321 (filtered=false)
+   ```
+
+</Steps>
+
+## Where to go next
+
+- [Configuration overview](/configuration/) — enable/disable sources, add Spotify credentials, tune rate limits.
+- [Connect a client](/clients/) — fuller examples for JavaScript, Python, Java/Kotlin and C#.
+- [KizunaLink extensions](/api/extensions/) — server-side queue, loop, autoplay and lyrics that Lavalink doesn't have.
+- [Run as a service](/getting-started/systemd/) — keep it running with systemd.

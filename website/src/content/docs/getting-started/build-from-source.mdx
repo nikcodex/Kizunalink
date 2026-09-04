@@ -1,0 +1,135 @@
+---
+title: Build from Source
+description: Compile KizunaLink yourself with Cargo, cross-compile for ARM64, and run the test suite.
+sidebar:
+  order: 6
+---
+
+import { Tabs, TabItem, Steps, Aside } from '@astrojs/starlight/components';
+
+Building takes 3–8 minutes on a modern laptop. The only native dependencies are **CMake** and a C compiler (for the statically linked `libopus` built by `audiopus_sys`).
+
+## Prerequisites
+
+<Tabs syncKey="os">
+  <TabItem label="Debian / Ubuntu" icon="linux">
+    ```bash title="Terminal"
+    sudo apt update
+    sudo apt install -y build-essential cmake pkg-config libopus-dev git curl
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+    source "$HOME/.cargo/env"
+    ```
+  </TabItem>
+  <TabItem label="Fedora / RHEL">
+    ```bash title="Terminal"
+    sudo dnf install -y gcc gcc-c++ cmake pkgconf-pkg-config opus-devel git curl
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+    source "$HOME/.cargo/env"
+    ```
+  </TabItem>
+  <TabItem label="Arch">
+    ```bash title="Terminal"
+    sudo pacman -S --needed base-devel cmake opus git rustup
+    rustup default stable
+    ```
+  </TabItem>
+  <TabItem label="macOS" icon="apple">
+    ```bash title="Terminal"
+    xcode-select --install
+    brew install cmake opus
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+    ```
+  </TabItem>
+  <TabItem label="Windows">
+    Install [Rust](https://rustup.rs), [CMake](https://cmake.org/download/) and **Visual Studio Build Tools** (C++ workload). Build from a *Developer PowerShell* so `cl.exe` is on `PATH`. WSL2 with the Ubuntu instructions is usually smoother.
+  </TabItem>
+</Tabs>
+
+Rust **1.80 or newer** is required (the Dockerfile pins `rust:1.80-bookworm`).
+
+## Build
+
+<Steps>
+1. Clone:
+   ```bash title="Terminal"
+   git clone https://github.com/nikcodex/Kizunalink.git
+   cd Kizunalink
+   ```
+
+2. Build in release mode:
+   ```bash title="Terminal"
+   LIBOPUS_STATIC=1 cargo build --release
+   ```
+   The release profile enables `lto = true`, `codegen-units = 1`, `panic = "abort"` and `strip = true`, so the resulting binary is small and fast but the link step is slow — that's expected.
+
+3. Run:
+   ```bash title="Terminal"
+   ./target/release/kizunalink
+   ```
+   `config.toml` is read from the **current directory**, so run it from the repo root or copy the file alongside the binary.
+</Steps>
+
+The build also embeds the git commit, branch and timestamp via `build.rs`; these show up in [`GET /v4/info`](/api/rest/#get-info).
+
+## Cross-compiling for ARM64
+
+CI uses [`cargo-zigbuild`](https://github.com/rust-cross/cargo-zigbuild), which avoids needing a full aarch64 sysroot:
+
+```bash title="Terminal"
+rustup target add aarch64-unknown-linux-gnu
+pip install cargo-zigbuild          # needs Zig 0.13 — the pip package bundles it
+LIBOPUS_STATIC=1 cargo zigbuild --release --target aarch64-unknown-linux-gnu
+ls -lh target/aarch64-unknown-linux-gnu/release/kizunalink
+```
+
+## Fully static (musl) build
+
+For distro-independent binaries (Alpine, very old glibc):
+
+```bash title="Terminal"
+rustup target add x86_64-unknown-linux-musl
+sudo apt install -y musl-tools
+LIBOPUS_STATIC=1 cargo build --release --target x86_64-unknown-linux-musl
+```
+
+<Aside type="note">
+  The `reqwest` client is configured with `rustls-tls`, so there's no OpenSSL dependency to fight with when going static.
+</Aside>
+
+## Workspace layout
+
+```
+Kizunalink/
+├── src/                 the server: REST, WS, players, sources, DSP
+│   ├── rest/            one module per /v4 route family
+│   ├── ws/              WebSocket handler + session manager
+│   ├── player/          PlayerManager, GuildPlayer, queue, autoplay
+│   ├── sources/         12 source resolvers + route planner
+│   ├── dsp/             filters: EQ, timescale (WSOLA), karaoke, …
+│   └── models/          serde types matching the Lavalink v4 wire format
+├── kizuna-voice/        standalone crate: Discord voice gateway, UDP/RTP,
+│                        crypto, Opus, DAVE (MLS) — no dependency on src/
+├── tests/               integration tests
+├── config.toml          default configuration
+└── .github/workflows/   ci.yml (check/clippy/fmt/test) and build.yml (artifacts)
+```
+
+## Running the test suite
+
+```bash title="Terminal"
+cargo test --workspace
+cargo clippy --workspace --all-targets --all-features -- -D warnings
+cargo fmt --check
+```
+
+CI runs exactly these three commands on every push, so a green local run means a green PR.
+
+## Common build errors
+
+| Error | Fix |
+|---|---|
+| `failed to run custom build command for audiopus_sys` / `CMake not found` | Install `cmake` (see prerequisites) |
+| `linker 'cc' not found` | Install `build-essential` / Xcode CLT / VS Build Tools |
+| `error: package … requires rustc 1.80` | `rustup update stable` |
+| Very slow link step, high RAM | Expected with LTO. For dev iterations use `cargo build` (debug) or temporarily set `lto = "thin"` |
+| `Cargo.lock` missing | It's git-ignored on purpose; Cargo generates it on first build |

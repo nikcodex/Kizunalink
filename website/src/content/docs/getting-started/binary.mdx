@@ -1,0 +1,119 @@
+---
+title: Binary Install
+description: Download a pre-built KizunaLink binary for Linux x86_64 or ARM64 and run it directly.
+sidebar:
+  order: 2
+---
+
+import { Tabs, TabItem, Steps, Aside, FileTree } from '@astrojs/starlight/components';
+
+KizunaLink ships as a single, statically-linked executable with Opus built in. There is nothing else to install — no JVM, no FFmpeg, no shared libraries beyond glibc and CA certificates.
+
+## Where binaries come from
+
+Every push to `main` triggers the [**Build KizunaLink Engine**](https://github.com/nikcodex/Kizunalink/actions/workflows/build.yml) workflow, which produces two artifacts:
+
+| Artifact | Target | Use it on |
+|---|---|---|
+| `kizunalink-linux-x86_64` | `x86_64-unknown-linux-gnu` | Standard Linux VPS / dedicated servers / WSL2 |
+| `kizunalink-linux-arm64` | `aarch64-unknown-linux-gnu` | Raspberry Pi 4/5, Oracle Ampere, AWS Graviton, **Android/Termux** |
+
+Artifacts are retained for 90 days. Once tagged releases are published they will also appear under [GitHub Releases](https://github.com/nikcodex/Kizunalink/releases).
+
+<Aside type="note">
+  Downloading workflow artifacts through the GitHub web UI requires being signed in to GitHub. The `install.sh` script and the `gh` CLI method below avoid that.
+</Aside>
+
+## Option A — installer script (recommended)
+
+```bash title="Terminal"
+curl -sL https://raw.githubusercontent.com/nikcodex/Kizunalink/main/install.sh | bash
+```
+
+The script:
+
+1. Detects `uname -m` and picks the x86_64 or ARM64 build.
+2. Creates `~/kizunalink/` and downloads the binary there as `kizunalink`.
+3. Writes a starter `config.toml` **only if one doesn't already exist** (safe to re-run for upgrades).
+
+<FileTree>
+- kizunalink/
+  - kizunalink   the executable
+  - config.toml  starter config (server + sources)
+  - .env         optional, create it yourself for secrets
+</FileTree>
+
+## Option B — GitHub CLI
+
+If you have [`gh`](https://cli.github.com/) installed and authenticated:
+
+<Tabs syncKey="arch">
+  <TabItem label="x86_64">
+    ```bash title="Terminal"
+    mkdir -p ~/kizunalink && cd ~/kizunalink
+    RUN_ID=$(gh run list -R nikcodex/Kizunalink -w build.yml -b main -s success -L 1 --json databaseId -q '.[0].databaseId')
+    gh run download "$RUN_ID" -R nikcodex/Kizunalink -n kizunalink-linux-x86_64
+    mv kizunalink-linux-x86_64 kizunalink 2>/dev/null || true
+    chmod +x kizunalink
+    ```
+  </TabItem>
+  <TabItem label="ARM64">
+    ```bash title="Terminal"
+    mkdir -p ~/kizunalink && cd ~/kizunalink
+    RUN_ID=$(gh run list -R nikcodex/Kizunalink -w build.yml -b main -s success -L 1 --json databaseId -q '.[0].databaseId')
+    gh run download "$RUN_ID" -R nikcodex/Kizunalink -n kizunalink-linux-arm64
+    mv kizunalink-linux-arm64 kizunalink 2>/dev/null || true
+    chmod +x kizunalink
+    ```
+  </TabItem>
+</Tabs>
+
+## Option C — manual download
+
+<Steps>
+1. Open the [build workflow runs](https://github.com/nikcodex/Kizunalink/actions/workflows/build.yml?query=branch%3Amain+is%3Asuccess) and click the newest green run.
+2. Scroll to **Artifacts** and download `kizunalink-linux-x86_64` or `kizunalink-linux-arm64`. It arrives as a `.zip`.
+3. Unzip, rename and make executable:
+   ```bash title="Terminal"
+   unzip kizunalink-linux-x86_64.zip
+   mv kizunalink-linux-x86_64 kizunalink   # the file inside is named `kizunalink` in newer builds
+   chmod +x kizunalink
+   ```
+</Steps>
+
+## Running
+
+KizunaLink looks for `config.toml` and `.env` **in the current working directory**, so always `cd` to the install folder first:
+
+```bash title="Terminal"
+cd ~/kizunalink
+./kizunalink
+```
+
+To stop it, press <kbd>Ctrl</kbd>+<kbd>C</kbd>. KizunaLink handles `SIGINT`/`SIGTERM` gracefully: it destroys active players and closes voice connections before exiting.
+
+### Command-line flags
+
+There are none — all configuration happens through [`config.toml`](/configuration/config-toml/) and [environment variables](/configuration/environment/). Set `RUST_LOG=debug` for verbose output:
+
+```bash
+RUST_LOG=debug ./kizunalink
+```
+
+## Upgrading
+
+Re-run the installer, or replace the `kizunalink` file with a newer artifact. Your `config.toml` and `.env` are never touched. Check the running version with:
+
+```bash
+curl http://localhost:2333/version
+# 4.2.1
+```
+
+## Verifying the download
+
+Workflow artifacts are built by GitHub-hosted runners from the public source; you can audit the exact commit from the run page. If you need reproducibility guarantees, [build from source](/getting-started/build-from-source/) instead.
+
+## Next steps
+
+- [Run as a systemd service](/getting-started/systemd/) so it survives reboots.
+- [Configuration](/configuration/) to set a real password and enable sources.

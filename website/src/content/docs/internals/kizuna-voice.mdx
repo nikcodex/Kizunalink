@@ -1,0 +1,98 @@
+---
+title: kizuna-voice
+description: KizunaLink's in-house Discord voice stack — voice gateway v8 handshake, IP discovery, RTP with AES-256-GCM, Opus encoding, the 20 ms frame scheduler and the reconnect state machine.
+sidebar:
+  order: 1
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+`kizuna-voice` is the workspace crate that talks to Discord's voice servers. It has no dependency on the Lavalink layer — it takes voice credentials and an `AudioSource`, and delivers encrypted RTP. KizunaLink drives it through `player::kizuna_adapter::KizunaVoiceAdapter`.
+
+Dependencies of note: `tokio-tungstenite` (rustls) for the gateway, `audiopus` (libopus bindings) for encoding, `aes-gcm` for transport encryption, `openmls` + `aes-gcm` + `hkdf` for DAVE.
+
+## Handshake
+
+Credentials arrive from the bot via the player update's `voice` object: `endpoint` and `token` from `VOICE_SERVER_UPDATE`, `sessionId` from the bot's own `VOICE_STATE_UPDATE`. Together with the guild ID (`server_id`) and the bot's user ID (from the `User-Id` header) they form `VoiceCredentials`.
+
+```
+KizunaLink                                   Discord voice gateway (wss://<endpoint>/?v=8)
+    │  ── connect ──────────────────────────────►  │
+    │  ◄── op 8  Hello { heartbeat_interval } ───  │
+    │  ── op 0  Identify { server_id, user_id,     │
+    │            session_id, token,                │
+    │            max_dave_protocol_version: 1 } ─► │
+    │  ◄── op 2  Ready { ssrc, ip, port, modes } ─ │
+    │                                              │
+    │  ── UDP: IP discovery (74-byte packet) ────► │  media server
+    │  ◄── UDP: external ip:port ────────────────  │
+    │                                              │
+    │  ── op 1  Select Protocol { udp, address,    │
+    │            port, mode: aead_aes256_gcm_rtpsize } ─►
+    │  ◄── op 4  Session Description { secret_key } │
+    │  ── op 5  Speaking { speaking: 3, ssrc } ──► │
+    │  ── op 3  Heartbeat (every interval) ──────► │
+    │  ◄── op 6  Heartbeat ACK ──────────────────  │
+    │  ◄── ops 21–26  DAVE negotiation ──────────► │  (see DAVE page)
+```
+
+Details worth knowing:
+
+- **Endpoint normalisation** — Discord sends `host:443`; the client builds `wss://host/?v=8`. A `ws://`/`wss://` prefix is honoured if present.
+- **Speaking flags** are `1 | 2` (microphone + soundshare). The soundshare bit tells Discord's media servers to tune jitter buffers for stereo music rather than speech.
+- **IP discovery** uses the 74-byte format: type `1`, length `70`, SSRC, then the null-terminated external IP at offset 8 and the port in the last two bytes. A 5 s timeout produces `IP discovery request timed out`.
+- **Connect timeout** — the adapter waits at most **15 s** for the state to reach `Connected`; otherwise the player logs `Voice connection timed out` and emits `WebSocketClosedEvent` code `4000`.
+
+## Transport encryption
+
+Mode `aead_aes256_gcm_rtpsize` (the only mode selected). Per packet:
+
+```
+[ RTP header 12 B ][ AES-256-GCM( opus , key=secret_key, nonce=0^8‖counter_be32, aad=header ) ‖ tag 16 B ][ counter_be32 4 B ]
+```
+
+- `secret_key` is the 32-byte array from Session Description.
+- The nonce counter is a `u32` starting at 0, incremented per packet and appended in clear.
+- The RTP header is `0x80` (v2), payload type `0x78`, big-endian sequence, timestamp and SSRC. Sequence increases by 1 and timestamp by 960 per 20 ms frame.
+
+If DAVE is active for the guild, the Opus payload is first wrapped in a DAVE frame ([next page](/internals/dave/)), and *that* is what gets transport-encrypted.
+
+## Audio path inside the crate
+
+```
+AudioSource::next_frame()  ─►  FrameScheduler (20 ms tick)  ─►  OpusEncoder  ─►  send callback
+   (PCM i16 or pre-encoded Opus)      │                            48 kHz stereo,
+                                      ├── TrackCommand: Play/Pause/Stop/Seek/SetVolume
+                                      └── TrackEvent: Started/Paused/Seeked/Ended/Error/Stopped
+```
+
+- The **scheduler** uses a Tokio interval with `MissedTickBehavior::Skip`: if the machine stalls, frames are dropped rather than burst-sent, which is what Discord expects. Dropped ticks are the `deficit` in `frameStats`.
+- **Opus** is configured with `Application::Audio`, 48 kHz, 2 channels, 960 samples per channel per frame (the 20 ms Discord frame). Pre-encoded `AudioFrame::Opus` frames pass through untouched — the decoder pipeline currently always feeds PCM, so every frame is encoded by libopus.
+- **Volume** on the track handle is applied to PCM before encoding; KizunaLink also applies volume in the DSP chain, so `player.volume` changes are effectively instant.
+- A source returning `Ok(None)` ends the track (`TrackEvent::Ended`), which the player turns into `TrackEndEvent: finished`.
+
+## Reconnect state machine
+
+`VoiceConnectionManager::run_gateway_loop` owns the connection for a player's lifetime:
+
+| State | Meaning |
+|---|---|
+| `Disconnected` | Initial / after shutdown |
+| `Connecting` | Handshake in progress |
+| `Connected` | Session Description received; audio can flow |
+| `Reconnecting` | Lost the gateway; backing off |
+| `Failed` | Gave up after `max_retries` |
+
+Policy (`ReconnectConfig` defaults): **8 retries**, exponential backoff from **500 ms** doubling to a **30 s** cap, plus up to 25 % deterministic jitter. On each retry, if a full handshake had succeeded before, it sends **Resume (op 7)** and waits up to 5 s for **Resumed (op 9)**; otherwise (or if resume fails) it falls back to a fresh Identify, which yields a new SSRC and UDP socket — the adapter swaps them in via the `on_fresh_identify` callback without the player noticing.
+
+Heartbeats run on a slightly shortened interval; a failed heartbeat send tears the connection down and triggers the loop above. A `Failed` state surfaces to the bot as a `WebSocketClosedEvent`; the bot should re-send voice state (re-join) to recover.
+
+<Aside type="note" title="Voice-server moves">
+  When Discord migrates a guild to another voice server it sends a new `VOICE_SERVER_UPDATE`. The client library forwards it as a new `voice` object; `GuildPlayer::set_voice` detects the changed endpoint/token, shuts the old adapter down and connects fresh — playback resumes from the same position because the audio pipeline is independent of the connection.
+</Aside>
+
+## Why an in-house stack?
+
+- **No JVM, no lavaplayer** — the whole server is one static binary.
+- **DAVE from day one** — Discord's end-to-end encryption for voice is negotiated natively, ahead of it becoming mandatory for bots.
+- **Deterministic timing** — a dedicated 20 ms scheduler per player with skip-on-lag semantics keeps jitter low even on small ARM boards and phones (Termux).

@@ -1,0 +1,218 @@
+---
+title: Prometheus Metrics
+description: The /v4/metrics endpoint — every kizunalink_* metric, a Prometheus scrape config with authentication, and useful PromQL queries and alert rules.
+sidebar:
+  order: 1
+---
+
+import { Aside, Tabs, TabItem } from '@astrojs/starlight/components';
+import Endpoint from '../../../components/Endpoint.astro';
+
+<Endpoint method="GET" path="/v4/metrics" kizuna />
+
+Returns the Prometheus text exposition format (`text/plain; version=0.0.4`). Gauges derived from system stats are refreshed at scrape time; counters are live.
+
+```bash
+curl -s http://localhost:2333/v4/metrics -H 'Authorization: youshallnotpass' | head
+# HELP kizunalink_players_total Total number of players
+# TYPE kizunalink_players_total gauge
+kizunalink_players_total 12
+# HELP kizunalink_players_playing Number of actively playing players
+# TYPE kizunalink_players_playing gauge
+kizunalink_players_playing 9
+…
+```
+
+<Aside type="note">
+  The endpoint requires the same `Authorization` header as the rest of the API and counts towards the per-IP rate limit. A 15 s scrape interval is far below the default 60 req/min, but if you run multiple Prometheus instances or a short interval, allow for it in `ratelimit.max_requests`.
+</Aside>
+
+## Metrics
+
+### Players and sessions
+
+| Metric | Type | Description |
+|---|---|---|
+| `kizunalink_players_total` | gauge | Players that exist (connected or not) |
+| `kizunalink_players_playing` | gauge | Players with a track loaded and not paused |
+| `kizunalink_active_sessions` | gauge | WebSocket sessions ever registered (monotonic in the current build — see note below) |
+| `kizunalink_ws_connections` | gauge | Currently open WebSocket connections |
+
+### Tracks and sources
+
+| Metric | Type | Description |
+|---|---|---|
+| `kizunalink_tracks_loaded_total` | counter | Successful `/v4/loadtracks` resolutions |
+| `kizunalink_tracks_failed_total` | counter | Tracks that failed to start (`TrackExceptionEvent`) |
+| `kizunalink_source_jiosaavn_total` | counter | Lookups served by JioSaavn |
+| `kizunalink_source_youtube_total` | counter | … YouTube |
+| `kizunalink_source_spotify_total` | counter | … Spotify |
+| `kizunalink_source_soundcloud_total` | counter | … SoundCloud |
+| `kizunalink_source_deezer_total` | counter | … Deezer |
+| `kizunalink_source_applemusic_total` | counter | … Apple Music |
+| `kizunalink_source_bandcamp_total` | counter | … Bandcamp |
+| `kizunalink_source_twitch_total` | counter | … Twitch |
+| `kizunalink_source_vimeo_total` | counter | … Vimeo |
+| `kizunalink_source_niconico_total` | counter | … NicoNico |
+| `kizunalink_source_http_total` | counter | … direct HTTP/local files |
+
+### Audio
+
+| Metric | Type | Description |
+|---|---|---|
+| `kizunalink_frames_sent` | gauge | Opus frames sent in the last minute (all players) |
+| `kizunalink_frames_nulled` | gauge | Silence frames sent because audio wasn't ready |
+| `kizunalink_frames_deficit` | gauge | Frames that were due but not sent |
+
+### HTTP and errors
+
+| Metric | Type | Description |
+|---|---|---|
+| `kizunalink_requests_total` | counter | All HTTP requests (including unauthenticated and WebSocket upgrades) |
+| `kizunalink_errors_auth_total` | counter | 401 responses |
+| `kizunalink_errors_not_found_total` | counter | 404 responses |
+| `kizunalink_errors_rate_limit_total` | counter | 429 responses |
+| `kizunalink_errors_internal_total` | counter | 5xx responses |
+
+### Process
+
+| Metric | Type | Description |
+|---|---|---|
+| `kizunalink_uptime_seconds` | gauge | Seconds since start |
+| `kizunalink_memory_used_bytes` | gauge | Resident memory |
+| `kizunalink_cpu_usage` | gauge | KizunaLink's CPU share, 0.0–1.0 |
+
+There are no labels on any metric; run one scrape job per node and use the job's `instance` label to tell them apart.
+
+<Aside type="caution" title="active_sessions">
+  In 4.2.1 `kizunalink_active_sessions` is incremented on session creation but not decremented on expiry, so it behaves like a counter of sessions created. Use `kizunalink_ws_connections` for the live count.
+</Aside>
+
+## Scrape configuration
+
+<Tabs>
+  <TabItem label="prometheus.yml">
+    ```yaml title="prometheus.yml"
+    scrape_configs:
+      - job_name: kizunalink
+        metrics_path: /v4/metrics
+        scrape_interval: 15s
+        authorization:
+          type: ""                       # send the bare password, no "Bearer"
+          credentials_file: /etc/prometheus/kizunalink.pass
+        static_configs:
+          - targets: ["kizunalink:2333"]
+            labels: { region: "in-west" }
+    ```
+
+    `credentials_file` should contain only the password. If you prefer inline: `credentials: youshallnotpass`.
+  </TabItem>
+  <TabItem label="Docker Compose stack">
+    ```yaml title="docker-compose.yml"
+    services:
+      kizunalink:
+        build: https://github.com/nikcodex/Kizunalink.git
+        environment:
+          KIZUNA_PASSWORD: ${KIZUNA_PASSWORD}
+        ports: ["2333:2333"]
+
+      prometheus:
+        image: prom/prometheus:latest
+        volumes:
+          - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+          - ./kizunalink.pass:/etc/prometheus/kizunalink.pass:ro
+          - prom-data:/prometheus
+        ports: ["9090:9090"]
+
+      grafana:
+        image: grafana/grafana:latest
+        environment:
+          GF_SECURITY_ADMIN_PASSWORD: change-me
+        volumes: [grafana-data:/var/lib/grafana]
+        ports: ["3000:3000"]
+
+    volumes: { prom-data: {}, grafana-data: {} }
+    ```
+  </TabItem>
+  <TabItem label="Grafana Agent / Alloy">
+    ```hcl title="config.alloy"
+    prometheus.scrape "kizunalink" {
+      targets = [{ __address__ = "kizunalink:2333" }]
+      metrics_path = "/v4/metrics"
+      scrape_interval = "15s"
+      authorization {
+        type = ""
+        credentials = env("KIZUNA_PASSWORD")
+      }
+      forward_to = [prometheus.remote_write.default.receiver]
+    }
+    ```
+  </TabItem>
+</Tabs>
+
+<Aside type="tip" title="Empty type = bare token">
+  Prometheus' `authorization.type` defaults to `Bearer`, which would send `Authorization: Bearer youshallnotpass` and get a 401. Setting `type: ""` sends the credentials exactly as KizunaLink expects.
+</Aside>
+
+## Useful queries
+
+```sql title="PromQL"
+# Playing players per node
+kizunalink_players_playing
+
+# Request rate and error ratio (5 min)
+rate(kizunalink_requests_total[5m])
+sum(rate(kizunalink_errors_internal_total[5m])) / sum(rate(kizunalink_requests_total[5m]))
+
+# Which sources are actually used
+sum by (__name__) ({__name__=~"kizunalink_source_.*_total"})
+rate(kizunalink_source_youtube_total[1h])
+
+# Audio health: deficit ratio of the last minute
+kizunalink_frames_deficit / clamp_min(kizunalink_frames_sent, 1)
+
+# Track failure ratio
+rate(kizunalink_tracks_failed_total[15m]) / clamp_min(rate(kizunalink_tracks_loaded_total[15m]), 0.001)
+
+# Memory per playing player
+kizunalink_memory_used_bytes / clamp_min(kizunalink_players_playing, 1)
+```
+
+## Alert rules
+
+```yaml title="kizunalink-alerts.yml"
+groups:
+  - name: kizunalink
+    rules:
+      - alert: KizunaLinkDown
+        expr: up{job="kizunalink"} == 0
+        for: 2m
+        labels: { severity: critical }
+        annotations: { summary: "KizunaLink {{ $labels.instance }} is not responding" }
+
+      - alert: KizunaLinkFrameDeficit
+        expr: kizunalink_frames_deficit / clamp_min(kizunalink_frames_sent, 1) > 0.02
+        for: 5m
+        labels: { severity: warning }
+        annotations: { summary: "{{ $labels.instance }} is dropping audio frames (CPU starved?)" }
+
+      - alert: KizunaLinkTrackFailures
+        expr: rate(kizunalink_tracks_failed_total[15m]) / clamp_min(rate(kizunalink_tracks_loaded_total[15m]), 0.001) > 0.1
+        for: 15m
+        labels: { severity: warning }
+        annotations: { summary: ">10% of tracks failing on {{ $labels.instance }} — check source availability" }
+
+      - alert: KizunaLinkRateLimited
+        expr: rate(kizunalink_errors_rate_limit_total[5m]) > 1
+        for: 5m
+        labels: { severity: info }
+        annotations: { summary: "Clients are being rate limited by {{ $labels.instance }}" }
+
+      - alert: KizunaLinkAuthFailures
+        expr: rate(kizunalink_errors_auth_total[5m]) > 0.1
+        for: 10m
+        labels: { severity: warning }
+        annotations: { summary: "Repeated 401s on {{ $labels.instance }} — misconfigured client or port scan" }
+```
+
+Continue with the [Grafana dashboard](/monitoring/grafana/) to visualise these.

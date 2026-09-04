@@ -1,0 +1,12 @@
+---
+import Default from '@astrojs/starlight/components/Footer.astro';
+const year = new Date().getFullYear();
+---
+
+<Default><slot /></Default>
+
+<p class="kz-footer-note">
+  © {year} KizunaLink contributors · Released under the
+  <a href="https://github.com/nikcodex/Kizunalink/blob/main/LICENSE" rel="noopener">MIT License</a> ·
+  Not affiliated with Discord Inc. or the Lavalink project.
+</p>

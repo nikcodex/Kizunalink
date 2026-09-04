@@ -1,0 +1,180 @@
+---
+title: Docker
+description: Run KizunaLink with Docker or Docker Compose, including a production-ready compose file with healthchecks and resource limits.
+sidebar:
+  order: 3
+---
+
+import { Tabs, TabItem, Aside, Steps } from '@astrojs/starlight/components';
+
+The repository ships a two-stage `Dockerfile` (Rust builder → `debian:bookworm-slim` runtime) and a `docker-compose.yml`. The final image contains only the binary, CA certificates and a default `config.toml`.
+
+<Aside type="note" title="No public image yet">
+  A pre-built image on GHCR/Docker Hub is not published yet, so the examples below build from source on first run (~5–10 minutes, cached afterwards). Once `ghcr.io/nikcodex/kizunalink` is available this page will switch to `image:`.
+</Aside>
+
+## Docker Compose (recommended)
+
+<Steps>
+1. Clone the repository (or just grab the two files):
+   ```bash title="Terminal"
+   git clone https://github.com/nikcodex/Kizunalink.git
+   cd Kizunalink
+   ```
+
+2. Edit the environment in `docker-compose.yml` — at minimum, change the password:
+   ```yaml title="docker-compose.yml" {12}
+   services:
+     kizunalink:
+       build:
+         context: .
+         dockerfile: Dockerfile
+       container_name: kizunalink
+       restart: unless-stopped
+       ports:
+         - "2333:2333"
+       environment:
+         - KIZUNA_HOST=0.0.0.0
+         - KIZUNA_PORT=2333
+         - KIZUNA_PASSWORD=change-me-please
+         - KIZUNA_LOG_LEVEL=info
+         - RUST_LOG=info
+         # Spotify (optional - for higher rate limits)
+         # - SPOTIFY_CLIENT_ID=your_client_id
+         # - SPOTIFY_CLIENT_SECRET=your_client_secret
+         # Rate limiting
+         # - KIZUNA_MAX_REQUESTS=60
+         # IP rotation (optional)
+         # - KIZUNA_IP_BLOCKS=2001:db8::/64
+         # - KIZUNA_ROUTEPLANNER_STRATEGY=RotatingIpRoutePlanner
+         # Proxy (optional)
+         # - KIZUNA_PROXY_URL=socks5://proxy:1080
+         # - KIZUNA_PROXY_USER=user
+         # - KIZUNA_PROXY_PASS=pass
+       volumes:
+         - ./config.toml:/app/config.toml:ro
+       healthcheck:
+         test: ["CMD", "curl", "-f", "http://localhost:2333/health"]
+         interval: 30s
+         timeout: 10s
+         retries: 3
+         start_period: 10s
+       deploy:
+         resources:
+           limits:
+             memory: 512M
+             cpus: '2.0'
+           reservations:
+             memory: 128M
+             cpus: '0.5'
+       logging:
+         driver: "json-file"
+         options:
+           max-size: "10m"
+           max-file: "3"
+   ```
+
+3. Build and start:
+   ```bash title="Terminal"
+   docker compose up -d --build
+   docker compose logs -f kizunalink
+   ```
+</Steps>
+
+<Aside type="caution" title="Healthcheck needs curl">
+  The runtime image is `debian:bookworm-slim` **without** `curl`, so the compose healthcheck above reports `unhealthy` unless you add `curl` to the Dockerfile or switch the test to a shell-free probe. The simplest fix is to change the runtime stage to:
+
+  ```dockerfile
+  RUN apt-get update && apt-get install -y ca-certificates curl && rm -rf /var/lib/apt/lists/*
+  ```
+</Aside>
+
+## Plain `docker run`
+
+```bash title="Terminal"
+docker build -t kizunalink https://github.com/nikcodex/Kizunalink.git
+
+docker run -d --name kizunalink --restart unless-stopped \
+  -p 2333:2333 \
+  -e KIZUNA_PASSWORD=change-me-please \
+  -e SPOTIFY_CLIENT_ID=… -e SPOTIFY_CLIENT_SECRET=… \
+  -v "$PWD/config.toml:/app/config.toml:ro" \
+  kizunalink
+```
+
+## Bot and KizunaLink in one compose project
+
+Put both services on the same network and use the service name as the host. **Do not** use `localhost` from inside the bot container.
+
+```yaml title="docker-compose.yml" {19}
+services:
+  kizunalink:
+    build: https://github.com/nikcodex/Kizunalink.git
+    restart: unless-stopped
+    environment:
+      - KIZUNA_PASSWORD=change-me-please
+    # No `ports:` needed — only the bot talks to it.
+
+  bot:
+    build: ./bot
+    restart: unless-stopped
+    depends_on:
+      - kizunalink
+    environment:
+      - DISCORD_TOKEN=${DISCORD_TOKEN}
+      - LAVALINK_HOST=kizunalink
+      - LAVALINK_PORT=2333
+      - LAVALINK_PASSWORD=change-me-please
+```
+
+<Tabs syncKey="lang">
+  <TabItem label="JavaScript" icon="seti:javascript">
+    ```js
+    const nodes = [{ name: 'kizuna', url: `${process.env.LAVALINK_HOST}:${process.env.LAVALINK_PORT}`, auth: process.env.LAVALINK_PASSWORD }];
+    ```
+  </TabItem>
+  <TabItem label="Python" icon="seti:python">
+    ```python
+    node = wavelink.Node(uri=f"http://{os.environ['LAVALINK_HOST']}:{os.environ['LAVALINK_PORT']}", password=os.environ["LAVALINK_PASSWORD"])
+    ```
+  </TabItem>
+</Tabs>
+
+## Environment vs. config file
+
+Inside the container, `config.toml` is baked in at `/app/config.toml` with the repository defaults. You have three options, in increasing order of control:
+
+1. **Env vars only** — `KIZUNA_*` variables override the baked-in file. Fine for most setups.
+2. **Mount your own** `config.toml` read-only over `/app/config.toml` (shown above). Needed to toggle individual sources.
+3. **Build a custom image** with your file copied in.
+
+See [Environment Variables](/configuration/environment/) for the full list.
+
+## Local files and volumes
+
+If you enable `sources.local = true`, mount the music directory and reference it by container path:
+
+```yaml
+    volumes:
+      - ./config.toml:/app/config.toml:ro
+      - /srv/music:/media:ro
+```
+
+Then load with `identifier=/media/song.flac` or `file:///media/song.flac`.
+
+## Image details
+
+| Property | Value |
+|---|---|
+| Base (runtime) | `debian:bookworm-slim` |
+| Working dir | `/app` |
+| Binary | `/app/kizunalink` |
+| Config | `/app/config.toml` |
+| Exposed port | `2333` |
+| Default env | `KIZUNA_HOST=0.0.0.0`, `KIZUNA_PORT=2333`, `KIZUNA_PASSWORD=youshallnotpass` |
+| Runs as | root (add `user: "1000:1000"` in compose if desired — no writable paths are required) |
+
+## Next steps
+
+- [Configuration](/configuration/) — all keys and env vars.
+- [Monitoring](/monitoring/) — scrape `/v4/metrics` with Prometheus.

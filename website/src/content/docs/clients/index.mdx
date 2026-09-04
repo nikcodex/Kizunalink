@@ -1,0 +1,112 @@
+---
+title: How Clients Connect
+description: The connection lifecycle between a Discord bot, a Lavalink client library and KizunaLink — headers, sessions, voice handoff and events.
+sidebar:
+  order: 0
+---
+
+import { Aside, Steps, Tabs, TabItem, LinkCard, CardGrid } from '@astrojs/starlight/components';
+
+KizunaLink speaks the Lavalink v4 protocol, so you don't write the connection logic yourself — a **client library** for your language does it. This page explains what that library is doing so you can configure it correctly and debug problems.
+
+## The three connections
+
+```
+ Discord Gateway ◄──(1)──► Your bot ◄──(2)──► KizunaLink ◄──(3)──► Discord Voice
+   (events)                  (client lib)      (REST + WS)          (WS + UDP)
+```
+
+1. **Bot ↔ Discord Gateway.** Your bot is logged in normally. When it wants audio in a guild it sends `VOICE_STATE_UPDATE` (op 4) and receives `VOICE_SERVER_UPDATE` + its own `VOICE_STATE_UPDATE` back.
+2. **Bot ↔ KizunaLink.** The client library opens one WebSocket to `/v4/websocket` for events, and uses REST for commands. It forwards the voice credentials from step 1 in a player update.
+3. **KizunaLink ↔ Discord Voice.** Using those credentials KizunaLink connects to the voice gateway (v8), performs IP discovery, negotiates encryption (and DAVE), and streams Opus. Your bot never handles audio bytes.
+
+## Connection lifecycle
+
+<Steps>
+1. **Client opens the WebSocket** with these headers:
+
+   | Header | Required | Value |
+   |---|---|---|
+   | `Authorization` | ✓ | `server.password` |
+   | `User-Id` | ✓ | Your bot's user ID (snowflake). Needed to build voice payloads. |
+   | `Client-Name` | ✓ | `name/version`, e.g. `shoukaku/4.1.1`. Shown in logs. |
+   | `Session-Id` | optional | A previous session ID to **resume** |
+
+2. **KizunaLink replies with `ready`:**
+   ```json
+   { "op": "ready", "resumed": false, "sessionId": "5d4f9b2a…" }
+   ```
+   The `sessionId` is the key for every REST call (`/v4/sessions/{sessionId}/…`).
+
+3. **Bot joins a voice channel** by sending op 4 to Discord. Discord answers with `VOICE_SERVER_UPDATE` (`token`, `endpoint`) and `VOICE_STATE_UPDATE` (`session_id`). The client library collects both and:
+
+4. **Sends the voice state** to KizunaLink:
+   ```http
+   PATCH /v4/sessions/{sessionId}/players/{guildId}
+   { "voice": { "token": "…", "endpoint": "india1234.discord.media:443", "sessionId": "…" } }
+   ```
+   KizunaLink connects to the voice server. `playerUpdate` events now report `"connected": true`.
+
+5. **Load and play:**
+   ```http
+   GET  /v4/loadtracks?identifier=jssearch:kesariya   →  { loadType, data }
+   PATCH /v4/sessions/{sessionId}/players/{guildId}  { "track": { "encoded": "…" } }
+   ```
+
+6. **Events stream back** on the WebSocket: `TrackStartEvent`, `playerUpdate` every ~5 s, `TrackEndEvent`, `stats` every 60 s.
+
+7. **Leave:** the bot sends op 4 with `channel_id: null` to Discord and `DELETE`s the player. If the bot disconnects from KizunaLink without resuming enabled, all its players are destroyed immediately.
+</Steps>
+
+## Session resuming
+
+Restarting your bot normally kills the music. With resuming, KizunaLink keeps players alive for a grace period:
+
+```http
+PATCH /v4/sessions/{sessionId}
+{ "resuming": true, "timeout": 60 }
+```
+
+Reconnect with the `Session-Id` header inside 60 s and you get `"resumed": true` plus a replay of the events you missed (up to 100 buffered). Most client libraries expose this as a `resume`/`resumable` option — turn it on for production bots.
+
+<Aside type="tip">
+  Resume timeouts also cover **KizunaLink restarts**? No — the session table lives in memory. Resuming survives *bot* restarts and network blips, not server restarts. Keep server restarts rare and quick.
+</Aside>
+
+## Choosing a library
+
+Any maintained Lavalink **v4** client works. These are the ones we test against:
+
+| Language | Library | Notes |
+|---|---|---|
+| JavaScript / TypeScript | [Shoukaku](https://github.com/shipgirlproject/Shoukaku) | Thin, stable, close to the protocol. Recommended. |
+| JavaScript / TypeScript | [lavalink-client](https://github.com/Tomato6966/lavalink-client) | Batteries-included queue & filters helpers |
+| JavaScript / TypeScript | [Moonlink.js](https://github.com/Ecliptia/moonlink.js), [Riffy](https://github.com/riffy-team/riffy), [Poru](https://github.com/parasop/poru) | Popular alternatives |
+| Python | [Wavelink](https://github.com/PythonistaGuild/Wavelink) | discord.py; also works with Pycord/nextcord |
+| Python | [Lavalink.py](https://github.com/Devoxin/Lavalink.py), [Mafic](https://github.com/ooliver1/mafic) | Alternatives |
+| Java / Kotlin | [Lavalink-Client](https://github.com/lavalink-devs/Lavalink-Client), [Lavakord](https://github.com/DRSchlaubi/Lavakord) | JDA, Kord |
+| C# / .NET | [Lavalink4NET](https://github.com/angelobreuer/Lavalink4NET) | Discord.Net, DSharpPlus, NetCord |
+| Go | [disgolink](https://github.com/disgoorg/disgolink) | DisGo |
+| Rust | [lavalink-rs](https://gitlab.com/vicky5124/lavalink-rs) | Serenity, Poise, Twilight |
+
+<CardGrid>
+  <LinkCard title="JavaScript / TypeScript" description="Shoukaku and lavalink-client, with KizunaLink-specific tips." href="/clients/javascript/" />
+  <LinkCard title="Python" description="Wavelink 3 with discord.py, including queue and filters." href="/clients/python/" />
+  <LinkCard title="Java / Kotlin" description="Lavalink-Client with JDA; Lavakord with Kord." href="/clients/jvm/" />
+  <LinkCard title="C# / .NET" description="Lavalink4NET with Discord.Net." href="/clients/dotnet/" />
+  <LinkCard title="Raw WebSocket" description="Talk the protocol directly — for new client authors." href="/clients/raw/" />
+</CardGrid>
+
+## Multiple nodes
+
+Client libraries accept a list of nodes and pick one per guild (usually the one with the lowest `stats.cpu.lavalinkLoad` / player count). Run KizunaLink in several regions and list them all; the `stats` message every 60 s drives the balancing.
+
+## Common configuration mistakes
+
+| Symptom | Fix |
+|---|---|
+| `401 Unauthorized` / instant WS close | Password mismatch, or the client is sending `Authorization: Bearer …`. It must be the bare password. |
+| Connected but never plays; `connected: false` forever | The bot isn't sending op 4 to Discord, or the voice handoff is broken. Ensure the client library's Discord connector is wired (e.g. Shoukaku `Connectors.DiscordJS(client)`), and the bot has the `GuildVoiceStates` intent. |
+| Works locally, fails in Docker | Bot container uses `localhost` instead of the service name. See [Docker](/getting-started/docker/#bot-and-kizunalink-in-one-compose-project). |
+| Plays then stops after ~60 s, `WebSocketClosedEvent` code 4006/4009 | Stale voice session — usually the bot moved channels without re-sending voice state. Update your client library. |
+| `429 Too Many Requests` under load | Raise [`ratelimit.max_requests`](/configuration/rate-limiting/). |

@@ -1,0 +1,270 @@
+---
+title: Java / Kotlin
+description: Connect a JDA bot to KizunaLink with Lavalink-Client, or a Kord bot with Lavakord.
+sidebar:
+  order: 3
+---
+
+import { Tabs, TabItem, Aside } from '@astrojs/starlight/components';
+
+Both official JVM clients target Lavalink v4 and work with KizunaLink as-is.
+
+## Lavalink-Client (JDA)
+
+### Dependencies
+
+<Tabs>
+  <TabItem label="Gradle (Kotlin DSL)">
+    ```kotlin title="build.gradle.kts"
+    repositories {
+        mavenCentral()
+        maven("https://maven.lavalink.dev/releases")
+    }
+    dependencies {
+        implementation("net.dv8tion:JDA:5.2.1")
+        implementation("dev.arbjerg:lavalink-client:3.1.0")
+    }
+    ```
+  </TabItem>
+  <TabItem label="Maven">
+    ```xml title="pom.xml"
+    <repositories>
+      <repository>
+        <id>lavalink</id>
+        <url>https://maven.lavalink.dev/releases</url>
+      </repository>
+    </repositories>
+    <dependencies>
+      <dependency>
+        <groupId>net.dv8tion</groupId>
+        <artifactId>JDA</artifactId>
+        <version>5.2.1</version>
+      </dependency>
+      <dependency>
+        <groupId>dev.arbjerg</groupId>
+        <artifactId>lavalink-client</artifactId>
+        <version>3.1.0</version>
+      </dependency>
+    </dependencies>
+    ```
+  </TabItem>
+</Tabs>
+
+### Connect and play
+
+<Tabs syncKey="jvmlang">
+  <TabItem label="Kotlin">
+    ```kotlin title="Bot.kt"
+    import dev.arbjerg.lavalink.client.*
+    import dev.arbjerg.lavalink.client.event.*
+    import dev.arbjerg.lavalink.client.loadbalancing.RegionGroup
+    import dev.arbjerg.lavalink.client.player.*
+    import dev.arbjerg.lavalink.libraries.jda.JDAVoiceUpdateListener
+    import net.dv8tion.jda.api.JDABuilder
+    import net.dv8tion.jda.api.requests.GatewayIntent
+    import java.net.URI
+
+    fun main() {
+        val token = System.getenv("DISCORD_TOKEN")
+        val client = LavalinkClient(getUserIdFromToken(token))
+
+        client.addNode(
+            NodeOptions.Builder()
+                .setName("kizuna-in")
+                .setServerUri(URI.create(System.getenv("KIZUNA_URI") ?: "ws://localhost:2333"))  // ws:// or wss://
+                .setPassword(System.getenv("KIZUNA_PASSWORD") ?: "youshallnotpass")
+                .setRegionFilter(RegionGroup.ASIA)
+                .build()
+        )
+
+        client.on<ReadyEvent>().subscribe { println("⛩️ ${it.node.name} ready, session ${it.sessionId}") }
+        client.on<TrackStartEvent>().subscribe { println("▶️ ${it.track.info.title}") }
+        client.on<TrackEndEvent>().subscribe { println("⏹️ ${it.track.info.title} (${it.endReason})") }
+
+        val jda = JDABuilder.createDefault(token)
+            .setVoiceDispatchInterceptor(JDAVoiceUpdateListener(client))   // the voice handoff
+            .enableIntents(GatewayIntent.GUILD_VOICE_STATES, GatewayIntent.MESSAGE_CONTENT)
+            .addEventListeners(MusicListener(client))
+            .build()
+    }
+    ```
+
+    ```kotlin title="MusicListener.kt"
+    class MusicListener(private val client: LavalinkClient) : ListenerAdapter() {
+        override fun onMessageReceived(event: MessageReceivedEvent) {
+            val content = event.message.contentRaw
+            if (!content.startsWith("!play ")) return
+            val query = content.removePrefix("!play ").trim()
+            val member = event.member ?: return
+            val channel = member.voiceState?.channel ?: return event.channel.sendMessage("Join a voice channel first.").queue()
+
+            event.guild.audioManager.openAudioConnection(channel)   // JDAVoiceUpdateListener forwards to KizunaLink
+
+            val link = client.getOrCreateLink(event.guild.idLong)
+            val identifier = if (query.startsWith("http")) query else "jssearch:$query"
+
+            link.loadItem(identifier).subscribe { result ->
+                when (result) {
+                    is TrackLoaded -> play(link, result.track, event)
+                    is SearchResult -> play(link, result.tracks.first(), event)
+                    is PlaylistLoaded -> play(link, result.tracks.first(), event)
+                    is LoadFailed -> event.channel.sendMessage("Failed: ${result.exception.message}").queue()
+                    is NoMatches -> event.channel.sendMessage("Nothing found.").queue()
+                }
+            }
+        }
+
+        private fun play(link: Link, track: Track, event: MessageReceivedEvent) {
+            link.createOrUpdatePlayer()
+                .setTrack(track)
+                .setVolume(80)
+                .subscribe { event.channel.sendMessage("▶️ **${track.info.title}** — ${track.info.author}").queue() }
+        }
+    }
+    ```
+  </TabItem>
+  <TabItem label="Java">
+    ```java title="Bot.java"
+    import dev.arbjerg.lavalink.client.*;
+    import dev.arbjerg.lavalink.client.event.*;
+    import dev.arbjerg.lavalink.client.loadbalancing.RegionGroup;
+    import dev.arbjerg.lavalink.libraries.jda.JDAVoiceUpdateListener;
+    import net.dv8tion.jda.api.JDABuilder;
+    import net.dv8tion.jda.api.requests.GatewayIntent;
+    import java.net.URI;
+
+    public class Bot {
+        public static void main(String[] args) {
+            String token = System.getenv("DISCORD_TOKEN");
+            LavalinkClient client = new LavalinkClient(Helpers.getUserIdFromToken(token));
+
+            client.addNode(new NodeOptions.Builder()
+                .setName("kizuna-in")
+                .setServerUri(URI.create(System.getenv().getOrDefault("KIZUNA_URI", "ws://localhost:2333")))
+                .setPassword(System.getenv().getOrDefault("KIZUNA_PASSWORD", "youshallnotpass"))
+                .setRegionFilter(RegionGroup.ASIA)
+                .build());
+
+            client.on(ReadyEvent.class).subscribe(e -> System.out.println("⛩️ " + e.getNode().getName() + " ready"));
+            client.on(TrackStartEvent.class).subscribe(e -> System.out.println("▶️ " + e.getTrack().getInfo().getTitle()));
+
+            JDABuilder.createDefault(token)
+                .setVoiceDispatchInterceptor(new JDAVoiceUpdateListener(client))
+                .enableIntents(GatewayIntent.GUILD_VOICE_STATES, GatewayIntent.MESSAGE_CONTENT)
+                .addEventListeners(new MusicListener(client))
+                .build();
+        }
+    }
+    ```
+
+    ```java title="MusicListener.java"
+    public class MusicListener extends ListenerAdapter {
+        private final LavalinkClient client;
+        public MusicListener(LavalinkClient client) { this.client = client; }
+
+        @Override
+        public void onMessageReceived(MessageReceivedEvent event) {
+            String content = event.getMessage().getContentRaw();
+            if (!content.startsWith("!play ")) return;
+            String query = content.substring(6).trim();
+            var member = event.getMember();
+            if (member == null || member.getVoiceState() == null || member.getVoiceState().getChannel() == null) {
+                event.getChannel().sendMessage("Join a voice channel first.").queue();
+                return;
+            }
+
+            event.getGuild().getAudioManager().openAudioConnection(member.getVoiceState().getChannel());
+
+            Link link = client.getOrCreateLink(event.getGuild().getIdLong());
+            String identifier = query.startsWith("http") ? query : "jssearch:" + query;
+
+            link.loadItem(identifier).subscribe(new AbstractAudioLoadResultHandler() {
+                @Override public void ontrackLoaded(TrackLoaded r) { play(link, r.getTrack(), event); }
+                @Override public void onPlaylistLoaded(PlaylistLoaded r) { play(link, r.getTracks().get(0), event); }
+                @Override public void onSearchResultLoaded(SearchResult r) { play(link, r.getTracks().get(0), event); }
+                @Override public void noMatches() { event.getChannel().sendMessage("Nothing found.").queue(); }
+                @Override public void loadFailed(LoadFailed f) { event.getChannel().sendMessage("Failed: " + f.getException().getMessage()).queue(); }
+            });
+        }
+
+        private void play(Link link, Track track, MessageReceivedEvent event) {
+            link.createOrUpdatePlayer().setTrack(track).setVolume(80)
+                .subscribe(p -> event.getChannel().sendMessage("▶️ **" + track.getInfo().getTitle() + "**").queue());
+        }
+    }
+    ```
+  </TabItem>
+</Tabs>
+
+### Filters
+
+```kotlin
+link.createOrUpdatePlayer()
+    .setFilters(
+        Filters(
+            timescale = Timescale(speed = 1.2, pitch = 1.2, rate = 1.0).toOmissible(),
+            rotation = Rotation(rotationHz = 0.2).toOmissible(),
+        )
+    )
+    .subscribe()
+```
+
+### KizunaLink extensions from the JVM
+
+Lavalink-Client has no built-in helper for KizunaLink's extra routes; use its node HTTP access or any HTTP client:
+
+```kotlin
+val node = client.nodes.first()
+val lyricsJson = node.customJsonRequest<JsonNode>("/v4/sessions/${node.sessionId}/players/${guildId}/track/lyrics").block()
+```
+
+Player-level `loop` and `autoplay` can be set with a custom JSON body against `PATCH /v4/sessions/{sessionId}/players/{guildId}` — see [Extensions](/api/extensions/).
+
+## Lavakord (Kord / JDA / Kotlin Multiplatform)
+
+```kotlin title="build.gradle.kts"
+repositories { mavenCentral() }
+dependencies {
+    implementation("dev.kord:kord-core:0.15.0")
+    implementation("dev.schlaubi.lavakord:kord:8.0.0")
+}
+```
+
+```kotlin title="Main.kt"
+import dev.kord.core.Kord
+import dev.schlaubi.lavakord.audio.Link
+import dev.schlaubi.lavakord.kord.*
+import dev.schlaubi.lavakord.rest.loadItem
+import dev.schlaubi.lavakord.rest.models.*
+
+suspend fun main() {
+    val kord = Kord(System.getenv("DISCORD_TOKEN"))
+    val lavakord = kord.lavakord()
+    lavakord.addNode(System.getenv("KIZUNA_URI") ?: "ws://localhost:2333", System.getenv("KIZUNA_PASSWORD") ?: "youshallnotpass")
+
+    kord.on<MessageCreateEvent> {
+        if (!message.content.startsWith("!play ")) return@on
+        val query = message.content.removePrefix("!play ")
+        val channel = member?.getVoiceStateOrNull()?.getChannelOrNull() ?: return@on
+        val link: Link = lavakord.getLink(guildId!!)
+        link.connectAudio(channel.id)
+
+        val identifier = if (query.startsWith("http")) query else "jssearch:$query"
+        when (val item = link.loadItem(identifier)) {
+            is LoadResult.TrackLoaded -> link.player.playTrack(item.data)
+            is LoadResult.SearchResult -> link.player.playTrack(item.data.first())
+            is LoadResult.PlaylistLoaded -> link.player.playTrack(item.data.tracks.first())
+            is LoadResult.NoMatches -> message.channel.createMessage("Nothing found.")
+            is LoadResult.LoadFailed -> message.channel.createMessage("Failed: ${item.data.message}")
+        }
+    }
+
+    kord.login()
+}
+```
+
+## Notes
+
+- `setServerUri` / `addNode` take a **WebSocket-style URI** (`ws://` or `wss://`) — the client derives the REST base from it.
+- JDA's `openAudioConnection` triggers the voice handoff through `JDAVoiceUpdateListener`; don't also install JDA's own `AudioSendHandler`.
+- `RegionGroup` only affects node selection when you run multiple nodes; it doesn't need to match your KizunaLink's location.

@@ -1,0 +1,192 @@
+---
+title: C# / .NET
+description: Connect a Discord.Net bot to KizunaLink with Lavalink4NET.
+sidebar:
+  order: 4
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+[Lavalink4NET](https://github.com/angelobreuer/Lavalink4NET) v4 is a full Lavalink v4 client with integrations for Discord.Net, DSharpPlus, NetCord and Remora. The Discord.Net + generic host setup is shown here.
+
+## Install
+
+```bash
+dotnet add package Discord.Net
+dotnet add package Lavalink4NET.Discord.Net
+dotnet add package Microsoft.Extensions.Hosting
+```
+
+## Configure
+
+```csharp title="Program.cs"
+using Discord;
+using Discord.Interactions;
+using Discord.WebSocket;
+using Lavalink4NET;
+using Lavalink4NET.Extensions;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+
+var builder = Host.CreateApplicationBuilder(args);
+
+builder.Services.AddSingleton(new DiscordSocketConfig
+{
+    GatewayIntents = GatewayIntents.Guilds | GatewayIntents.GuildVoiceStates | GatewayIntents.GuildMessages,
+});
+builder.Services.AddSingleton<DiscordSocketClient>();
+builder.Services.AddSingleton<InteractionService>();
+builder.Services.AddHostedService<DiscordClientHost>();
+
+builder.Services.AddLavalink();
+builder.Services.ConfigureLavalink(options =>
+{
+    options.BaseAddress = new Uri(Environment.GetEnvironmentVariable("KIZUNA_URI") ?? "http://localhost:2333");
+    options.Passphrase   = Environment.GetEnvironmentVariable("KIZUNA_PASSWORD") ?? "youshallnotpass";
+    options.Label        = "kizuna-in";
+    options.ReadyTimeout = TimeSpan.FromSeconds(15);
+    options.ResumptionOptions = new LavalinkSessionResumptionOptions(TimeSpan.FromSeconds(60));
+});
+
+builder.Logging.SetMinimumLevel(LogLevel.Information);
+builder.Build().Run();
+```
+
+```csharp title="DiscordClientHost.cs"
+using Discord;
+using Discord.Interactions;
+using Discord.WebSocket;
+using Microsoft.Extensions.Hosting;
+
+internal sealed class DiscordClientHost(DiscordSocketClient client, InteractionService interactions, IServiceProvider services) : IHostedService
+{
+    public async Task StartAsync(CancellationToken ct)
+    {
+        client.InteractionCreated += async i =>
+        {
+            var ctx = new SocketInteractionContext(client, i);
+            await interactions.ExecuteCommandAsync(ctx, services);
+        };
+        client.Ready += async () =>
+        {
+            await interactions.AddModulesAsync(typeof(DiscordClientHost).Assembly, services);
+            await interactions.RegisterCommandsGloballyAsync();
+        };
+
+        await client.LoginAsync(TokenType.Bot, Environment.GetEnvironmentVariable("DISCORD_TOKEN"));
+        await client.StartAsync();
+    }
+
+    public Task StopAsync(CancellationToken ct) => client.StopAsync();
+}
+```
+
+## Play, skip, filters, lyrics
+
+```csharp title="MusicModule.cs"
+using Discord.Interactions;
+using Lavalink4NET;
+using Lavalink4NET.Players;
+using Lavalink4NET.Players.Queued;
+using Lavalink4NET.Rest.Entities.Tracks;
+using Lavalink4NET.Filters;
+using Microsoft.Extensions.Options;
+
+[RequireContext(ContextType.Guild)]
+public sealed class MusicModule(IAudioService audio) : InteractionModuleBase<SocketInteractionContext>
+{
+    [SlashCommand("play", "Play a song or URL")]
+    public async Task PlayAsync(string query)
+    {
+        await DeferAsync();
+
+        var player = await GetPlayerAsync(connectToVoice: true);
+        if (player is null) return;
+
+        // Bare text → KizunaLink's JioSaavn search; URLs pass straight through.
+        var identifier = query.StartsWith("http", StringComparison.OrdinalIgnoreCase) ? query : $"jssearch:{query}";
+        var track = await audio.Tracks.LoadTrackAsync(identifier, TrackSearchMode.None);
+
+        if (track is null)
+        {
+            await FollowupAsync("Nothing found.");
+            return;
+        }
+
+        var position = await player.PlayAsync(track);
+        await FollowupAsync(position is 0
+            ? $"▶️ **{track.Title}** — {track.Author} `[{track.SourceName}]`"
+            : $"➕ Queued **{track.Title}** at #{position}");
+    }
+
+    [SlashCommand("skip", "Skip the current track")]
+    public async Task SkipAsync()
+    {
+        var player = await GetPlayerAsync(connectToVoice: false);
+        if (player is null) return;
+        await player.SkipAsync();
+        await RespondAsync("⏭️ Skipped");
+    }
+
+    [SlashCommand("nightcore", "Toggle nightcore")]
+    public async Task NightcoreAsync()
+    {
+        var player = await GetPlayerAsync(connectToVoice: false);
+        if (player is null) return;
+
+        var on = player.Filters.Timescale is null;
+        player.Filters.Timescale = on ? new TimescaleFilterOptions(Speed: 1.2f, Pitch: 1.2f, Rate: 1.0f) : null;
+        await player.Filters.CommitAsync();
+        await RespondAsync(on ? "🎚️ Nightcore on" : "🎚️ Nightcore off");
+    }
+
+    [SlashCommand("lyrics", "Lyrics for the current track (KizunaLink extension)")]
+    public async Task LyricsAsync()
+    {
+        var player = await GetPlayerAsync(connectToVoice: false);
+        if (player?.CurrentTrack is null) { await RespondAsync("Nothing is playing.", ephemeral: true); return; }
+        await DeferAsync();
+
+        // KizunaLink-only endpoint — call it with a plain HttpClient.
+        using var http = new HttpClient { BaseAddress = new Uri(Environment.GetEnvironmentVariable("KIZUNA_URI") ?? "http://localhost:2333") };
+        http.DefaultRequestHeaders.Add("Authorization", Environment.GetEnvironmentVariable("KIZUNA_PASSWORD") ?? "youshallnotpass");
+        var sessionId = audio.ApiClientProvider.GetClient().SessionId; // or track it from the ready event
+        var resp = await http.GetAsync($"/v4/sessions/{sessionId}/players/{Context.Guild.Id}/track/lyrics");
+        if (!resp.IsSuccessStatusCode) { await FollowupAsync("No lyrics found."); return; }
+
+        var json = await resp.Content.ReadFromJsonAsync<LyricsResponse>();
+        await FollowupAsync($"**{json!.Name}** — {json.Artist} _(via {json.Source})_\n\n{json.Text[..Math.Min(json.Text.Length, 1800)]}");
+    }
+
+    private async ValueTask<QueuedLavalinkPlayer?> GetPlayerAsync(bool connectToVoice)
+    {
+        var channelId = (Context.User as IVoiceState)?.VoiceChannel?.Id;
+        var options = new PlayerRetrieveOptions(ChannelBehavior: connectToVoice ? PlayerChannelBehavior.Join : PlayerChannelBehavior.None);
+
+        var result = await audio.Players.RetrieveAsync(Context, playerFactory: PlayerFactory.Queued, retrieveOptions: options);
+        if (result.IsSuccess) return result.Player;
+
+        var msg = result.Status switch
+        {
+            PlayerRetrieveStatus.UserNotInVoiceChannel => "Join a voice channel first.",
+            PlayerRetrieveStatus.BotNotConnected => "The bot isn't connected.",
+            _ => "Unknown error.",
+        };
+        await (Context.Interaction.HasResponded ? FollowupAsync(msg, ephemeral: true) : RespondAsync(msg, ephemeral: true));
+        return null;
+    }
+
+    private sealed record LyricsResponse(string Name, string Artist, string Source, string Text, bool Synced);
+}
+```
+
+<Aside type="note">
+  `TrackSearchMode.None` passes the identifier through untouched, which is what you want for KizunaLink prefixes like `jssearch:`, `spsearch:`, `amsearch:`. The built-in `TrackSearchMode.YouTube` / `.SoundCloud` constants also work since they emit `ytsearch:` / `scsearch:`.
+</Aside>
+
+## Notes
+
+- `BaseAddress` is the HTTP URL; Lavalink4NET derives the WebSocket URL itself.
+- `PlayerFactory.Queued` gives you a client-side queue with `SkipAsync`, loop modes and shuffle. If you'd rather use KizunaLink's [server-side queue](/api/extensions/#server-side-queue), use `PlayerFactory.Default` and send the WebSocket ops yourself.
+- Lavalink4NET's `IIntegration` slots for plugins (SponsorBlock, LavaSearch, Lyrics.kt) will fail against KizunaLink; don't register them.

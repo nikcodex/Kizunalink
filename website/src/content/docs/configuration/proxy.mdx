@@ -1,0 +1,66 @@
+---
+title: Proxy
+description: Route all of KizunaLink's outbound HTTP traffic through an HTTP or SOCKS5 proxy.
+sidebar:
+  order: 6
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+KizunaLink can send **all outbound HTTP(S)** requests — source APIs, stream downloads, lyrics lookups, Spotify token refreshes — through a single proxy. This is the go-to fix when a datacenter IP is blocked by YouTube and you don't have an IPv6 block for the [route planner](/configuration/route-planner/).
+
+## Configuration
+
+```toml title="config.toml"
+[proxy]
+url = "socks5://proxy.example.com:1080"
+username = "user"        # optional — applied only when both are set
+password = "pass"
+```
+
+or
+
+```bash title=".env"
+KIZUNA_PROXY_URL=socks5://proxy.example.com:1080
+KIZUNA_PROXY_USER=user
+KIZUNA_PROXY_PASS=pass
+```
+
+Supported schemes: `http://`, `https://`, `socks5://` (remote DNS via `socks5h://` is also accepted by the underlying client).
+
+<Aside type="danger" title="Invalid proxy URL aborts start-up">
+  A malformed `url` panics on the first HTTP client construction with `Invalid proxy URL`. Test the URL with `curl -x <url> https://example.com` first.
+</Aside>
+
+## What is and isn't proxied
+
+| Traffic | Proxied? |
+|---|---|
+| Search / metadata calls to JioSaavn, YouTube, Spotify, … | ✓ |
+| Audio stream downloads (the actual bytes being played) | ✓ |
+| LRCLIB / JioSaavn lyrics | ✓ |
+| Spotify `client_credentials` token refresh | ✓ |
+| **Discord voice gateway (WebSocket) and UDP audio** | ✗ — always direct |
+| Your bot's connection **to** KizunaLink | ✗ — inbound |
+
+Because audio bytes flow through the proxy, its bandwidth matters: a 320 kbps stream is ~2.4 MB/min per player. Budget accordingly for residential proxies billed per GB.
+
+## Interaction with the route planner
+
+If both are configured, requests that the route planner binds to a rotated IP still honour the proxy setting (the proxy connection is made from the bound IP). In practice you'd use one or the other.
+
+## SSRF policy still applies
+
+Even through a proxy, every request URL and every redirect hop is validated against the [SSRF rules](/configuration/security/) — a proxy on a private network doesn't grant access to private targets.
+
+## Verifying
+
+Start with `RUST_LOG=debug` and load a track. You won't see the proxy in the logs directly, but you can confirm on the proxy side, or temporarily point `url` at a local `mitmproxy`/`squid` and watch the traffic.
+
+## Common setups
+
+**Residential SOCKS5 with rotating sessions** — most providers rotate the exit IP per connection or per sticky session; no KizunaLink changes needed beyond `url`.
+
+**WireGuard/Tailscale exit node** — not a proxy at all; route the whole host's default route through the VPN and leave `[proxy]` empty. UDP voice traffic goes through the VPN too, which adds latency — measure before committing.
+
+**Cloudflare WARP** — run `warp-cli` in proxy mode (`warp-cli set-mode proxy`, default port 40000) and set `url = "socks5://127.0.0.1:40000"`.

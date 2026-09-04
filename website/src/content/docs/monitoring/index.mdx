@@ -1,0 +1,126 @@
+---
+title: Health & Stats
+description: Liveness checks, the stats object, resource expectations and alerting thresholds for a KizunaLink node.
+sidebar:
+  order: 0
+---
+
+import { Tabs, TabItem, Aside } from '@astrojs/starlight/components';
+import Endpoint from '../../../components/Endpoint.astro';
+
+KizunaLink exposes three levels of observability, from cheapest to richest:
+
+| Signal | Endpoint | Auth | Use for |
+|---|---|---|---|
+| Liveness | `GET /health` | none | Load balancers, Docker/Kubernetes probes, uptime monitors |
+| Snapshot | `GET /v4/stats` (and the WS `stats` op every 60 s) | password | Client-side node balancing, quick checks |
+| Time series | `GET /v4/metrics` | password | Prometheus + Grafana dashboards and alerts |
+
+## Liveness
+
+<Endpoint method="GET" path="/health" kizuna />
+
+```bash
+curl -fsS http://localhost:2333/health
+# {"status":"ok","version":"4.2.1","timestamp":1757000000000}
+```
+
+`status` is always `ok` if the process answers — it's a pure liveness signal. For readiness ("can it actually serve?"), call `/v4/info` with the password; it exercises the auth path and config state.
+
+<Tabs>
+  <TabItem label="Docker Compose">
+    ```yaml title="docker-compose.yml"
+    services:
+      kizunalink:
+        build: .
+        healthcheck:
+          # The image is Debian slim without curl; use the shell's /dev/tcp instead
+          test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/2333 && printf 'GET /health HTTP/1.0\\r\\n\\r\\n' >&3 && grep -q '\"ok\"' <&3"]
+          interval: 30s
+          timeout: 5s
+          retries: 3
+          start_period: 10s
+    ```
+  </TabItem>
+  <TabItem label="Kubernetes">
+    ```yaml
+    livenessProbe:
+      httpGet: { path: /health, port: 2333 }
+      initialDelaySeconds: 5
+      periodSeconds: 15
+    readinessProbe:
+      httpGet:
+        path: /v4/info
+        port: 2333
+        httpHeaders:
+          - name: Authorization
+            value: youshallnotpass   # better: from a Secret via env + a wrapper script
+      periodSeconds: 10
+    ```
+  </TabItem>
+  <TabItem label="systemd + curl">
+    ```bash
+    # /usr/local/bin/kizuna-check
+    curl -fsS --max-time 3 http://127.0.0.1:2333/health >/dev/null || systemctl restart kizunalink
+    ```
+    Run it from a timer, or rely on `Restart=on-failure` in the [unit file](/getting-started/systemd/).
+  </TabItem>
+</Tabs>
+
+<Aside type="caution" title="Repo docker-compose.yml">
+  The `docker-compose.yml` shipped in the engine repository uses `curl` for its healthcheck, but the runtime image (`debian:bookworm-slim`) doesn't include curl, so that check always fails. Use the `/dev/tcp` variant above or add curl to the image.
+</Aside>
+
+## Stats snapshot
+
+<Endpoint method="GET" path="/v4/stats" />
+
+```json
+{
+  "players": 12,
+  "playingPlayers": 9,
+  "uptime": 86400000,
+  "memory": { "free": 6442450944, "used": 68157440, "allocated": 68157440, "reservable": 8589934592 },
+  "cpu": { "cores": 4, "systemLoad": 0.18, "lavalinkLoad": 0.03 },
+  "frameStats": { "sent": 3000, "nulled": 0, "deficit": 0 }
+}
+```
+
+How to read it:
+
+- **`players` vs `playingPlayers`** — idle players (connected, nothing playing) cost almost nothing; playing players cost CPU for decode + DSP + Opus encode.
+- **`memory.used`** — resident set of the process. Expect ~30–60 MB idle plus roughly 2–4 MB per playing player (decoder buffers and resampler state). There's no JVM heap to size.
+- **`cpu.lavalinkLoad`** — KizunaLink's own share. As a rough guide from a 4-core VPS: ~1 % per playing player without filters, ~2–3 % with `timescale` active (the resampler + WSOLA are the most expensive stages).
+- **`frameStats`** — per minute, across all players. Each playing player should send ~3 000 frames/min (50 frames/s × 60). `nulled` (silence frames sent because audio wasn't ready) and `deficit` (frames that were due but not sent) above a few percent of `sent` indicate CPU starvation or a slow upstream source.
+
+Client libraries use this message (broadcast every 60 s) to pick the least-loaded node when you run several.
+
+## What to alert on
+
+| Condition | Suggested threshold | Likely cause |
+|---|---|---|
+| `/health` failing | 3 consecutive failures | Process crashed or host down |
+| `frameStats.deficit / frameStats.sent` | > 2 % for 5 min | CPU saturation; too many players per core |
+| `frameStats.nulled / frameStats.sent` | > 5 % for 5 min | Slow sources / network; check per-source errors in logs |
+| `cpu.systemLoad` | > 0.85 for 10 min | Host contention |
+| `kizunalink_errors_rate_limit_total` rate | > 1/s | A client is hammering `/v4/loadtracks` — raise `ratelimit.max_requests` or fix the client |
+| `kizunalink_errors_auth_total` rate | > 0.1/s | Password mismatch or someone probing the port |
+| `kizunalink_tracks_failed_total` rate | > 10 % of `tracks_loaded_total` | Source outage (often YouTube); see [Troubleshooting](/help/troubleshooting/) |
+
+Metric names above come from the [Prometheus endpoint](/monitoring/prometheus/).
+
+## Logs
+
+KizunaLink logs to stdout via `tracing`. The level is set by `logging.level` / `KIZUNA_LOG_LEVEL`, or per module with `RUST_LOG`. For production, `info` is quiet enough (one line per track load, player create/destroy, voice connect) and `debug` on `kizunalink::sources` is the first thing to enable when a source misbehaves. See [Logging](/configuration/logging/).
+
+## Capacity planning
+
+Numbers to start from (measure your own):
+
+| Machine | Comfortable playing players |
+|---|---|
+| 1 vCPU / 1 GB (small VPS, Termux on a phone) | 20–40 |
+| 2 vCPU / 2 GB | 80–120 |
+| 4 vCPU / 4 GB | 200–300 |
+
+Bandwidth: each playing player sends ~64–96 kbps of Opus to Discord and pulls a 128–320 kbps stream from the source — budget ~400 kbps per player both directions combined. Hard limits are 10 000 players and 10 000 sessions per node.

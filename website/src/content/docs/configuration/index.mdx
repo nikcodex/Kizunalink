@@ -1,0 +1,126 @@
+---
+title: Configuration Overview
+description: How KizunaLink loads configuration from config.toml, .env and environment variables, and which one wins.
+sidebar:
+  order: 0
+---
+
+import { Aside, FileTree, LinkCard, CardGrid } from '@astrojs/starlight/components';
+
+KizunaLink has **no command-line flags**. Everything is configured through two layers:
+
+1. **`config.toml`** in the working directory — the structured, complete configuration.
+2. **Environment variables** — a subset of keys prefixed `KIZUNA_*`, plus source credentials. These **override** the file.
+
+A `.env` file in the working directory is loaded automatically (via `dotenvy`) before anything else, so you can keep secrets out of `config.toml` without exporting variables manually.
+
+## Precedence
+
+```
+  highest ┃  process environment  (export KIZUNA_PORT=…  /  docker -e …)
+          ┃  .env file            (same variables, loaded into the environment)
+          ┃  config.toml
+  lowest  ┃  built-in defaults
+```
+
+If `config.toml` is missing or fails to parse, KizunaLink silently falls back to the built-in defaults (which are identical to the repository's `config.toml`) and logs the host/port it ended up with. Check the first `INFO` line after start-up if something looks off.
+
+<Aside type="caution">
+  A **parse error** in `config.toml` (e.g. a typo in a key type) does not abort start-up — the whole file is ignored and defaults are used. Watch for `Loaded config: host=0.0.0.0, port=2333` when you expected a different port.
+</Aside>
+
+## Where the files live
+
+KizunaLink resolves paths relative to the **current working directory**, not the binary's location.
+
+<FileTree>
+- kizunalink/
+  - kizunalink            binary
+  - config.toml           read on start-up
+  - .env                  optional, loaded on start-up
+</FileTree>
+
+For systemd this is `WorkingDirectory=/opt/kizunalink`; in Docker it's `/app`.
+
+## Minimal configuration
+
+Only `[server]` and the three original `[sources]` keys are strictly required — every other section has defaults:
+
+```toml title="config.toml"
+[server]
+host = "0.0.0.0"
+port = 2333
+password = "change-me-please"
+
+[sources]
+jiosaavn = true
+spotify = true
+youtube = true
+```
+
+## Full default configuration
+
+```toml title="config.toml"
+[server]
+host = "0.0.0.0"
+port = 2333
+password = "youshallnotpass"
+max_connections = 1000
+request_timeout_secs = 30
+queue_max_history = 50
+
+[sources]
+jiosaavn = true
+spotify = true
+youtube = true
+soundcloud = true
+bandcamp = true
+twitch = true
+vimeo = false
+niconico = false
+http = true
+local = false
+applemusic = true
+deezer = true
+
+[ratelimit]
+ip_blocks = []
+strategy = "RotatingIpRoutePlanner"
+excluded_ips = []
+max_requests = 60
+window_secs = 60
+burst = 10
+
+[logging]
+level = "info"
+colored = true
+
+[metrics]
+enabled = true
+
+[security]
+max_body_size = 1048576
+blocked_hosts = []
+
+[proxy]
+# url = "socks5://proxy:1080"
+# username = ""
+# password = ""
+```
+
+## Reloading
+
+Configuration is read once at start-up. Restart the process to apply changes — with [session resuming](/api/rest/#update-session) enabled in your client, players survive a quick restart.
+
+## Sections
+
+<CardGrid>
+  <LinkCard title="config.toml reference" description="Every key, type and default." href="/configuration/config-toml/" />
+  <LinkCard title="Environment variables" description="KIZUNA_* overrides and source credentials." href="/configuration/environment/" />
+  <LinkCard title="Audio sources" description="Per-source setup, credentials and prefixes." href="/configuration/sources/" />
+  <LinkCard title="Rate limiting" description="Inbound per-IP limits and per-source limits." href="/configuration/rate-limiting/" />
+  <LinkCard title="Route planner" description="Rotate outbound IPs across a /64 to dodge bans." href="/configuration/route-planner/" />
+  <LinkCard title="Proxy" description="Send all outbound traffic through HTTP/SOCKS5." href="/configuration/proxy/" />
+  <LinkCard title="Security" description="SSRF guard, body limits, blocked hosts." href="/configuration/security/" />
+  <LinkCard title="Config Generator" description="Build config.toml, .env and compose in the browser." href="/configuration/generator/" />
+</CardGrid>

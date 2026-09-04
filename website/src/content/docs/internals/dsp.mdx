@@ -1,0 +1,105 @@
+---
+title: DSP Pipeline
+description: How audio flows from an HTTP stream to Opus — symphonia decoding, sinc resampling, the filter chain order, live vs structural filter updates, seeking and the soft limiter.
+sidebar:
+  order: 3
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Every playing track has its own pipeline, built by `dsp::pipeline::create_kizuna_source`:
+
+```
+HTTP GET (reqwest, streamed)            file:// (tokio::fs)
+        │                                     │
+        └──────────► mpsc channel of byte chunks (cap 128) ◄──────────┘
+                                │
+                     ChannelByteSource  (impl symphonia MediaSource, non-seekable)
+                                │
+                     AudioDecoder  ─ symphonia probe + codec ─► f32 planar
+                                │  ─ rubato SincFixedIn if rate ≠ 48 kHz
+                                │  ─ mono → stereo duplication
+                                ▼
+                     FilterChain::process()   (interleaved stereo f32 @ 48 kHz)
+                                │
+                     FilteredAudioReader → KizunaFilteredSource (AudioSource)
+                                │  20 ms = 960 frames = 1920 samples = 7680 bytes
+                                ▼
+                     kizuna-voice: f32 → i16 → Opus → RTP
+```
+
+Two Tokio tasks and one blocking thread per track: the HTTP fetcher (async), the decoder (`spawn_blocking`, because symphonia is synchronous) and the frame scheduler (async, in kizuna-voice).
+
+## Decoding
+
+`AudioDecoder::open` probes the stream with symphonia's default probe. An **extension hint** derived from the URL path (`.mp3`, `.m4a`, `.webm`, …) helps ambiguous containers, but content sniffing wins. Because the byte source is a channel, the container must be streamable — every source KizunaLink serves (JioSaavn AAC/M4A, YouTube WebM/Opus and M4A, MP3, FLAC, OGG, WAV) qualifies.
+
+Supported formats come from `symphonia` with `features = ["all"]`: MP3, AAC (ADTS and MP4/M4A), FLAC, Vorbis, Opus (in OGG/WebM/Matroska), WAV/PCM, ALAC, ADPCM.
+
+Output is normalised to **48 kHz stereo `f32`**:
+
+- Sample rate conversion uses **rubato `SincFixedIn`** (cubic sinc interpolation, 4× oversampling window) only when the source rate differs from 48 kHz; 48 kHz sources pass through without resampling.
+- Mono is duplicated to both channels; >2 channels are down-mixed to the first two.
+
+### Seeking
+
+The byte source isn't seekable, so a seek re-creates the whole pipeline: `GuildPlayer::restart_at(position_ms)` opens a new HTTP stream and asks the decoder to **skip `position_ms × 48` frames** after decode. That costs decode CPU proportional to the seek target (a few hundred ms of CPU for a seek to 3:00 of an MP3) but keeps seeks exact and independent of HTTP range support. Playback position is tracked wall-clock by the player (`play_started_at`) and corrected by the chain's `duration_factor()` when timescale changes tempo.
+
+## Filter chain
+
+`dsp::filters::FilterChain` holds one instance of each stage and processes arbitrary-size chunks:
+
+| # | Stage | Implementation |
+|---|---|---|
+| 1 | volume | scalar gain (0–5), skipped when ≈1.0 |
+| 2 | equalizer | 15 peaking biquads per channel (Q 0.707) at lavaplayer's band centres |
+| 3 | karaoke | band-pass on the centre `(L+R)/2` around `filterBand`, subtracted from both channels × `level` |
+| 4 | timescale | rubato resampler (pitch × speed) **then** WSOLA time-stretch (rate ÷ pitch). *Variable-length stage* |
+| 5 | tremolo | sinusoidal amplitude LFO |
+| 6 | vibrato | delay-line pitch LFO |
+| 7 | distortion | lavaplayer-compatible sin/cos/tan wave-shaper with wrapped `tan` argument |
+| 8 | rotation | 2×2 rotation matrix on (L, R) at `rotationHz` |
+| 9 | channelMix | 2×2 gain matrix |
+| 10 | lowPass | single-pole low-pass, cutoff = 48 000 / (2 × smoothing) |
+| 11 | limiter | soft-knee `tanh` saturation above 0.95 (≈ −0.45 dBFS), always on |
+
+Order matches Lavalink's so presets sound the same on both servers. Stages 1–3 and 5–11 are length-preserving; timescale may return more or fewer samples than it was given and buffers internally.
+
+### Live vs structural updates
+
+The chain is shared (`Arc<Mutex<FilterChain>>`) between the `GuildPlayer` (REST/WS updates) and the decoder thread (processing). When a filter update arrives, `FilterChain::update_from_lavalink` mutates the stages in place and reports whether the change was **structural**:
+
+- **Non-structural** (everything except timescale parameters): the next processed chunk uses the new settings. Latency to the listener is roughly the Opus/network buffer (~100 ms). No restart, no gap.
+- **Structural** (timescale added, removed, or its `speed`/`pitch`/`rate` changed): the resampler ratio changes, so the player calls `restart_at(current_position)` to rebuild the pipeline. This introduces a brief gap but avoids audible artifacts from swapping resamplers mid-stream.
+- **First activation**: if no filter was active and the stream was started in the unfiltered fast path, enabling any filter restarts once so the chain is in the loop; subsequent changes are live.
+
+### Timescale internals
+
+Lavaplayer semantics are reproduced exactly:
+
+```
+resample ratio r = 1 / (pitch × speed)     → duration × r,   pitch × 1/r
+WSOLA factor  α = rate / pitch             → duration ÷ α,   pitch unchanged
+net:            duration ÷ (speed × rate),  pitch × (pitch × speed)
+```
+
+WSOLA (Waveform Similarity Overlap-Add) places analysis frames at the synthesis hop, searches a small window around the natural continuation for the best-correlating offset, and Hann-crossfades — avoiding the phasing of plain overlap-add. All-`1.0` bypasses both stages bit-exactly.
+
+The chain exposes `duration_factor()` (source seconds per wall second) so `playerUpdate.position` and `endTime` stay correct while nightcore/vaporwave presets are active.
+
+## CPU cost
+
+Measured per playing player on a modern x86 core, rough order:
+
+| Configuration | CPU |
+|---|---|
+| Decode + Opus encode, no filters | ~1 % |
+| + EQ / karaoke / rotation / lowPass / tremolo / vibrato | +0.1–0.3 % each |
+| + timescale (resampler + WSOLA) | +1–2 % |
+| Resampling a 44.1 kHz source (most MP3/AAC) | +0.3 % |
+
+Keep an eye on `frameStats.deficit` when stacking timescale on many players per core. On ARM (Termux, Raspberry Pi) budget roughly 3× these figures.
+
+## Verification
+
+The same `FilterChain` code path is used by offline tests in `src/dsp/`: each stage has unit tests (identity at defaults, known-signal responses), and the chain is exercised end-to-end from decoded fixtures so REST-visible behaviour and audio behaviour can't drift apart.

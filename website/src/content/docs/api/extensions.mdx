@@ -1,0 +1,207 @@
+---
+title: KizunaLink Extensions
+description: Everything KizunaLink adds on top of the Lavalink v4 protocol — lyrics, server-side queue, loop and autoplay, node-wide player listing, session listing, health and Prometheus metrics.
+sidebar:
+  order: 3
+---
+
+import { Tabs, TabItem, Aside, Badge } from '@astrojs/starlight/components';
+import Endpoint from '../../../components/Endpoint.astro';
+
+KizunaLink is a strict superset of Lavalink v4. Everything on this page is **additive**: standard clients never see or need it, and every extension is tagged <span class="kz-only">⛩ Kizuna only</span> in the reference. Use them when you control the bot code and want less work on your side.
+
+## At a glance
+
+| Extension | Where | What it gives you |
+|---|---|---|
+| [Lyrics](#lyrics) | 3 REST routes | Synced (LRC) or plain lyrics for any track, no plugin |
+| [Server-side queue](#server-side-queue) | WebSocket ops | Queue, skip, previous, shuffle, clear handled on the node |
+| [Loop & autoplay](#loop-and-autoplay) | player update + WS ops | Track/queue repeat and endless recommendations |
+| [`GET /v4/players/all`](#all-players) | REST | Every player on the node, with filters |
+| [`GET /v4/sessions`](#sessions-list) | REST | Active session IDs |
+| [`GET /health`](#health) | REST | Unauthenticated liveness JSON |
+| [`GET /v4/metrics`](#prometheus-metrics) | REST | Prometheus exposition |
+| [Player fields](#extra-player-fields) | REST + WS | `autoplay`, `loop` in every Player object |
+| [`ping` op](#ping-op) | WebSocket | Application-level pong |
+
+## Lyrics
+
+Lavalink needs a plugin (Lyrics.kt / LavaLyrics) for lyrics. KizunaLink has them built in, sourced from **LRCLIB** (synced, community-maintained) with a **JioSaavn** fallback (plain text).
+
+<Endpoint method="GET" path="/v4/sessions/{sessionId}/players/{guildId}/track/lyrics" kizuna />
+<Endpoint method="GET" path="/v4/lyrics?query=…|track=…|trackName=…&artistName=…" kizuna />
+<Endpoint method="GET" path="/v4/lyrics/{songId}" kizuna />
+
+<Tabs syncKey="lang">
+  <TabItem label="curl">
+    ```bash
+    curl $KZ/v4/sessions/$SESSION/players/$GUILD/track/lyrics -H "Authorization: $KZ_PASS"
+    ```
+  </TabItem>
+  <TabItem label="JavaScript">
+    ```js
+    const r = await fetch(`${KZ}/v4/sessions/${sessionId}/players/${guildId}/track/lyrics`, { headers: { Authorization: KZ_PASS } });
+    if (r.status === 404) return 'No lyrics found';
+    const { name, artist, source, synced, text, lines } = await r.json();
+
+    // Show the line matching the current position (from playerUpdate.state.position)
+    const current = lines.filter(l => l.timestamp <= position).at(-1)?.line;
+    ```
+  </TabItem>
+  <TabItem label="Python">
+    ```python
+    r = httpx.get(f"{KZ}/v4/sessions/{session_id}/players/{guild_id}/track/lyrics", headers=H)
+    if r.status_code == 404:
+        return "No lyrics found"
+    data = r.json()
+    current = next((l["line"] for l in reversed(data["lines"]) if l["timestamp"] <= position), None)
+    ```
+  </TabItem>
+</Tabs>
+
+```json title="200 OK"
+{
+  "name": "Kesariya", "artist": "Arijit Singh", "source": "lrclib", "synced": true,
+  "text": "Kesariya tera ishq hai piya\n…",
+  "lines": [ { "timestamp": 12340, "line": "Kesariya tera ishq hai piya" }, … ]
+}
+```
+
+- `source` is `lrclib` or `jiosaavn`.
+- `synced: false` means `lines[].timestamp` are synthetic (3 s apart) — show `text` instead.
+- Lookups hit external services and are subject to their availability; cache results on your side per `info.identifier`.
+
+Full parameter table in the [REST reference](/api/rest/#lyrics).
+
+## Server-side queue
+
+Each player owns a queue (`tracks`), a `current` track and a `previous` history (last **50**, configurable with `server.queue_max_history`). Drive it with WebSocket ops — no REST round-trips and no queue state in your bot:
+
+| Op | Payload | Behaviour |
+|---|---|---|
+| `queueTrack` | `encoded` | Append; starts playing if idle. Also creates the player if needed |
+| `skipTrack` | – | Play next (respects loop mode); stops if the queue is empty and autoplay is off |
+| `previousTrack` | – | Replay the last track from history |
+| `shuffleQueue` | – | Shuffle pending tracks |
+| `clearQueue` | – | Drop pending tracks (current keeps playing) |
+
+<Tabs syncKey="lang">
+  <TabItem label="JavaScript">
+    ```js
+    const send = (payload) => ws.send(JSON.stringify(payload));
+
+    for (const t of playlist.tracks) send({ op: 'queueTrack', guildId, encoded: t.encoded });
+    send({ op: 'shuffleQueue', guildId });
+    send({ op: 'skipTrack', guildId });
+    ```
+  </TabItem>
+  <TabItem label="Python">
+    ```python
+    async def send(payload: dict): await ws.send(json.dumps(payload))
+
+    for t in playlist["tracks"]:
+        await send({"op": "queueTrack", "guildId": guild_id, "encoded": t["encoded"]})
+    await send({"op": "shuffleQueue", "guildId": guild_id})
+    await send({"op": "skipTrack", "guildId": guild_id})
+    ```
+  </TabItem>
+</Tabs>
+
+When a track finishes, KizunaLink automatically starts the next one and emits the usual `TrackEndEvent` (`finished`) → `TrackStartEvent` pair, so your "now playing" UI works unchanged.
+
+<Aside type="caution" title="Don't mix queues">
+  If your client library also has a queue (Wavelink's `Player.queue`, lavalink-client's `player.queue`, Lavalink4NET `QueuedLavalinkPlayer`), it will start its own next track on `finished` while KizunaLink does the same. Use one or the other per player.
+</Aside>
+
+There is currently no REST endpoint that returns the queue contents; keep a lightweight mirror in your bot if you need to display it, or track `TrackStartEvent`s.
+
+## Loop and autoplay
+
+Both are per-player and appear in every [Player object](/api/rest/#player-object) as `loop` and `autoplay`.
+
+### Set via player update (explicit)
+
+```json title="PATCH /v4/sessions/{sessionId}/players/{guildId}"
+{ "loop": "queue", "autoplay": true }
+```
+
+`loop` accepts `none` · `track` · `queue` (case-insensitive; unknown → `none`).
+
+### Set via WebSocket
+
+```json
+{ "op": "loop", "guildId": "…", "mode": "track" }
+{ "op": "autoplay", "guildId": "…" }        // toggles; read the new value from a GET player
+```
+
+### How autoplay picks tracks
+
+When the queue is empty and autoplay is on, KizunaLink recommends a follow-up based on the last track:
+
+1. Builds queries from the main artist (`"<artist>"`, `"<artist> popular"`, `"<artist> mix"`) plus the first three words of the title.
+2. Searches on the **same source** as the last track (Spotify → Spotify, YouTube → YouTube, anything else → JioSaavn).
+3. Scores candidates: +60 related artist / −30 otherwise, up to +20 for similar duration, +15 same source. Anything ≥ 40 is eligible; recently played identifiers (last 50) and near-duplicate titles (Levenshtein ratio > 0.75 against the last 20) are skipped.
+4. Falls back to a plain artist search on JioSaavn → YouTube → Spotify.
+
+If nothing qualifies, the player simply stops (`TrackEndEvent: finished`, no new start). See [Autoplay & Queue internals](/internals/queue/) for details.
+
+## All players
+
+<Endpoint method="GET" path="/v4/players/all?playing={bool}&connected={bool}" kizuna />
+
+Node-wide view across sessions, meant for dashboards and ops:
+
+```bash
+curl "$KZ/v4/players/all?playing=true" -H "Authorization: $KZ_PASS"
+# {"players":[…],"count":9}
+```
+
+## Sessions list
+
+<Endpoint method="GET" path="/v4/sessions" kizuna />
+
+```json
+{ "sessions": ["a1b2c3d4e5f6"], "count": 1 }
+```
+
+Combine with `GET /v4/sessions/{id}/players` to enumerate everything a given bot is doing.
+
+## Health
+
+<Endpoint method="GET" path="/health" kizuna />
+
+No auth. `{"status":"ok","version":"4.2.1","timestamp":…}` — wire it to Docker `HEALTHCHECK`, Kubernetes `livenessProbe`, or an uptime monitor. See [Health & Stats](/monitoring/).
+
+## Prometheus metrics
+
+<Endpoint method="GET" path="/v4/metrics" kizuna />
+
+Text exposition of `kizunalink_*` gauges and counters (players, sessions, requests, per-source loads, frame stats, errors). Metric list and scrape config: [Prometheus Metrics](/monitoring/prometheus/). The endpoint is always mounted (the `[metrics] enabled` key is reserved) and, like every `/v4` route, requires the password.
+
+## Extra player fields
+
+Every Player object carries two extra keys:
+
+```json
+{ "guildId": "…", "track": { … }, "volume": 100, "paused": false, "state": { … }, "voice": { … }, "filters": { … },
+  "autoplay": false, "loop": "none" }
+```
+
+Also, `track.pluginInfo` will contain `isrc` for tracks that were decoded from a v3 payload with an ISRC — handy for cross-source matching.
+
+## `ping` op
+
+```json
+{ "op": "ping" }  →  { "op": "pong" }
+```
+
+The only WebSocket message KizunaLink answers directly. Use it for liveness through proxies that don't forward WebSocket control frames.
+
+## Things Lavalink has that KizunaLink doesn't
+
+For completeness — the reverse list:
+
+- **Plugins** (`/v4/info.plugins` is `[]`): no LavaSrc, SponsorBlock, LavaSearch, Lyrics.kt, DuncteBot etc. The commonly needed pieces (Spotify/Apple/Deezer resolution, lyrics) are native.
+- **`pluginInfo`** on playlists/tracks is `{}` apart from the `isrc` note above — no `albumName`, `artistUrl`, `previewUrl` fields.
+- **`loadFailed` / `cleanup`** end reasons are not emitted.
+- **HTTP source `probeInfo`** in encoded tracks is written as null.

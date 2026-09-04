@@ -1,0 +1,103 @@
+---
+title: Rate Limiting
+description: How KizunaLink's inbound token-bucket rate limiter works, what it protects, and how to tune it for large bots.
+sidebar:
+  order: 4
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+KizunaLink rate-limits **inbound** requests per client IP address using a token bucket. This protects the source APIs (and your IP reputation with them) from a misbehaving or compromised client. It is separate from the [route planner](/configuration/route-planner/), which handles *outbound* IP rotation.
+
+## What is limited
+
+| Request | Limited? |
+|---|---|
+| `GET /v4/loadtracks` | ✓ global bucket **and** per-source bucket |
+| `PATCH /v4/sessions/{id}/players/{guild}` | ✓ global bucket |
+| `GET /v4/metrics` | ✓ global bucket |
+| WebSocket upgrade `/v4/websocket` | ✓ global bucket |
+| Everything else (`/v4/info`, `/v4/stats`, `GET` player, decode, lyrics…) | ✗ |
+
+When a limit is hit, REST endpoints return **`429 Too Many Requests`** with a `Retry-After: <window_secs>` header and the standard [error body](/api/errors/); the WebSocket upgrade is rejected with `429` before the handshake.
+
+## Configuration
+
+```toml title="config.toml"
+[ratelimit]
+max_requests = 60     # steady-state requests per window, per IP
+window_secs  = 60     # window length
+burst        = 10     # extra capacity above max_requests
+```
+
+Or via environment: `KIZUNA_MAX_REQUESTS=120` (the other two are file-only).
+
+## How the token bucket behaves
+
+- Each IP gets a bucket holding at most `max_requests + burst` tokens (default **70**).
+- A fresh bucket starts full, so a new client can fire 70 requests instantly.
+- Tokens refill continuously at `max_requests / window_secs` per second (default **1/s**).
+- Each request consumes one token; if the bucket is empty the request is rejected.
+
+In practice with defaults: sustained **1 request/second**, with bursts of up to 70.
+
+## Per-source limits
+
+`/v4/loadtracks` additionally enforces a second bucket keyed by `ip:source`, refilled over the same `window_secs`. These are compiled-in defaults and not currently configurable:
+
+| Source | Requests per window |
+|---|---|
+| `jiosaavn` | 30 |
+| `youtube` | 30 |
+| `spotify` | 30 |
+| `soundcloud` | 20 |
+| `deezer` | 20 |
+| `applemusic` | 20 |
+| all others | unlimited (global bucket only) |
+
+A per-source rejection returns `429` with the message `Rate limit exceeded for source: <name>`. Fallback searches (e.g. YouTube → JioSaavn) also respect the fallback source's bucket.
+
+## Sizing for your bot
+
+Your bot is (usually) one IP, so **all of its guilds share one bucket**. A rough formula:
+
+```
+max_requests ≥ (guilds actively playing) × (loads per minute per guild) × safety factor
+```
+
+A bot with 200 active players where users queue a song every ~2 minutes issues ~100 loads/min. Set:
+
+```toml
+[ratelimit]
+max_requests = 300
+window_secs  = 60
+burst        = 100
+```
+
+Per-source ceilings still apply — a bot doing 300 YouTube searches/minute will hit the `youtube` bucket (30/min) regardless. For that scale, spread searches across sources, use [Spotify credentials](/configuration/sources/#spotify) to lift Spotify throttling, or run several KizunaLink nodes.
+
+<Aside type="tip" title="Disabling in practice">
+  There is no "off" switch, but `max_requests = 1000000` makes the limiter irrelevant for a trusted single bot on a private network.
+</Aside>
+
+## Behind a reverse proxy
+
+The client IP is taken from, in order: the first entry of `X-Forwarded-For`, then `X-Real-IP`, then a fixed fallback (`0.0.0.0`). Two consequences:
+
+1. **Without a proxy, every client shares the `0.0.0.0` bucket.** For a single bot that's equivalent to per-bot limiting; for many bots on one node, raise `max_requests` accordingly.
+2. **Behind Nginx/Caddy/Cloudflare, make sure the proxy sets `X-Forwarded-For`**, and that untrusted clients can't reach KizunaLink directly (otherwise they could spoof the header and get a fresh bucket).
+
+```nginx title="nginx.conf"
+location / {
+    proxy_pass http://127.0.0.1:2333;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Real-IP $remote_addr;
+}
+```
+
+## Observability
+
+Rejections increment `kizunalink_errors_rate_limit_total`. Buckets idle for more than `2 × window_secs` are garbage-collected every 60 seconds.

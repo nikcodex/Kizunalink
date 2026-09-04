@@ -1,0 +1,154 @@
+---
+title: Contributing
+description: How to build, test and contribute to KizunaLink — workspace layout, CI checks, coding conventions, and how to contribute to these docs.
+sidebar:
+  order: 2
+---
+
+import { Aside, Steps, Tabs, TabItem } from '@astrojs/starlight/components';
+
+KizunaLink is MIT-licensed and developed at [github.com/nikcodex/Kizunalink](https://github.com/nikcodex/Kizunalink). This site lives at [github.com/nikcodex/Kizuna-Docs](https://github.com/nikcodex/Kizuna-Docs). Bug reports, compatibility reports from client-library users, docs fixes and code are all welcome.
+
+## Ways to help
+
+- **Report client incompatibilities.** If a Lavalink v4 client does something KizunaLink rejects, that's a bug on our side. Include the raw request/response.
+- **Test sources from your region.** JioSaavn, YouTube and Spotify behave differently per country; reports with `RUST_LOG=kizunalink::sources=debug` output are gold.
+- **Fix the docs.** Every page has an *Edit page* link at the bottom that opens the Markdown file on GitHub.
+- **Code.** See the layout and workflow below. Open an issue first for anything larger than a bug fix so the design can be discussed.
+
+## Development setup
+
+You need a stable Rust toolchain, `cmake` (for the bundled libopus build) and a C compiler. See [Build from Source](/getting-started/build-from-source/) for platform packages.
+
+```bash
+git clone https://github.com/nikcodex/Kizunalink.git
+cd Kizunalink
+cargo build --workspace
+RUST_LOG=kizunalink=debug cargo run
+```
+
+A debug build starts in a couple of seconds after the first compile and reads `config.toml` from the repo root. Use `KIZUNA_PORT=2334` to run alongside a release instance.
+
+## Workspace layout
+
+Cargo workspace with two crates:
+
+```
+Kizunalink/
+├── Cargo.toml              # workspace + `kizunalink` crate (v4.2.1)
+├── build.rs                # embeds BUILD_TIME, GIT_COMMIT, GIT_BRANCH, GIT_COMMIT_TIME
+├── src/
+│   ├── main.rs             # axum router, broadcast tasks, graceful shutdown
+│   ├── lib.rs              # AppState
+│   ├── config.rs           # config.toml + KIZUNA_* env overrides, defaults
+│   ├── rest/               # one module per endpoint group (info, loadtracks,
+│   │                       #   players, decodetrack, lyrics, metrics, routeplanner,
+│   │                       #   session, auth, error)
+│   ├── ws/                 # handler.rs (upgrade, framing, ops) + session.rs (registry, resume)
+│   ├── models/             # protocol.rs, track.rs, filters.rs — the wire types
+│   ├── player/             # manager, guild_player, queue, autoplay, kizuna_adapter
+│   ├── sources/            # one file per source + route_planner + backoff
+│   ├── dsp/                # decoder, pipeline, and one file per filter (+ wsola)
+│   ├── track_encoding.rs   # Lavalink-compatible base64 track format
+│   ├── security.rs         # SSRF checks, path sandbox, log sanitising
+│   ├── ratelimit.rs        # per-IP and per-source token buckets
+│   ├── stats.rs / metrics.rs
+│   └── dave.rs             # DAVE glue between the player and kizuna-voice
+├── kizuna-voice/           # Discord voice crate (v0.1.0) — no dependency on the server
+│   └── src/
+│       ├── gateway/        # voice gateway v8 WebSocket + payloads
+│       ├── transport/      # UDP, RTP, AEAD crypto
+│       ├── connection/     # manager state machine, reconnect, session
+│       ├── audio/          # scheduler, Opus encoder, demuxer, packetiser
+│       └── dave/           # MLS / DAVE protocol
+├── tests/integration_tests.rs
+├── config.toml, Dockerfile, docker-compose.yml, kizunalink.service, install.sh
+└── .github/workflows/      # ci.yml (checks) + build.yml (release binaries)
+```
+
+`kizuna-voice` deliberately knows nothing about Lavalink; it's reusable by any Rust bot. Keep it that way — protocol-level features go in `src/`, Discord-voice-level features go in the crate.
+
+## Before you push
+
+CI runs five jobs (`.github/workflows/ci.yml`), all on stable Rust with `cmake` installed. Run the same locally:
+
+```bash
+cargo fmt --check
+cargo clippy --workspace --all-targets --all-features -- -D warnings
+cargo check --workspace --all-targets --all-features
+cargo test --workspace --all-targets --all-features
+cargo build --workspace --release        # the fifth job; only needed if you touched build.rs or deps
+```
+
+Clippy runs with `-D warnings`, so a single lint fails the build. `cargo fmt` uses the default style — no `rustfmt.toml`.
+
+### Tests
+
+- **Unit tests** live next to the code (`#[cfg(test)]` in most `dsp/*` files, `track_encoding.rs`, `security.rs`, `config.rs`, …).
+- **Integration tests** in `tests/integration_tests.rs` spin up the real `SessionManager`/`PlayerManager` and exercise auth (including the constant-time comparison), session lifecycle and resume buffering, player state, the atomic player limit, and voice error handling. They don't need network access or a Discord token.
+- Source modules have no live network tests in CI (the services rate-limit CI runners). If you change a source, test it manually and paste the `loadtracks` output in the PR.
+
+Run one test with `cargo test test_session_manager_lifecycle_and_resume`.
+
+<Aside type="tip" title="Testing against a real bot">
+The fastest end-to-end check is a tiny Shoukaku or Wavelink bot pointed at `cargo run` — see [Connect a Client](/clients/). Keep a test guild and use `RUST_LOG=kizunalink=debug,kizuna_voice=debug`.
+</Aside>
+
+## Conventions
+
+- **Protocol compatibility first.** Anything under `/v4` that Lavalink v4 defines must keep Lavalink's shape. Extensions go in additive fields (`queue`, `loop`, `autoplay` on the player), extra endpoints (`/v4/players/all`, `/v4/lyrics`), or extra WebSocket ops — never in changed semantics of existing ones. Document new extensions on the [Extensions](/api/extensions/) page.
+- **Config** is a `serde` field with a `default_*` fn in `config.rs` + a matching `KIZUNA_*` override in `AppConfig::load()`. Update the sample `config.toml` in the repo root and the docs' [config reference](/configuration/config-toml/) together. Note that a `config.toml` that fails to parse currently falls back to defaults silently — a `validate()` step that fails loudly is a welcome contribution.
+- **Errors** returned to clients use `rest/error.rs` (`ApiError`) so bodies match the Lavalink error object. Don't leak internal paths or tokens in `message`.
+- **Logging**: `tracing` macros with `target`s that mirror module paths; anything user-controlled goes through `security::sanitize_log` before logging.
+- **No blocking in async.** Opening a decoder goes through `spawn_blocking` (`dsp/pipeline.rs`); per-frame work must stay short (one 20 ms frame per `next_frame` call) so it doesn't stall the tokio runtime. Clippy won't catch this — reviewers will.
+- **Dependencies**: prefer pure-Rust crates. `libopus` (via `audiopus_sys`, statically linked) is the one C dependency, which is why `cmake` is needed.
+- **Commits** follow a light Conventional Commits style: `fix: …`, `feat: …`, `docs: …`, `refactor: …`.
+
+## Pull requests
+
+<Steps>
+1. Fork, branch from `main`, keep the change focused.
+2. Make sure the five checks above pass locally.
+3. Describe **what a client observes** differently, not just the code change. For protocol changes, include example request/response JSON.
+4. If behaviour or config changed, update the docs in `Kizuna-Docs` in a matching PR and link the two.
+</Steps>
+
+Maintainers squash-merge; the PR title becomes the commit message, so write it as a changelog line.
+
+## Contributing to these docs
+
+The site is an [Astro Starlight](https://starlight.astro.build) project.
+
+<Tabs>
+<TabItem label="Local preview">
+```bash
+git clone https://github.com/nikcodex/Kizuna-Docs.git
+cd Kizuna-Docs
+npm ci
+npm run dev        # http://localhost:4321/Kizuna-Docs/
+```
+</TabItem>
+<TabItem label="Production build">
+```bash
+npm run build      # validates every internal link and anchor; fails on broken ones
+npm run preview
+```
+</TabItem>
+</Tabs>
+
+Ground rules:
+
+- Every statement about behaviour should be traceable to the engine source (the pages cite file names where it helps). If you're unsure, say so or leave it out.
+- Internal links are written root-relative (`/api/rest/`) — the build prefixes the base path. Don't write `/Kizuna-Docs/…`.
+- API examples come in **curl + JavaScript + Python** tabs; keep all three in sync.
+- Prefer showing the JSON a client actually sees over prose.
+
+## Release process (maintainers)
+
+1. Bump `version` in `Cargo.toml` (both crates if `kizuna-voice` changed), update the [changelog](/help/changelog/).
+2. Merge to `main`; the `build.yml` workflow produces `kizunalink-linux-x86_64` and `kizunalink-linux-arm64` artifacts.
+3. Tag `vX.Y.Z` and attach the binaries to a GitHub Release — `GET /version` and `/v4/info` report the version embedded at build time (`CARGO_PKG_VERSION`, `GIT_COMMIT` from `build.rs`).
+
+<Aside type="note">
+There are no published GitHub Releases yet; the docs' version badge falls back to the `Cargo.toml` version until the first one exists.
+</Aside>

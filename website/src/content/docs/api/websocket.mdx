@@ -1,0 +1,327 @@
+---
+title: WebSocket
+description: The KizunaLink WebSocket protocol — connection headers, ready and resume semantics, playerUpdate, events, stats, and KizunaLink's client-to-server ops.
+sidebar:
+  order: 2
+tableOfContents:
+  maxHeadingLevel: 3
+---
+
+import { Tabs, TabItem, Aside, Badge } from '@astrojs/starlight/components';
+import Endpoint from '../../../components/Endpoint.astro';
+
+<Endpoint method="WS" path="/v4/websocket" />
+
+One WebSocket per bot process (per session). KizunaLink pushes player state, track events and server stats over it; REST is used for commands — except that KizunaLink also accepts a set of [client-to-server ops](#client-to-server-ops) for socket-only integrations.
+
+## Connecting
+
+### Headers
+
+| Header | Required | Description |
+|---|---|---|
+| `Authorization` | ✓ | The server password, bare |
+| `User-Id` | ✓ | Your bot's Discord user ID. Stored on first connect and used in voice payloads; defaults to `"0"` if omitted, which breaks voice |
+| `Client-Name` | ✓ | `name/version` (e.g. `wavelink/3.4.1`); logged, defaults to `unknown` |
+| `Session-Id` | – | ID of a previous session to resume |
+
+### Handshake outcomes
+
+| Result | Cause |
+|---|---|
+| HTTP `401` | Wrong or missing `Authorization` — no upgrade happens |
+| HTTP `429` + `Retry-After` | Per-IP rate limit hit (connections count towards the same bucket as REST calls) |
+| Upgrade, then close `1008` | Session limit reached (10 000 active sessions) |
+| Upgrade, then `ready` | Success |
+
+### `ready`
+
+The first message on every connection:
+
+```json
+{ "op": "ready", "resumed": false, "sessionId": "a1b2c3d4e5f6" }
+```
+
+Keep `sessionId` — it's the path parameter for all `/v4/sessions/{sessionId}/…` REST calls. On a successful resume, `resumed` is `true` and the buffered events you missed follow immediately.
+
+### Keep-alive
+
+KizunaLink sends a WebSocket **ping** frame every 30 s and answers client pings with pongs. Client text messages larger than **64 KiB** are dropped with a warning; binary frames are ignored.
+
+## Resuming
+
+By default, closing the socket destroys every player in the session at once. Enable resuming with [`PATCH /v4/sessions/{sessionId}`](/api/rest/#update-session):
+
+```json
+{ "resuming": true, "timeout": 60 }
+```
+
+Then, when the socket drops:
+
+1. The session is marked disconnected; players keep playing.
+2. Up to **100** events destined for this session are buffered (oldest dropped beyond that).
+3. If a new connection arrives with `Session-Id: <id>` within `timeout` seconds, it takes over: `ready` says `"resumed": true`, then the buffer is replayed in order.
+4. Otherwise the session and all its players are destroyed after `timeout`.
+
+Only the first reconnect wins; a second connection with the same `Session-Id` while one is active gets a fresh session instead.
+
+## Server → client messages
+
+Every message has an `op`. Per-guild messages are only delivered to the session that owns that guild's player; `stats` goes to everyone.
+
+### `playerUpdate`
+
+Sent every **5 s** for each actively playing player, and immediately after state changes (voice connected, seek, pause, filters).
+
+```json
+{
+  "op": "playerUpdate",
+  "guildId": "123456789012345678",
+  "state": { "time": 1757000000000, "position": 30512, "connected": true, "ping": 42 }
+}
+```
+
+| Field | Description |
+|---|---|
+| `time` | Unix ms when the state was sampled |
+| `position` | Track position in ms |
+| `connected` | Whether the voice UDP connection is established |
+| `ping` | Voice gateway latency in ms, `-1` when disconnected |
+
+### `stats`
+
+Every **60 s**, to all sessions. Same object as [`GET /v4/stats`](/api/rest/#get-stats).
+
+```json
+{
+  "op": "stats",
+  "players": 12, "playingPlayers": 9, "uptime": 86400000,
+  "memory": { "free": 6442450944, "used": 68157440, "allocated": 68157440, "reservable": 8589934592 },
+  "cpu": { "cores": 4, "systemLoad": 0.18, "lavalinkLoad": 0.03 },
+  "frameStats": { "sent": 3000, "nulled": 0, "deficit": 0 }
+}
+```
+
+### `event`
+
+```json
+{ "op": "event", "type": "<EventType>", "guildId": "…", …fields }
+```
+
+#### `TrackStartEvent`
+
+```json
+{ "op": "event", "type": "TrackStartEvent", "guildId": "…", "track": { "encoded": "…", "info": { … }, "pluginInfo": {}, "userData": {} } }
+```
+
+#### `TrackEndEvent`
+
+```json
+{ "op": "event", "type": "TrackEndEvent", "guildId": "…", "track": { … }, "reason": "finished" }
+```
+
+| `reason` | When | Start next? |
+|---|---|---|
+| `finished` | Track played to the end (or to `endTime`) | yes |
+| `replaced` | A new track was started over it | no — the new track is already playing |
+| `stopped` | Stopped via `track.encoded: null`, player destroyed, or skip with an empty queue | no |
+
+KizunaLink doesn't emit `loadFailed` (failures surface as `TrackExceptionEvent` before any start) or `cleanup`.
+
+<Aside type="tip">
+  With the server-side queue, `loop`, or `autoplay` enabled, KizunaLink starts the next track itself after `finished`. Client-managed queues should react to `finished` only, exactly as with Lavalink.
+</Aside>
+
+#### `TrackExceptionEvent`
+
+```json
+{
+  "op": "event", "type": "TrackExceptionEvent", "guildId": "…",
+  "track": { … },
+  "exception": { "message": "Failed to resolve playable audio stream", "severity": "fault", "cause": "", "causeStackTrace": "" }
+}
+```
+
+Emitted when a track's audio stream can't be resolved or decoding fails. `severity` is always `fault` at present.
+
+#### `TrackStuckEvent`
+
+```json
+{ "op": "event", "type": "TrackStuckEvent", "guildId": "…", "track": { … }, "thresholdMs": 10000 }
+```
+
+The audio pipeline produced no frames for `thresholdMs`.
+
+#### `WebSocketClosedEvent`
+
+The **voice** WebSocket to Discord closed (not your connection to KizunaLink).
+
+```json
+{ "op": "event", "type": "WebSocketClosedEvent", "guildId": "…", "code": 4014, "reason": "Disconnected (channel closed/removed/kicked)", "byRemote": true }
+```
+
+`reason` is Discord's close reason, or a description KizunaLink fills in when Discord sends none:
+
+| Code | Reason | What to do |
+|---|---|---|
+| `4000` | `Voice connection failed: …` (KizunaLink-generated) | Check the endpoint/token; retry the voice update |
+| `4001` | Unknown opcode | Bug — report it |
+| `4002` | Invalid payload | Bug — report it |
+| `4003` | Not authenticated | Retry the voice update |
+| `4004` | Authentication failed | Token expired — send a fresh voice state from a new `VOICE_SERVER_UPDATE` |
+| `4005` | Already authenticated | Ignore |
+| `4006` | Session is no longer valid | Re-join the voice channel |
+| `4009` | Session timed out | Re-join the voice channel |
+| `4011` | Server not found | Re-join |
+| `4012` | Unknown protocol | Bug — report it |
+| `4014` | Disconnected (channel closed/removed/kicked) | Destroy the player; the bot was moved/kicked or the channel deleted |
+| `4015` | Voice server crashed | Discord will send a new `VOICE_SERVER_UPDATE`; forward it |
+| `4016` | Unknown encryption mode | Bug — report it |
+
+## Client → server ops <Badge text="Kizuna" variant="danger" />
+
+Lavalink v4 clients don't send anything on the socket. KizunaLink additionally accepts these JSON text messages, so a bot can be driven with a single connection. Failures are logged server-side and **never answered**; observe results through `playerUpdate`/events or a REST `GET`.
+
+All ops except `ping` require `guildId`.
+
+### `updatePlayer`
+
+Same semantics as [`PATCH …/players/{guildId}`](/api/rest/#update-player) with `noReplace=false`.
+
+```json
+{
+  "op": "updatePlayer",
+  "guildId": "…",
+  "track": { "encoded": "…", "userData": { } },
+  "position": 0, "endTime": 0, "volume": 100, "paused": false,
+  "voice": { "token": "…", "endpoint": "…", "sessionId": "…" },
+  "filters": { }
+}
+```
+
+`track` may also be a plain string (the encoded track), and `encodedTrack` / `identifier` are accepted as top-level aliases.
+
+### `queueTrack`
+
+Append to the server-side queue. If nothing is playing, it starts immediately.
+
+```json
+{ "op": "queueTrack", "guildId": "…", "encoded": "QAAA…" }
+```
+
+### `skipTrack` / `previousTrack`
+
+```json
+{ "op": "skipTrack", "guildId": "…" }
+{ "op": "previousTrack", "guildId": "…" }
+```
+
+Skip plays the next queued track (respecting the loop mode); with an empty queue the player stops. Previous replays the most recent track from history (last 50 by default, `server.queue_max_history`).
+
+### `loop`
+
+```json
+{ "op": "loop", "guildId": "…", "mode": "queue" }
+```
+
+`mode`: `none` (default) · `track` · `queue`. Unknown values fall back to `none`.
+
+### `autoplay`
+
+```json
+{ "op": "autoplay", "guildId": "…" }
+```
+
+**Toggles** autoplay. To set it explicitly use `autoplay: true|false` in a player update.
+
+### `shuffleQueue` / `clearQueue`
+
+```json
+{ "op": "shuffleQueue", "guildId": "…" }
+{ "op": "clearQueue", "guildId": "…" }
+```
+
+### `destroyPlayer`
+
+```json
+{ "op": "destroyPlayer", "guildId": "…" }
+```
+
+### `ping`
+
+```json
+{ "op": "ping" }   →   { "op": "pong" }
+```
+
+The only op that produces a direct reply. Useful for application-level liveness checks through proxies that swallow WebSocket ping frames.
+
+## Full example
+
+A minimal event consumer with automatic resume:
+
+<Tabs syncKey="lang">
+  <TabItem label="JavaScript">
+    ```js
+    import WebSocket from 'ws';
+
+    let sessionId = null;
+
+    function connect() {
+      const headers = { Authorization: PASSWORD, 'User-Id': BOT_ID, 'Client-Name': 'example/1.0' };
+      if (sessionId) headers['Session-Id'] = sessionId;
+      const ws = new WebSocket(`ws://${HOST}/v4/websocket`, { headers });
+
+      ws.on('message', async (raw) => {
+        const msg = JSON.parse(raw);
+        if (msg.op === 'ready') {
+          sessionId = msg.sessionId;
+          if (!msg.resumed) {
+            await fetch(`http://${HOST}/v4/sessions/${sessionId}`, {
+              method: 'PATCH', headers: { Authorization: PASSWORD, 'Content-Type': 'application/json' },
+              body: JSON.stringify({ resuming: true, timeout: 60 }),
+            });
+          }
+        } else if (msg.op === 'event' && msg.type === 'TrackEndEvent' && msg.reason === 'finished') {
+          playNext(msg.guildId);
+        } else if (msg.op === 'event' && msg.type === 'WebSocketClosedEvent' && msg.code === 4014) {
+          destroyPlayer(msg.guildId);
+        }
+      });
+
+      ws.on('close', () => setTimeout(connect, 2000));   // resume within the 60 s window
+    }
+    connect();
+    ```
+  </TabItem>
+  <TabItem label="Python">
+    ```python
+    import asyncio, json, httpx, websockets
+
+    session_id: str | None = None
+
+    async def run():
+        global session_id
+        while True:
+            headers = {"Authorization": PASSWORD, "User-Id": BOT_ID, "Client-Name": "example/1.0"}
+            if session_id:
+                headers["Session-Id"] = session_id
+            try:
+                async with websockets.connect(f"ws://{HOST}/v4/websocket", additional_headers=headers) as ws:
+                    async for raw in ws:
+                        msg = json.loads(raw)
+                        if msg["op"] == "ready":
+                            session_id = msg["sessionId"]
+                            if not msg["resumed"]:
+                                httpx.patch(f"http://{HOST}/v4/sessions/{session_id}",
+                                            json={"resuming": True, "timeout": 60}, headers={"Authorization": PASSWORD})
+                        elif msg["op"] == "event" and msg["type"] == "TrackEndEvent" and msg["reason"] == "finished":
+                            await play_next(msg["guildId"])
+                        elif msg["op"] == "event" and msg["type"] == "WebSocketClosedEvent" and msg["code"] == 4014:
+                            await destroy_player(msg["guildId"])
+            except (websockets.ConnectionClosed, OSError):
+                await asyncio.sleep(2)   # reconnect and resume
+
+    asyncio.run(run())
+    ```
+  </TabItem>
+</Tabs>

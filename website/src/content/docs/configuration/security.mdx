@@ -1,0 +1,81 @@
+---
+title: Security
+description: KizunaLink's built-in protections — SSRF guard, request limits, input validation, session isolation — and how to harden a deployment.
+sidebar:
+  order: 7
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+KizunaLink accepts URLs from untrusted Discord users (via your bot) and fetches them from a server that may sit on a private network. Several protections are on by default; this page lists them and what you should add around them.
+
+## Authentication
+
+Every `/v4/*` route and the WebSocket upgrade require the `Authorization` header to equal `server.password` exactly. The comparison is **constant-time**, so timing attacks can't leak the password. There is no user system, no tokens, no scopes — anyone with the password has full control.
+
+Two routes are intentionally **unauthenticated**, for load balancers and uptime checks: `GET /health` and `GET /version` (plus `GET /`, which returns the version string). They leak the version number only.
+
+Failed authentications increment `kizunalink_errors_auth_total`.
+
+## SSRF protection
+
+Any identifier starting with `http://` or `https://`, and **every redirect hop** any outbound client follows, is validated before a connection is made. Rejected:
+
+- Non-HTTP schemes (`file:`, `ftp:`, `gopher:` …)
+- URLs longer than 2048 characters
+- Literal IPs in private, loopback, link-local, CGNAT, multicast, documentation and reserved ranges — IPv4 **and** IPv6, including IPv4-mapped IPv6 like `::ffff:127.0.0.1`
+- Hostnames: `localhost`, `*.localhost`, `*.local`, `*.internal`, `*.localdomain`, `*.lan`, `*.home.arpa`, and `metadata.google.internal`
+- Anything listed in `security.blocked_hosts`
+
+A blocked `/v4/loadtracks` returns `loadType: "error"` with `cause: "SSRF protection"` rather than an HTTP error, so clients handle it like any other unloadable track. Blocked redirects are logged with `Blocked SSRF-unsafe redirect` and the request stops.
+
+```toml title="config.toml"
+[security]
+blocked_hosts = ["internal-cdn.example.com", "10-0-0-5.nip.io"]
+```
+
+<Aside type="note" title="DNS rebinding">
+  Validation happens on the URL's host, not on the resolved address, so a hostname that resolves to a private IP would pass. If KizunaLink runs on a network with sensitive HTTP services, put it in its own network segment or use egress firewall rules — defence in depth is cheap here.
+</Aside>
+
+## Request limits
+
+| Limit | Default | Where |
+|---|---|---|
+| Request body | 1 MiB | `security.max_body_size` — applied by a global body-limit layer |
+| WebSocket text frame | 64 KiB | fixed; larger frames are dropped |
+| URL / identifier length | 2048 chars | fixed |
+| Search query length | 512 chars | fixed |
+| Session ID | ≤ 128 chars, hex + `-` only | fixed |
+| Guild ID | ≤ 32 chars, digits only | fixed |
+| Concurrent WebSocket sessions | 1000 | `server.max_connections` |
+| Players | 10 000 | fixed |
+| Per-IP request rate | 60/min + 10 burst | [`[ratelimit]`](/configuration/rate-limiting/) |
+
+## Session isolation
+
+Players are **owned by the session that created them**. A different session cannot read, update or destroy another session's player — it receives `404 Player not found`, indistinguishable from a missing player. Events for a guild are only forwarded to the session subscribed to that guild. This matters when several bots share one KizunaLink node with the same password.
+
+`GET /v4/players/all` and `GET /v4/sessions` are the exceptions: they are administrative views across all sessions.
+
+## Local file access
+
+`sources.local` is **off by default**. When enabled, paths containing `..` or under `/etc`, `/proc`, `/sys`, `/dev` are refused. Everything else readable by the process is fair game — run KizunaLink as a dedicated user and rely on OS permissions (or the systemd sandbox) to scope what it can read.
+
+## Log hygiene
+
+User-supplied strings (identifiers, client names, close reasons, IPs) pass through a sanitiser before logging, stripping control characters and truncating, so log injection via crafted queries isn't possible. Passwords and tokens are never logged; `?trace=true` traces contain no headers.
+
+## Hardening checklist
+
+- [ ] Change `server.password` to a long random string (`openssl rand -hex 24`).
+- [ ] Bind to `127.0.0.1` or a private interface if the bot runs on the same host or VPC; otherwise firewall port 2333 to the bot's IP.
+- [ ] Terminate TLS in front (Caddy/Nginx/Cloudflare Tunnel) if traffic crosses the public internet — KizunaLink speaks plain HTTP/WS. Clients then connect with `secure: true` / `https://`.
+- [ ] Run as a non-root user; use the provided [systemd unit](/getting-started/systemd/) or `user:` in Docker.
+- [ ] Keep `sources.local = false` unless you need it.
+- [ ] Set `KIZUNA_LOG_COLORED=false` and ship logs somewhere; watch `kizunalink_errors_auth_total`.
+- [ ] Keep the binary updated — source resolvers change often.
+
+## Reporting vulnerabilities
+
+Please report security issues privately by emailing the maintainer listed in [`Cargo.toml`](https://github.com/nikcodex/Kizunalink/blob/main/Cargo.toml) rather than opening a public issue.
