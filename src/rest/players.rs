@@ -77,15 +77,11 @@ pub async fn get_players(
         ));
     }
 
-    let all = state.player_manager.get_all_players().await;
-    let players: Vec<PlayerResponse> = all
-        .into_iter()
-        .filter(|p| {
-            state
-                .session_manager
-                .is_guild_subscribed(&session_id, &p.guild_id)
-        })
-        .collect();
+    // Only players owned by this session are visible to it.
+    let players = state
+        .player_manager
+        .get_players_for_session(&session_id)
+        .await;
     Ok(Json(players))
 }
 
@@ -109,18 +105,13 @@ pub async fn get_player(
         return Err(LavalinkError::new(StatusCode::BAD_REQUEST, e, path));
     }
 
-    if !state
-        .session_manager
-        .is_guild_subscribed(&session_id, &guild_id)
+    // The player must belong to this session — a player owned by another session
+    // is indistinguishable from a missing one.
+    match state
+        .player_manager
+        .get_player_for_session(&guild_id, &session_id)
+        .await
     {
-        return Err(LavalinkError::new(
-            StatusCode::NOT_FOUND,
-            format!("Player not found for guild: {}", guild_id),
-            path,
-        ));
-    }
-
-    match state.player_manager.get_player(&guild_id).await {
         Some(player) => Ok(Json(player)),
         None => Err(LavalinkError::new(
             StatusCode::NOT_FOUND,
@@ -166,19 +157,36 @@ pub async fn update_player(
 
     let no_replace = query.no_replace.unwrap_or(false);
 
-    state.session_manager.add_guild(&session_id, &guild_id);
-
+    // Atomically claim (create) or reuse the player for this session. If the
+    // guild's player is owned by a different session, this fails — a PATCH never
+    // establishes ownership over another session's player.
     match state
         .player_manager
-        .update_player(&guild_id, payload, no_replace)
+        .update_player(&guild_id, payload, no_replace, &session_id)
         .await
     {
-        Ok(player) => Ok(Json(player)),
+        Ok(player) => {
+            state.session_manager.add_guild(&session_id, &guild_id);
+            Ok(Json(player))
+        }
+        Err(crate::player::manager::PlayerManagerError::NotFound(_)) => Err(LavalinkError::new(
+            StatusCode::NOT_FOUND,
+            format!("Player not found for guild: {}", guild_id),
+            path,
+        )),
+        Err(crate::player::manager::PlayerManagerError::LimitReached(n)) => {
+            error!("Player limit reached for guild {}", guild_id);
+            Err(LavalinkError::new(
+                StatusCode::SERVICE_UNAVAILABLE,
+                format!("Player limit reached: maximum {} players allowed", n),
+                path,
+            ))
+        }
         Err(e) => {
             error!("Player update failed for guild {}: {}", guild_id, e);
             Err(LavalinkError::new(
                 StatusCode::INTERNAL_SERVER_ERROR,
-                e,
+                e.to_string(),
                 path,
             ))
         }
@@ -205,26 +213,19 @@ pub async fn destroy_player(
         return Err(LavalinkError::new(StatusCode::BAD_REQUEST, e, path));
     }
 
-    if !state
-        .session_manager
-        .is_guild_subscribed(&session_id, &guild_id)
+    // Destroy only the player owned by this session.
+    match state
+        .player_manager
+        .destroy_player_for_session(&guild_id, &session_id)
     {
-        return Err(LavalinkError::new(
+        Ok(()) => {
+            state.session_manager.remove_guild(&session_id, &guild_id);
+            Ok(StatusCode::NO_CONTENT)
+        }
+        Err(_) => Err(LavalinkError::new(
             StatusCode::NOT_FOUND,
             format!("Player not found for guild: {}", guild_id),
             path,
-        ));
-    }
-
-    state.session_manager.remove_guild(&session_id, &guild_id);
-
-    if state.player_manager.destroy_player(&guild_id) {
-        Ok(StatusCode::NO_CONTENT)
-    } else {
-        Err(LavalinkError::new(
-            StatusCode::NOT_FOUND,
-            format!("Player not found for guild: {}", guild_id),
-            path,
-        ))
+        )),
     }
 }

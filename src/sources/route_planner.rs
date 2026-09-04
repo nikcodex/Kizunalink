@@ -205,6 +205,7 @@ impl RoutePlanner {
         let default_client = reqwest::Client::builder()
             .default_headers(default_headers)
             .timeout(Duration::from_secs(5))
+            .redirect(crate::security::redirect_policy())
             .build()
             .unwrap_or_else(|_| reqwest::Client::new());
 
@@ -307,6 +308,7 @@ impl RoutePlanner {
         match reqwest::Client::builder()
             .default_headers(headers)
             .timeout(Duration::from_secs(5))
+            .redirect(crate::security::redirect_policy())
             .local_address(Some(ip))
             .build()
         {

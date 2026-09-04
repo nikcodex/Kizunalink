@@ -310,9 +310,27 @@ async fn handle_ws_message(
 
     let guild_id = msg.get("guildId").and_then(|g| g.as_str()).unwrap_or("");
 
+    let requires_guild = matches!(
+        op,
+        "updatePlayer"
+            | "queueTrack"
+            | "skipTrack"
+            | "previousTrack"
+            | "autoplay"
+            | "loop"
+            | "shuffleQueue"
+            | "clearQueue"
+            | "destroyPlayer"
+    );
+    if requires_guild && guild_id.is_empty() {
+        warn!("WS op {} missing guildId, dropping", op);
+        return;
+    }
+
     match op {
         "updatePlayer" => {
             let mut payload = PlayerUpdatePayload::default();
+            let mut voice_attached = false;
 
             if let Some(track_obj) = msg.get("track") {
                 if track_obj.is_string() {
@@ -353,7 +371,7 @@ async fn handle_ws_message(
             }
 
             if let Some(voice_obj) = msg.get("voice") {
-                state.session_manager.add_guild(session_id, guild_id);
+                voice_attached = true;
                 payload.voice = Some(crate::models::protocol::VoiceStateUpdate {
                     token: voice_obj
                         .get("token")
@@ -375,8 +393,6 @@ async fn handle_ws_message(
                         .and_then(|c| c.as_str())
                         .map(|s| s.to_string()),
                 });
-            } else if !guild_id.is_empty() {
-                state.session_manager.add_guild(session_id, guild_id);
             }
 
             if let Some(filters_obj) = msg.get("filters") {
@@ -396,62 +412,86 @@ async fn handle_ws_message(
             }
 
             let safe_gid = security::sanitize_for_log(guild_id);
-            let _ = state
+            match state
                 .player_manager
-                .update_player(guild_id, payload, false)
+                .update_player(guild_id, payload, false, session_id)
                 .await
-                .map_err(|e| warn!("WS updatePlayer failed for guild {}: {}", safe_gid, e));
+            {
+                Ok(_) => {
+                    // Subscribe only after the session successfully claimed the player.
+                    if !guild_id.is_empty() {
+                        state.session_manager.add_guild(session_id, guild_id);
+                    }
+                }
+                Err(e) => {
+                    warn!(
+                        "WS updatePlayer failed for guild {} (voice={}): {}",
+                        safe_gid, voice_attached, e
+                    );
+                }
+            }
         }
         "queueTrack" => {
-            if !guild_id.is_empty() {
-                state.session_manager.add_guild(session_id, guild_id);
-            }
             if let Some(encoded) = msg.get("encoded").and_then(|e| e.as_str()) {
                 let safe_gid = security::sanitize_for_log(guild_id);
-                let _ = state
+                match state
                     .player_manager
-                    .queue_track(guild_id, encoded)
+                    .queue_track(guild_id, encoded, session_id)
                     .await
-                    .map_err(|e| warn!("WS queueTrack failed for guild {}: {}", safe_gid, e));
+                {
+                    Ok(_) => {
+                        if !guild_id.is_empty() {
+                            state.session_manager.add_guild(session_id, guild_id);
+                        }
+                    }
+                    Err(e) => {
+                        warn!("WS queueTrack failed for guild {}: {}", safe_gid, e);
+                    }
+                }
             }
         }
         "skipTrack" => {
-            if !guild_id.is_empty() {
-                state.session_manager.add_guild(session_id, guild_id);
-            }
             let safe_gid = security::sanitize_for_log(guild_id);
-            let _ = state
-                .player_manager
-                .skip_track(guild_id)
-                .await
-                .map_err(|e| warn!("WS skipTrack failed for guild {}: {}", safe_gid, e));
+            match state.player_manager.skip_track(guild_id, session_id).await {
+                Ok(_) => {
+                    if !guild_id.is_empty() {
+                        state.session_manager.add_guild(session_id, guild_id);
+                    }
+                }
+                Err(e) => warn!("WS skipTrack failed for guild {}: {}", safe_gid, e),
+            }
         }
         "previousTrack" => {
-            if !guild_id.is_empty() {
-                state.session_manager.add_guild(session_id, guild_id);
-            }
             let safe_gid = security::sanitize_for_log(guild_id);
-            let _ = state
+            match state
                 .player_manager
-                .previous_track(guild_id)
+                .previous_track(guild_id, session_id)
                 .await
-                .map_err(|e| warn!("WS previousTrack failed for guild {}: {}", safe_gid, e));
+            {
+                Ok(_) => {
+                    if !guild_id.is_empty() {
+                        state.session_manager.add_guild(session_id, guild_id);
+                    }
+                }
+                Err(e) => warn!("WS previousTrack failed for guild {}: {}", safe_gid, e),
+            }
         }
         "autoplay" => {
-            if !guild_id.is_empty() {
-                state.session_manager.add_guild(session_id, guild_id);
-            }
             let safe_gid = security::sanitize_for_log(guild_id);
-            let _ = state
+            match state
                 .player_manager
-                .toggle_autoplay(guild_id)
+                .toggle_autoplay(guild_id, session_id)
                 .await
-                .map_err(|e| warn!("WS autoplay failed for guild {}: {}", safe_gid, e));
+            {
+                Ok(_) => {
+                    if !guild_id.is_empty() {
+                        state.session_manager.add_guild(session_id, guild_id);
+                    }
+                }
+                Err(e) => warn!("WS autoplay failed for guild {}: {}", safe_gid, e),
+            }
         }
         "loop" => {
-            if !guild_id.is_empty() {
-                state.session_manager.add_guild(session_id, guild_id);
-            }
             let mode = msg.get("mode").and_then(|m| m.as_str()).unwrap_or("none");
             let loop_mode = match mode {
                 "track" => crate::player::queue::LoopMode::Track,
@@ -459,37 +499,57 @@ async fn handle_ws_message(
                 _ => crate::player::queue::LoopMode::None,
             };
             let safe_gid = security::sanitize_for_log(guild_id);
-            let _ = state
+            match state
                 .player_manager
-                .set_loop_mode(guild_id, loop_mode)
+                .set_loop_mode(guild_id, loop_mode, session_id)
                 .await
-                .map_err(|e| warn!("WS loop failed for guild {}: {}", safe_gid, e));
+            {
+                Ok(_) => {
+                    if !guild_id.is_empty() {
+                        state.session_manager.add_guild(session_id, guild_id);
+                    }
+                }
+                Err(e) => warn!("WS loop failed for guild {}: {}", safe_gid, e),
+            }
         }
         "shuffleQueue" => {
-            if !guild_id.is_empty() {
-                state.session_manager.add_guild(session_id, guild_id);
-            }
             let safe_gid = security::sanitize_for_log(guild_id);
-            let _ = state
+            match state
                 .player_manager
-                .shuffle_queue(guild_id)
+                .shuffle_queue(guild_id, session_id)
                 .await
-                .map_err(|e| warn!("WS shuffleQueue failed for guild {}: {}", safe_gid, e));
+            {
+                Ok(_) => {
+                    if !guild_id.is_empty() {
+                        state.session_manager.add_guild(session_id, guild_id);
+                    }
+                }
+                Err(e) => warn!("WS shuffleQueue failed for guild {}: {}", safe_gid, e),
+            }
         }
         "clearQueue" => {
-            if !guild_id.is_empty() {
-                state.session_manager.add_guild(session_id, guild_id);
-            }
             let safe_gid = security::sanitize_for_log(guild_id);
-            let _ = state
-                .player_manager
-                .clear_queue(guild_id)
-                .await
-                .map_err(|e| warn!("WS clearQueue failed for guild {}: {}", safe_gid, e));
+            match state.player_manager.clear_queue(guild_id, session_id).await {
+                Ok(_) => {
+                    if !guild_id.is_empty() {
+                        state.session_manager.add_guild(session_id, guild_id);
+                    }
+                }
+                Err(e) => warn!("WS clearQueue failed for guild {}: {}", safe_gid, e),
+            }
         }
         "destroyPlayer" => {
             state.session_manager.remove_guild(session_id, guild_id);
-            state.player_manager.destroy_player(guild_id);
+            match state
+                .player_manager
+                .destroy_player_for_session(guild_id, session_id)
+            {
+                Ok(()) => {}
+                Err(e) => {
+                    let safe_gid = security::sanitize_for_log(guild_id);
+                    warn!("WS destroyPlayer failed for guild {}: {}", safe_gid, e);
+                }
+            }
         }
         "ping" => {
             let pong = serde_json::json!({ "op": "pong" });

@@ -26,6 +26,23 @@ async fn track_requests(req: Request, next: Next) -> Response {
     next.run(req).await
 }
 
+/// Lavalink-compatible `?trace=true` support: when requested, attach a useful,
+/// non-sensitive trace to error responses instead of `"trace": null`.
+async fn trace_middleware(req: Request, next: Next) -> Response {
+    let trace_requested = req
+        .uri()
+        .query()
+        .map(|q| {
+            q.split('&').any(|pair| {
+                let mut kv = pair.splitn(2, '=');
+                matches!((kv.next(), kv.next()), (Some("trace"), Some("true")))
+            })
+        })
+        .unwrap_or(false);
+    let response = next.run(req).await;
+    kizunalink::rest::error::maybe_inject_trace(response, trace_requested).await
+}
+
 async fn health_check() -> axum::Json<serde_json::Value> {
     axum::Json(serde_json::json!({
         "status": "ok",
@@ -58,8 +75,11 @@ async fn main() {
         config.server.host, config.server.port
     );
 
-    // Initialize the Session Manager
-    let session_manager = Arc::new(kizunalink::ws::session::SessionManager::default());
+    // Initialize the Session Manager, capped by the configured max_connections
+    let session_manager = Arc::new(kizunalink::ws::session::SessionManager::new(
+        config.server.max_connections,
+        kizunalink::ws::session::MAX_SESSION_BUFFER_SIZE,
+    ));
 
     // Initialize the Route Planner (if configured)
     let route_planner = RoutePlanner::new(
@@ -76,6 +96,8 @@ async fn main() {
     config::init_proxy(config.proxy.clone());
     // Initialize global security config
     config::init_security(config.security.clone());
+    // Initialize the outbound HTTP request timeout from configuration
+    config::init_request_timeout(config.server.request_timeout_secs);
 
     let jiosaavn = JioSaavnSource::new();
     let youtube = YouTubeSource::new(route_planner.clone());
@@ -99,6 +121,7 @@ async fn main() {
             apple_music: apple_music.clone(),
         },
         config.queue_max_history,
+        kizunalink::player::manager::MAX_PLAYERS,
     ));
 
     let dave_manager = dave::DaveManager::new();
@@ -189,6 +212,7 @@ async fn main() {
             config.security.max_body_size,
         ))
         .with_state(state.clone())
+        .layer(middleware::from_fn(trace_middleware))
         .layer(middleware::from_fn(track_requests));
 
     let addr = format!("{}:{}", config.server.host, config.server.port);

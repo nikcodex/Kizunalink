@@ -7,7 +7,6 @@ use crate::sources::jiosaavn::JioSaavnSource;
 use crate::sources::soundcloud::SoundCloudSource;
 use crate::sources::spotify::SpotifySource;
 use crate::sources::youtube::YouTubeSource;
-use dashmap::mapref::entry::Entry;
 use dashmap::DashMap;
 use std::sync::Arc;
 use tokio::sync::{broadcast, mpsc, RwLock};
@@ -16,8 +15,48 @@ use tracing::{info, warn};
 /// Maximum number of concurrent players allowed.
 pub const MAX_PLAYERS: usize = 10000;
 
+/// A player together with the session that owns it.
+///
+/// Ownership is fixed at creation: a guild/player can only ever be controlled
+/// by the session that created it. Ownership never transfers via PATCH.
+#[derive(Clone)]
+pub struct PlayerEntry {
+    pub player: Arc<RwLock<GuildPlayer>>,
+    pub session_id: String,
+}
+
+/// Errors from player operations that map to distinct HTTP semantics.
+#[derive(Debug)]
+pub enum PlayerManagerError {
+    /// The guild has no player owned by the requesting session (either it does
+    /// not exist, or it is owned by a different session).
+    NotFound(String),
+    /// The global player limit was reached.
+    LimitReached(usize),
+    /// Any other internal failure.
+    Internal(String),
+}
+
+impl std::fmt::Display for PlayerManagerError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PlayerManagerError::NotFound(g) => write!(f, "Player not found for guild: {}", g),
+            PlayerManagerError::LimitReached(n) => {
+                write!(f, "Player limit reached: maximum {} players allowed", n)
+            }
+            PlayerManagerError::Internal(e) => write!(f, "Internal player error: {}", e),
+        }
+    }
+}
+
+impl std::error::Error for PlayerManagerError {}
+
 pub struct PlayerManager {
-    players: DashMap<String, Arc<RwLock<GuildPlayer>>>,
+    players: DashMap<String, PlayerEntry>,
+    /// Serializes player creation so that the player-limit check and the
+    /// ownership claim are atomic (no check-then-act races).
+    creation_lock: Arc<std::sync::Mutex<()>>,
+    max_players: usize,
     pub bot_user_id: Arc<RwLock<String>>,
     event_tx: broadcast::Sender<String>,
     track_end_tx: mpsc::UnboundedSender<String>,
@@ -44,11 +83,14 @@ impl PlayerManager {
         event_tx: broadcast::Sender<String>,
         sources: SourceBundle,
         queue_max_history: usize,
+        max_players: usize,
     ) -> Self {
         let (track_end_tx, mut track_end_rx) = mpsc::unbounded_channel::<String>();
 
         let manager = Self {
             players: DashMap::new(),
+            creation_lock: Arc::new(std::sync::Mutex::new(())),
+            max_players,
             bot_user_id: Arc::new(RwLock::new("0".to_string())),
             event_tx,
             track_end_tx,
@@ -80,6 +122,8 @@ impl PlayerManager {
     fn clone_shallow(&self) -> Self {
         Self {
             players: self.players.clone(),
+            creation_lock: self.creation_lock.clone(),
+            max_players: self.max_players,
             bot_user_id: self.bot_user_id.clone(),
             event_tx: self.event_tx.clone(),
             track_end_tx: self.track_end_tx.clone(),
@@ -94,43 +138,116 @@ impl PlayerManager {
     }
 
     pub async fn get_player(&self, guild_id: &str) -> Option<PlayerResponse> {
-        let player_arc = self.players.get(guild_id).map(|r| r.value().clone())?;
+        let player_arc = self
+            .players
+            .get(guild_id)
+            .map(|r| r.value().player.clone())?;
         let player = player_arc.read().await;
         Some(player.to_response())
     }
 
+    /// Return the player for `guild_id` if and only if it is owned by `session_id`.
+    fn get_owned_player(
+        &self,
+        guild_id: &str,
+        session_id: &str,
+    ) -> Result<Arc<RwLock<GuildPlayer>>, PlayerManagerError> {
+        match self.players.get(guild_id) {
+            Some(entry) if entry.value().session_id == session_id => {
+                Ok(entry.value().player.clone())
+            }
+            Some(_) | None => Err(PlayerManagerError::NotFound(guild_id.to_string())),
+        }
+    }
+
+    /// Atomically claim or reuse the player for `guild_id` on behalf of `session_id`.
+    ///
+    /// - If a player exists and is owned by `session_id`, it is returned.
+    /// - If a player exists but is owned by a different session, `NotFound` is
+    ///   returned — ownership NEVER transfers through a PATCH.
+    /// - If no player exists, one is created and owned by `session_id`.
+    ///
+    /// Creation, the ownership claim, and the player-limit check are serialized
+    /// by `creation_lock`, so concurrent requests can never exceed `max_players`
+    /// and two sessions racing to claim the same guild resolve to a single owner.
+    pub async fn get_or_create_player_for_session(
+        &self,
+        guild_id: &str,
+        session_id: &str,
+    ) -> Result<Arc<RwLock<GuildPlayer>>, PlayerManagerError> {
+        let user_id = self.bot_user_id.read().await.clone();
+
+        let _guard = self.creation_lock.lock().unwrap_or_else(|e| e.into_inner());
+
+        if let Some(entry) = self.players.get(guild_id) {
+            if entry.value().session_id == session_id {
+                return Ok(entry.value().player.clone());
+            }
+            return Err(PlayerManagerError::NotFound(guild_id.to_string()));
+        }
+
+        if self.players.len() >= self.max_players {
+            return Err(PlayerManagerError::LimitReached(self.max_players));
+        }
+
+        let player = GuildPlayer::new(
+            guild_id.to_string(),
+            user_id,
+            self.event_tx.clone(),
+            self.track_end_tx.clone(),
+            self.queue_max_history,
+        );
+        let p = Arc::new(RwLock::new(player));
+        self.players.insert(
+            guild_id.to_string(),
+            PlayerEntry {
+                player: p.clone(),
+                session_id: session_id.to_string(),
+            },
+        );
+        Ok(p)
+    }
+
+    /// Legacy creation helper without a session context (internal use only).
     pub async fn get_or_create_player(
         &self,
         guild_id: &str,
     ) -> Result<Arc<RwLock<GuildPlayer>>, String> {
-        if let Some(p) = self.players.get(guild_id).map(|r| r.value().clone()) {
-            return Ok(p);
-        }
+        self.get_or_create_player_for_session(guild_id, "")
+            .await
+            .map_err(|e| e.to_string())
+    }
 
-        if self.players.len() >= MAX_PLAYERS {
-            return Err(format!(
-                "Player limit reached: maximum {} players allowed",
-                MAX_PLAYERS
-            ));
+    /// GET a player only if it belongs to `session_id`.
+    pub async fn get_player_for_session(
+        &self,
+        guild_id: &str,
+        session_id: &str,
+    ) -> Option<PlayerResponse> {
+        let entry = self.players.get(guild_id)?;
+        if entry.value().session_id != session_id {
+            return None;
         }
+        // Clone out of the map guard before awaiting the player lock so we never
+        // hold a DashMap shard lock across an await.
+        let player_arc = entry.value().player.clone();
+        drop(entry);
+        Some(player_arc.read().await.to_response())
+    }
 
-        let user_id = self.bot_user_id.read().await.clone();
-
-        match self.players.entry(guild_id.to_string()) {
-            Entry::Occupied(entry) => Ok(entry.get().clone()),
-            Entry::Vacant(entry) => {
-                let player = GuildPlayer::new(
-                    guild_id.to_string(),
-                    user_id,
-                    self.event_tx.clone(),
-                    self.track_end_tx.clone(),
-                    self.queue_max_history,
-                );
-                let p = Arc::new(RwLock::new(player));
-                entry.insert(p.clone());
-                Ok(p)
-            }
+    /// List only the players owned by `session_id`.
+    pub async fn get_players_for_session(&self, session_id: &str) -> Vec<PlayerResponse> {
+        let entries: Vec<PlayerEntry> = self
+            .players
+            .iter()
+            .filter(|e| e.value().session_id == session_id)
+            .map(|e| e.value().clone())
+            .collect();
+        let mut responses = Vec::with_capacity(entries.len());
+        for entry in entries {
+            responses.push(entry.player.read().await.to_response());
         }
+        responses
     }
 
     pub async fn update_player(
@@ -138,8 +255,11 @@ impl PlayerManager {
         guild_id: &str,
         payload: PlayerUpdatePayload,
         no_replace: bool,
-    ) -> Result<PlayerResponse, String> {
-        let player_arc = self.get_or_create_player(guild_id).await?;
+        session_id: &str,
+    ) -> Result<PlayerResponse, PlayerManagerError> {
+        let player_arc = self
+            .get_or_create_player_for_session(guild_id, session_id)
+            .await?;
 
         // Determine if track update is requested
         let encoded_value = payload
@@ -588,11 +708,14 @@ impl PlayerManager {
         &self,
         guild_id: &str,
         encoded: &str,
-    ) -> Result<PlayerResponse, String> {
-        let player_arc = self.get_or_create_player(guild_id).await?;
+        session_id: &str,
+    ) -> Result<PlayerResponse, PlayerManagerError> {
+        let player_arc = self
+            .get_or_create_player_for_session(guild_id, session_id)
+            .await?;
 
         let track = crate::track_encoding::decode_track(encoded)
-            .map_err(|e| format!("Invalid encoded track: {}", e))?;
+            .map_err(|e| PlayerManagerError::Internal(format!("Invalid encoded track: {}", e)))?;
 
         let stream_url = self.resolve_stream_url(&track).await;
 
@@ -611,12 +734,12 @@ impl PlayerManager {
         Ok(player.to_response())
     }
 
-    pub async fn skip_track(&self, guild_id: &str) -> Result<PlayerResponse, String> {
-        let player_arc = self
-            .players
-            .get(guild_id)
-            .map(|r| r.value().clone())
-            .ok_or_else(|| "Player not found".to_string())?;
+    pub async fn skip_track(
+        &self,
+        guild_id: &str,
+        session_id: &str,
+    ) -> Result<PlayerResponse, PlayerManagerError> {
+        let player_arc = self.get_owned_player(guild_id, session_id)?;
 
         let mut player = player_arc.write().await;
         let next = player.skip_to_next();
@@ -634,12 +757,12 @@ impl PlayerManager {
         Ok(player.to_response())
     }
 
-    pub async fn previous_track(&self, guild_id: &str) -> Result<PlayerResponse, String> {
-        let player_arc = self
-            .players
-            .get(guild_id)
-            .map(|r| r.value().clone())
-            .ok_or_else(|| "Player not found".to_string())?;
+    pub async fn previous_track(
+        &self,
+        guild_id: &str,
+        session_id: &str,
+    ) -> Result<PlayerResponse, PlayerManagerError> {
+        let player_arc = self.get_owned_player(guild_id, session_id)?;
 
         let mut player = player_arc.write().await;
         let prev = player.skip_to_previous();
@@ -657,54 +780,71 @@ impl PlayerManager {
         Ok(player.to_response())
     }
 
-    pub async fn toggle_autoplay(&self, guild_id: &str) -> Result<bool, String> {
-        let player_arc = self
-            .players
-            .get(guild_id)
-            .map(|r| r.value().clone())
-            .ok_or_else(|| "Player not found".to_string())?;
+    pub async fn toggle_autoplay(
+        &self,
+        guild_id: &str,
+        session_id: &str,
+    ) -> Result<bool, PlayerManagerError> {
+        let player_arc = self.get_owned_player(guild_id, session_id)?;
         let mut player = player_arc.write().await;
         let enabled = player.autoplay.toggle();
         Ok(enabled)
     }
 
-    pub async fn set_loop_mode(&self, guild_id: &str, mode: LoopMode) -> Result<LoopMode, String> {
-        let player_arc = self
-            .players
-            .get(guild_id)
-            .map(|r| r.value().clone())
-            .ok_or_else(|| "Player not found".to_string())?;
+    pub async fn set_loop_mode(
+        &self,
+        guild_id: &str,
+        mode: LoopMode,
+        session_id: &str,
+    ) -> Result<LoopMode, PlayerManagerError> {
+        let player_arc = self.get_owned_player(guild_id, session_id)?;
         let mut player = player_arc.write().await;
         player.set_loop(mode);
         Ok(player.queue.loop_mode)
     }
 
-    pub async fn shuffle_queue(&self, guild_id: &str) -> Result<PlayerResponse, String> {
-        let player_arc = self
-            .players
-            .get(guild_id)
-            .map(|r| r.value().clone())
-            .ok_or_else(|| "Player not found".to_string())?;
+    pub async fn shuffle_queue(
+        &self,
+        guild_id: &str,
+        session_id: &str,
+    ) -> Result<PlayerResponse, PlayerManagerError> {
+        let player_arc = self.get_owned_player(guild_id, session_id)?;
         let mut player = player_arc.write().await;
         player.shuffle_queue();
         Ok(player.to_response())
     }
 
-    pub async fn clear_queue(&self, guild_id: &str) -> Result<PlayerResponse, String> {
-        let player_arc = self
-            .players
-            .get(guild_id)
-            .map(|r| r.value().clone())
-            .ok_or_else(|| "Player not found".to_string())?;
+    pub async fn clear_queue(
+        &self,
+        guild_id: &str,
+        session_id: &str,
+    ) -> Result<PlayerResponse, PlayerManagerError> {
+        let player_arc = self.get_owned_player(guild_id, session_id)?;
         let mut player = player_arc.write().await;
         player.clear_queue();
         Ok(player.to_response())
     }
 
+    /// Destroy the player for `guild_id` only if it is owned by `session_id`.
+    pub fn destroy_player_for_session(
+        &self,
+        guild_id: &str,
+        session_id: &str,
+    ) -> Result<(), PlayerManagerError> {
+        match self.players.get(guild_id) {
+            Some(entry) if entry.value().session_id == session_id => {
+                self.destroy_player(guild_id);
+                Ok(())
+            }
+            Some(_) | None => Err(PlayerManagerError::NotFound(guild_id.to_string())),
+        }
+    }
+
+    /// Force-destroy a player regardless of ownership (used by session expiry/cleanup).
     pub fn destroy_player(&self, guild_id: &str) -> bool {
-        if let Some((_, player_arc)) = self.players.remove(guild_id) {
+        if let Some((_, entry)) = self.players.remove(guild_id) {
             tokio::spawn(async move {
-                let mut player = player_arc.write().await;
+                let mut player = entry.player.write().await;
                 player.stop();
             });
             true
@@ -714,7 +854,7 @@ impl PlayerManager {
     }
 
     pub async fn handle_track_end(&self, guild_id: &str) {
-        let player_arc = match self.players.get(guild_id).map(|r| r.value().clone()) {
+        let player_arc = match self.players.get(guild_id).map(|r| r.value().player.clone()) {
             Some(p) => p,
             None => return,
         };
@@ -773,8 +913,11 @@ impl PlayerManager {
     }
 
     pub async fn count_players(&self) -> (usize, usize) {
-        let players: Vec<Arc<RwLock<GuildPlayer>>> =
-            self.players.iter().map(|r| r.value().clone()).collect();
+        let players: Vec<Arc<RwLock<GuildPlayer>>> = self
+            .players
+            .iter()
+            .map(|r| r.value().player.clone())
+            .collect();
         let total = players.len();
         let mut playing = 0;
         for p in players {
@@ -786,8 +929,11 @@ impl PlayerManager {
     }
 
     pub async fn get_all_players(&self) -> Vec<PlayerResponse> {
-        let players: Vec<Arc<RwLock<GuildPlayer>>> =
-            self.players.iter().map(|r| r.value().clone()).collect();
+        let players: Vec<Arc<RwLock<GuildPlayer>>> = self
+            .players
+            .iter()
+            .map(|r| r.value().player.clone())
+            .collect();
         let mut responses = Vec::with_capacity(players.len());
         for p in players {
             let player = p.read().await;
@@ -797,7 +943,7 @@ impl PlayerManager {
     }
 
     pub async fn is_actively_playing(&self, guild_id: &str) -> bool {
-        let player_arc = self.players.get(guild_id).map(|r| r.value().clone());
+        let player_arc = self.players.get(guild_id).map(|r| r.value().player.clone());
         if let Some(player) = player_arc {
             player.read().await.is_actively_playing()
         } else {

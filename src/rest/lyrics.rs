@@ -95,23 +95,31 @@ pub async fn get_lyrics(
 pub async fn get_player_current_lyrics(
     State(state): State<AppState>,
     headers: HeaderMap,
-    Path((_session_id, guild_id)): Path<(String, String)>,
+    Path((session_id, guild_id)): Path<(String, String)>,
 ) -> Result<Json<LyricsResponse>, LavalinkError> {
-    require_auth(
-        &headers,
-        &state.password,
-        "/v4/sessions/:session_id/players/:guild_id/track/lyrics",
-    )?;
+    let path = format!(
+        "/v4/sessions/{}/players/{}/track/lyrics",
+        session_id, guild_id
+    );
+    require_auth(&headers, &state.password, &path)?;
+
+    if state.session_manager.get_session(&session_id).is_none() {
+        return Err(LavalinkError::new(
+            axum::http::StatusCode::NOT_FOUND,
+            format!("Session not found: {}", session_id),
+            path,
+        ));
+    }
 
     let player = state
         .player_manager
-        .get_player(&guild_id)
+        .get_player_for_session(&guild_id, &session_id)
         .await
         .ok_or_else(|| {
             LavalinkError::new(
                 axum::http::StatusCode::NOT_FOUND,
                 format!("Player not found for guild: {}", guild_id),
-                "/v4/sessions/:session_id/players/:guild_id/track/lyrics",
+                path,
             )
         })?;
 

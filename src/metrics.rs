@@ -12,13 +12,11 @@ pub struct Metrics {
     pub frames_sent: IntCounter,
     pub frames_nulled: IntCounter,
     pub frames_deficit: IntCounter,
-    pub bytes_sent: IntCounter,
     pub tracks_loaded: IntCounter,
     pub tracks_failed: IntCounter,
     pub ws_connections: IntGauge,
     pub memory_used_bytes: Gauge,
     pub cpu_usage: Gauge,
-    pub source_requests: IntCounter,
     pub active_sessions: IntGauge,
     // Source-specific metrics
     pub source_youtube: IntCounter,
@@ -32,9 +30,6 @@ pub struct Metrics {
     pub source_vimeo: IntCounter,
     pub source_niconico: IntCounter,
     pub source_http: IntCounter,
-    // Mirror metrics
-    pub mirror_youtube: IntCounter,
-    pub mirror_jiosaavn: IntCounter,
     // Error metrics
     pub errors_auth: IntCounter,
     pub errors_rate_limit: IntCounter,
@@ -42,7 +37,6 @@ pub struct Metrics {
     pub errors_internal: IntCounter,
     // Request metrics
     pub requests_total: IntCounter,
-    pub requests_latency_ms: IntCounter,
 }
 
 static INSTANCE: OnceLock<Metrics> = OnceLock::new();
@@ -94,12 +88,6 @@ impl Metrics {
             )
             .unwrap();
 
-            let bytes_sent = register_int_counter_with_registry!(
-                opts!("kizunalink_bytes_sent_total", "Total bytes sent to voice"),
-                registry
-            )
-            .unwrap();
-
             let tracks_loaded = register_int_counter_with_registry!(
                 opts!(
                     "kizunalink_tracks_loaded_total",
@@ -132,15 +120,6 @@ impl Metrics {
 
             let cpu_usage = register_gauge_with_registry!(
                 opts!("kizunalink_cpu_usage", "CPU usage ratio (0.0-1.0)"),
-                registry
-            )
-            .unwrap();
-
-            let source_requests = register_int_counter_with_registry!(
-                opts!(
-                    "kizunalink_source_requests_total",
-                    "Total source API requests"
-                ),
                 registry
             )
             .unwrap();
@@ -225,23 +204,6 @@ impl Metrics {
             )
             .unwrap();
 
-            let mirror_youtube = register_int_counter_with_registry!(
-                opts!(
-                    "kizunalink_mirror_youtube_total",
-                    "Tracks mirrored to YouTube"
-                ),
-                registry
-            )
-            .unwrap();
-            let mirror_jiosaavn = register_int_counter_with_registry!(
-                opts!(
-                    "kizunalink_mirror_jiosaavn_total",
-                    "Tracks mirrored to JioSaavn"
-                ),
-                registry
-            )
-            .unwrap();
-
             let errors_auth = register_int_counter_with_registry!(
                 opts!("kizunalink_errors_auth_total", "Authentication failures"),
                 registry
@@ -271,15 +233,6 @@ impl Metrics {
                 registry
             )
             .unwrap();
-            let requests_latency_ms = register_int_counter_with_registry!(
-                opts!(
-                    "kizunalink_requests_latency_ms_total",
-                    "Total request latency in ms"
-                ),
-                registry
-            )
-            .unwrap();
-
             Metrics {
                 registry,
                 players_total,
@@ -288,13 +241,11 @@ impl Metrics {
                 frames_sent,
                 frames_nulled,
                 frames_deficit,
-                bytes_sent,
                 tracks_loaded,
                 tracks_failed,
                 ws_connections,
                 memory_used_bytes,
                 cpu_usage,
-                source_requests,
                 active_sessions,
                 source_youtube,
                 source_spotify,
@@ -307,14 +258,11 @@ impl Metrics {
                 source_vimeo,
                 source_niconico,
                 source_http,
-                mirror_youtube,
-                mirror_jiosaavn,
                 errors_auth,
                 errors_rate_limit,
                 errors_not_found,
                 errors_internal,
                 requests_total,
-                requests_latency_ms,
             }
         })
     }
@@ -334,12 +282,18 @@ impl Metrics {
         uptime_ms: u64,
         mem_used: u64,
         cpu: f64,
+        frames_sent: u64,
+        frames_nulled: u64,
+        frames_deficit: u64,
     ) {
         self.players_total.set(players as i64);
         self.players_playing.set(playing as i64);
         self.uptime_seconds.set(uptime_ms as f64 / 1000.0);
         self.memory_used_bytes.set(mem_used as f64);
         self.cpu_usage.set(cpu);
+        self.frames_sent.set(frames_sent as i64);
+        self.frames_nulled.set(frames_nulled as i64);
+        self.frames_deficit.set(frames_deficit as i64);
     }
 
     /// Increment the counter for a specific source.
@@ -356,7 +310,7 @@ impl Metrics {
             "vimeo" => self.source_vimeo.inc(),
             "niconico" => self.source_niconico.inc(),
             "http" => self.source_http.inc(),
-            _ => self.source_requests.inc(),
+            _ => {}
         }
     }
 }

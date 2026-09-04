@@ -224,7 +224,12 @@ impl Default for ProxyConfig {
 }
 
 impl ProxyConfig {
+    /// Apply proxy settings plus the SSRF-safe redirect policy to a client builder.
+    /// The redirect policy revalidates every hop, so no outbound client (including
+    /// source clients and route-planner clients built on this helper) can be
+    /// redirected into private/loopback/metadata endpoints.
     pub fn apply_to_builder(&self, builder: reqwest::ClientBuilder) -> reqwest::ClientBuilder {
+        let builder = builder.redirect(crate::security::redirect_policy());
         if let Some(ref url) = self.url {
             let mut proxy = reqwest::Proxy::all(url).expect("Invalid proxy URL");
             if let (Some(ref user), Some(ref pass)) = (&self.username, &self.password) {
@@ -239,7 +244,9 @@ impl ProxyConfig {
 
 /// Create a reqwest::ClientBuilder with proxy settings from config applied.
 pub fn http_client_builder(proxy: &ProxyConfig) -> reqwest::ClientBuilder {
-    proxy.apply_to_builder(reqwest::Client::builder())
+    proxy
+        .apply_to_builder(reqwest::Client::builder())
+        .timeout(global_request_timeout())
 }
 
 static GLOBAL_PROXY: OnceLock<ProxyConfig> = OnceLock::new();
@@ -254,10 +261,23 @@ pub fn global_proxy() -> &'static ProxyConfig {
     GLOBAL_PROXY.get_or_init(ProxyConfig::default)
 }
 
-/// Create a reqwest::Client with proxy settings from config applied.
+static GLOBAL_REQUEST_TIMEOUT: OnceLock<u64> = OnceLock::new();
+
+/// Initialize the global outbound HTTP request timeout (seconds).
+pub fn init_request_timeout(secs: u64) {
+    let _ = GLOBAL_REQUEST_TIMEOUT.set(secs.max(1));
+}
+
+/// Get the global outbound HTTP request timeout (defaults to 30s).
+pub fn global_request_timeout() -> std::time::Duration {
+    std::time::Duration::from_secs(*GLOBAL_REQUEST_TIMEOUT.get_or_init(|| 30))
+}
+
+/// Create a reqwest::Client with proxy settings and request timeout applied.
 pub fn http_client() -> reqwest::Client {
     global_proxy()
         .apply_to_builder(reqwest::Client::builder())
+        .timeout(global_request_timeout())
         .build()
         .expect("Failed to build HTTP client")
 }
@@ -406,5 +426,17 @@ impl AppConfig {
         }
 
         config
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_request_timeout_global() {
+        // Zero/invalid values are clamped to a positive timeout.
+        init_request_timeout(0);
+        assert_eq!(global_request_timeout(), std::time::Duration::from_secs(1));
     }
 }

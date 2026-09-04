@@ -38,6 +38,15 @@ pub async fn get_metrics(
         uptime,
         memory.used,
         cpu.lavalink_load,
+        crate::stats::FrameCounters::global()
+            .sent
+            .load(std::sync::atomic::Ordering::Relaxed),
+        crate::stats::FrameCounters::global()
+            .nulled
+            .load(std::sync::atomic::Ordering::Relaxed),
+        crate::stats::FrameCounters::global()
+            .deficit
+            .load(std::sync::atomic::Ordering::Relaxed),
     );
 
     let body = metrics.encode_text();

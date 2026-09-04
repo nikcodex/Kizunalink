@@ -23,10 +23,18 @@ pub async fn update_session(
         return Err(LavalinkError::new(StatusCode::BAD_REQUEST, e, path));
     }
 
-    let (resuming, timeout) =
+    // Never create a session implicitly: unknown sessions get a 404.
+    let Some((resuming, timeout)) =
         state
             .session_manager
-            .update_session(&session_id, payload.resuming, payload.timeout);
+            .update_session(&session_id, payload.resuming, payload.timeout)
+    else {
+        return Err(LavalinkError::new(
+            StatusCode::NOT_FOUND,
+            format!("Session not found: {}", session_id),
+            path,
+        ));
+    };
 
     Ok(Json(SessionResponse { resuming, timeout }))
 }

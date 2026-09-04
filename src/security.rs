@@ -122,6 +122,23 @@ pub fn validate_url(url: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// Reqwest redirect policy that revalidates every redirect hop against the same
+/// SSRF policy as direct URL loads. Redirects to private/loopback/link-local
+/// ranges, metadata endpoints, or blocked hostnames are never followed.
+pub fn redirect_policy() -> reqwest::redirect::Policy {
+    reqwest::redirect::Policy::custom(|attempt| match validate_url(attempt.url().as_str()) {
+        Ok(()) => reqwest::redirect::Action::Follow,
+        Err(e) => {
+            tracing::warn!(
+                "Blocked SSRF-unsafe redirect to '{}': {}",
+                sanitize_for_log(attempt.url().as_str()),
+                e
+            );
+            reqwest::redirect::Action::Stop
+        }
+    })
+}
+
 /// Validate a search query.
 pub fn validate_query(query: &str) -> Result<(), String> {
     let trimmed = query.trim();
@@ -288,5 +305,20 @@ mod tests {
             sanitize_for_log("hello\x1b[31mred\x1b[0m"),
             "hello[31mred[0m"
         );
+    }
+
+    #[test]
+    fn test_redirect_policy_revalidates_ssrf() {
+        // The policy function must reject the same dangerous targets as validate_url,
+        // because redirects are followed from attacker-influenced URLs.
+        assert!(validate_url("https://cdn.example.com/audio.mp3").is_ok());
+        assert!(validate_url("http://127.0.0.1:8080/admin").is_err());
+        assert!(validate_url("http://[::1]/admin").is_err());
+        assert!(validate_url("http://10.0.0.1/admin").is_err());
+        assert!(validate_url("http://169.254.169.254/latest/meta-data/").is_err());
+        assert!(validate_url("http://localhost/admin").is_err());
+        assert!(validate_url("http://metadata.google.internal/computeMetadata").is_err());
+        // The constructed policy exists and is usable by reqwest.
+        let _ = redirect_policy();
     }
 }

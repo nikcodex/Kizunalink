@@ -131,13 +131,16 @@ impl SessionManager {
     }
 
     /// Update session configuration (resuming and timeout).
+    ///
+    /// Returns `None` if the session does not exist — this method NEVER creates a
+    /// session implicitly. Only the WebSocket connection flow may create sessions.
     pub fn update_session(
         &self,
         session_id: &str,
         resuming: Option<bool>,
         timeout: Option<u64>,
-    ) -> (bool, u64) {
-        let mut entry = self.sessions.entry(session_id.to_string()).or_default();
+    ) -> Option<(bool, u64)> {
+        let mut entry = self.sessions.get_mut(session_id)?;
         if let Some(r) = resuming {
             entry.resuming = r;
         }
@@ -145,7 +148,7 @@ impl SessionManager {
             entry.timeout = t;
         }
         entry.last_active = Instant::now();
-        (entry.resuming, entry.timeout)
+        Some((entry.resuming, entry.timeout))
     }
 
     /// Returns list of all known session IDs.
@@ -226,17 +229,34 @@ impl SessionManager {
         }
     }
 
+    /// Deterministic expiration check for a disconnected session.
+    ///
+    /// A disconnected session expires exactly `timeout` seconds after its
+    /// `last_active` timestamp (which is set at disconnect time). Sessions that
+    /// cannot resume (`resuming == false`) or that configured `timeout == 0` are
+    /// considered immediately expired; `mark_disconnected` removes them eagerly,
+    /// so this is the defensive backstop for interrupted cleanup paths.
+    /// Active/connected sessions are never considered expired.
+    pub fn is_session_expired(state: &SessionState, now: Instant) -> bool {
+        if state.connected {
+            return false;
+        }
+        if !state.resuming || state.timeout == 0 {
+            return true;
+        }
+        now.saturating_duration_since(state.last_active)
+            > std::time::Duration::from_secs(state.timeout)
+    }
+
     /// Periodic cleanup of stale expired sessions.
     /// Returns all guild IDs belonging to the expired sessions.
     pub fn cleanup_stale(&self) -> Vec<String> {
+        let now = Instant::now();
         let mut expired = Vec::new();
         for entry in self.sessions.iter() {
             let s = entry.value();
-            if !s.connected {
-                let ttl = std::time::Duration::from_secs(s.timeout.max(60) * 2);
-                if s.last_active.elapsed() > ttl {
-                    expired.push(entry.key().clone());
-                }
+            if !s.connected && Self::is_session_expired(s, now) {
+                expired.push(entry.key().clone());
             }
         }
         let mut expired_guilds = Vec::new();
