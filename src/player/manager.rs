@@ -110,17 +110,18 @@ impl PlayerManager {
             return Ok(p.clone());
         }
 
+        if self.players.len() >= MAX_PLAYERS {
+            return Err(format!(
+                "Player limit reached: maximum {} players allowed",
+                MAX_PLAYERS
+            ));
+        }
+
         let user_id = self.bot_user_id.read().await.clone();
 
         match self.players.entry(guild_id.to_string()) {
             Entry::Occupied(entry) => Ok(entry.get().clone()),
             Entry::Vacant(entry) => {
-                if self.players.len() >= MAX_PLAYERS {
-                    return Err(format!(
-                        "Player limit reached: maximum {} players allowed",
-                        MAX_PLAYERS
-                    ));
-                }
                 let player = GuildPlayer::new(
                     guild_id.to_string(),
                     user_id,

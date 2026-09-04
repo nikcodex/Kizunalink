@@ -173,7 +173,7 @@ async fn test_voice_connection_error_handling() {
     // Full voice update with invalid/unreachable endpoint should fail and return Err
     let full_bad = VoiceStateUpdate {
         token: "token123".to_string(),
-        endpoint: "invalid-voice-endpoint.discord.gg:443".to_string(),
+        endpoint: "127.0.0.1:1".to_string(),
         session_id: "sess123".to_string(),
         channel_id: Some("chan123".to_string()),
     };
