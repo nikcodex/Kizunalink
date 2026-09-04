@@ -1,24 +1,36 @@
 use crate::models::protocol::{GitInfo, ServerInfo, VersionInfo};
 use axum::response::Json;
 
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+pub const BUILD_TIME: u64 = 1724284800000;
+pub const GIT_BRANCH: &str = match option_env!("GIT_BRANCH") {
+    Some(b) => b,
+    None => "main",
+};
+pub const GIT_COMMIT: &str = match option_env!("GIT_COMMIT") {
+    Some(c) => c,
+    None => "kizuna-core",
+};
+pub const GIT_COMMIT_TIME: u64 = BUILD_TIME;
+
 pub async fn get_version() -> &'static str {
-    "4.2.1"
+    VERSION
 }
 
 pub async fn get_info() -> Json<ServerInfo> {
     Json(ServerInfo {
         version: VersionInfo {
-            semver: "4.2.1".to_string(),
-            major: 4,
-            minor: 2,
-            patch: 1,
+            semver: VERSION.to_string(),
+            major: env!("CARGO_PKG_VERSION_MAJOR").parse().unwrap_or(4),
+            minor: env!("CARGO_PKG_VERSION_MINOR").parse().unwrap_or(2),
+            patch: env!("CARGO_PKG_VERSION_PATCH").parse().unwrap_or(1),
             pre_release: None,
         },
-        build_time: 1724284800000,
+        build_time: BUILD_TIME,
         git: GitInfo {
-            branch: "main".to_string(),
-            commit: "kizuna-core".to_string(),
-            commit_time: 1724284800000,
+            branch: GIT_BRANCH.to_string(),
+            commit: GIT_COMMIT.to_string(),
+            commit_time: GIT_COMMIT_TIME,
         },
         jvm: "Rust (Tokio)".to_string(),
         lavaplayer: "symphonia-0.5".to_string(),

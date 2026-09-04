@@ -121,6 +121,7 @@ impl GuildPlayer {
     }
 
     pub fn emit_track_load_failed(&self, track: &LavalinkTrack, exception: &str) {
+        crate::metrics::Metrics::global().tracks_failed.inc();
         self.emit_event(
             "TrackExceptionEvent",
             serde_json::json!({
@@ -617,6 +618,7 @@ impl GuildPlayer {
                 LoopMode::Track => "track".to_string(),
                 LoopMode::Queue => "queue".to_string(),
             },
+            is_playing: self.is_playing,
         }
     }
 }

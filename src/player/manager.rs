@@ -12,6 +12,9 @@ use std::sync::Arc;
 use tokio::sync::{broadcast, mpsc, RwLock};
 use tracing::{info, warn};
 
+/// Maximum number of concurrent players allowed.
+pub const MAX_PLAYERS: usize = 10000;
+
 pub struct PlayerManager {
     players: DashMap<String, Arc<RwLock<GuildPlayer>>>,
     pub bot_user_id: Arc<RwLock<String>>,
@@ -101,19 +104,32 @@ impl PlayerManager {
         Arc::new(RwLock::new(player))
     }
 
+    pub async fn get_or_create_player(
+        &self,
+        guild_id: &str,
+    ) -> Result<Arc<RwLock<GuildPlayer>>, String> {
+        if let Some(p) = self.players.get(guild_id) {
+            Ok(p.clone())
+        } else {
+            if self.players.len() >= MAX_PLAYERS {
+                return Err(format!(
+                    "Player limit reached: maximum {} players allowed",
+                    MAX_PLAYERS
+                ));
+            }
+            let p = self.create_guild_player(guild_id).await;
+            self.players.insert(guild_id.to_string(), p.clone());
+            Ok(p)
+        }
+    }
+
     pub async fn update_player(
         &self,
         guild_id: &str,
         payload: PlayerUpdatePayload,
         no_replace: bool,
     ) -> Result<PlayerResponse, String> {
-        let player_arc = if let Some(p) = self.players.get(guild_id) {
-            p.clone()
-        } else {
-            let p = self.create_guild_player(guild_id).await;
-            self.players.insert(guild_id.to_string(), p.clone());
-            p
-        };
+        let player_arc = self.get_or_create_player(guild_id).await?;
 
         // Determine if track update is requested
         let encoded_value = payload
@@ -547,13 +563,7 @@ impl PlayerManager {
         guild_id: &str,
         encoded: &str,
     ) -> Result<PlayerResponse, String> {
-        let player_arc = if let Some(p) = self.players.get(guild_id) {
-            p.clone()
-        } else {
-            let p = self.create_guild_player(guild_id).await;
-            self.players.insert(guild_id.to_string(), p.clone());
-            p
-        };
+        let player_arc = self.get_or_create_player(guild_id).await?;
 
         let track = crate::track_encoding::decode_track(encoded)
             .map_err(|e| format!("Invalid encoded track: {}", e))?;
@@ -746,5 +756,13 @@ impl PlayerManager {
             responses.push(player.to_response());
         }
         responses
+    }
+
+    pub async fn is_actively_playing(&self, guild_id: &str) -> bool {
+        if let Some(player) = self.players.get(guild_id) {
+            player.read().await.is_actively_playing()
+        } else {
+            false
+        }
     }
 }

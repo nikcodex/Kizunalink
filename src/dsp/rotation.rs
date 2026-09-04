@@ -26,7 +26,7 @@ impl Rotation {
 
     /// Process stereo interleaved buffer in place.
     pub fn process_buffer(&mut self, buffer: &mut [f32]) {
-        if self.rotation_hz == 0.0 {
+        if self.rotation_hz == 0.0 || self.rotation_hz.abs() < 1e-6 || self.sample_rate <= 0.0 {
             return;
         }
         for chunk in buffer.chunks_exact_mut(2) {
@@ -126,5 +126,16 @@ mod tests {
         let input = buf.clone();
         rot.process_buffer(&mut buf);
         assert_eq!(buf, input, "0 Hz rotation should not modify samples");
+    }
+
+    #[test]
+    fn test_rotation_near_zero_hz_is_noop() {
+        let mut rot = Rotation::new(48000.0);
+        rot.set_rotation_hz(1e-7);
+
+        let mut buf = vec![0.5f32; 200];
+        let input = buf.clone();
+        rot.process_buffer(&mut buf);
+        assert_eq!(buf, input, "Near-zero Hz rotation should not modify samples");
     }
 }

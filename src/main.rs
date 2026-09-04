@@ -1,4 +1,7 @@
 use axum::{
+    extract::Request,
+    middleware::{self, Next},
+    response::Response,
     routing::{get, patch, post},
     Router,
 };
@@ -18,10 +21,17 @@ use kizunalink::sources::{
 };
 
 
+async fn track_requests(req: Request, next: Next) -> Response {
+    if req.uri().path() != "/v4/websocket" {
+        crate::metrics::Metrics::global().requests_total.inc();
+    }
+    next.run(req).await
+}
+
 async fn health_check() -> axum::Json<serde_json::Value> {
     axum::Json(serde_json::json!({
         "status": "ok",
-        "version": "4.2.1",
+        "version": VERSION,
         "timestamp": util::current_timestamp(),
     }))
 }
@@ -89,7 +99,12 @@ async fn main() {
     ));
 
     let dave_manager = dave::DaveManager::new();
-    let rate_limiter = RateLimiter::new(RateLimitConfig::default());
+    let rate_limiter = RateLimiter::new(RateLimitConfig {
+        max_requests: config.ratelimit.max_requests,
+        window: std::time::Duration::from_secs(config.ratelimit.window_secs),
+        burst: config.ratelimit.burst,
+        ..RateLimitConfig::default()
+    });
 
     let state = AppState {
         player_manager,
@@ -119,7 +134,7 @@ async fn main() {
     let rate_limiter = state.rate_limiter.clone();
 
     let app = Router::new()
-        .route("/version", get(|| async { "4.2.1" }))
+        .route("/version", get(|| async { VERSION }))
         .route("/health", get(health_check))
         .route("/v4/info", get(rest::info::get_info))
         .route("/v4/stats", get(rest::stats::get_stats))
@@ -163,7 +178,7 @@ async fn main() {
             "/v4/routeplanner/free/all",
             post(rest::routeplanner::free_routeplanner_all),
         )
-        .route("/", get(|| async { "4.2.1" }))
+        .route("/", get(|| async { VERSION }))
         .route("/v4/websocket", get(ws::handler::ws_handler))
         .layer(tower_http::limit::RequestBodyLimitLayer::new(
             config.security.max_body_size,
@@ -174,10 +189,11 @@ async fn main() {
                 .allow_methods(Any)
                 .allow_headers(Any),
         )
-        .with_state(state);
+        .with_state(state)
+        .layer(middleware::from_fn(track_requests));
 
     let addr = format!("{}:{}", config.server.host, config.server.port);
-    info!("⛩️ KizunaLink v4.2.1 listening on {}", addr);
+    info!("⛩️ KizunaLink v{} listening on {}", VERSION, addr);
 
     // Global broadcast tasks — run once for all clients (not per-connection)
     tokio::spawn(async move {
@@ -223,7 +239,7 @@ async fn main() {
         loop {
             interval.tick().await;
             for player_response in update_state.player_manager.get_all_players().await {
-                if player_response.track.is_some() || player_response.state.connected {
+                if player_response.is_actively_playing() {
                     let msg = serde_json::json!({
                         "op": "playerUpdate",
                         "guildId": player_response.guild_id,
@@ -264,7 +280,7 @@ async fn main() {
         let _ = shutdown_rx.clone().changed().await;
     };
 
-    info!("⛩️ KizunaLink v4.2.1 listening on {}", addr);
+    info!("⛩️ KizunaLink v{} listening on {}", VERSION, addr);
 
     if let Err(e) = axum::serve(listener, app)
         .with_graceful_shutdown(shutdown_signal)

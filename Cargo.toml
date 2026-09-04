@@ -1,6 +1,6 @@
 [package]
 name = "kizunalink"
-version = "0.1.0"
+version = "4.2.1"
 edition = "2021"
 authors = ["Nikhil <codexnik23@gmail.com>"]
 description = "High-Performance Standalone Discord Audio Streaming Engine in Rust"

@@ -135,9 +135,10 @@ fn is_private_ip(ip: IpAddr) -> bool {
     match ip {
         IpAddr::V4(ipv4) => {
             let octets = ipv4.octets();
-            BLOCKED_RANGES
-                .iter()
-                .any(|&(a, b, c, _)| octets[0] == a && octets[1] == b && octets[2] >= c)
+            (octets[0] == 172 && octets[1] >= 16 && octets[1] <= 31)
+                || BLOCKED_RANGES
+                    .iter()
+                    .any(|&(a, b, c, _)| octets[0] == a && octets[1] == b && octets[2] >= c)
                 || octets[0] == 0
         }
         IpAddr::V6(ipv6) => {
@@ -152,7 +153,7 @@ fn is_private_ip(ip: IpAddr) -> bool {
 /// Sanitize a string for safe logging (removes control characters).
 pub fn sanitize_for_log(s: &str) -> String {
     s.chars()
-        .filter(|c| !c.is_control() || *c == '\n' || *c == '\t')
+        .filter(|c| !c.is_control())
         .take(256)
         .collect()
 }
@@ -219,6 +220,9 @@ mod tests {
         assert!(is_private_ip("127.0.0.1".parse().unwrap()));
         assert!(is_private_ip("192.168.1.1".parse().unwrap()));
         assert!(is_private_ip("10.0.0.1".parse().unwrap()));
+        assert!(is_private_ip("172.16.0.1".parse().unwrap()));
+        assert!(is_private_ip("172.31.255.255".parse().unwrap()));
+        assert!(!is_private_ip("172.32.0.1".parse().unwrap()));
         assert!(!is_private_ip("8.8.8.8".parse().unwrap()));
         assert!(!is_private_ip("1.1.1.1".parse().unwrap()));
     }
@@ -227,5 +231,6 @@ mod tests {
     fn test_sanitize_for_log() {
         assert_eq!(sanitize_for_log("hello world"), "hello world");
         assert_eq!(sanitize_for_log("hello\x00world"), "helloworld");
+        assert_eq!(sanitize_for_log("hello\n\tworld"), "helloworld");
     }
 }

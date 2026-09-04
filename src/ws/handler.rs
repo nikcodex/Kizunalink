@@ -8,7 +8,9 @@ use axum::{
 };
 use dashmap::DashMap;
 use futures_util::{SinkExt, StreamExt};
+use std::collections::{HashSet, VecDeque};
 use std::sync::LazyLock;
+use tokio::sync::mpsc;
 use tracing::{error, info, warn};
 
 use crate::models::protocol::PlayerUpdatePayload;
@@ -20,11 +22,16 @@ const MAX_WS_MESSAGE_SIZE: usize = 65536;
 
 static SESSION_STORE: LazyLock<DashMap<String, std::time::Instant>> = LazyLock::new(DashMap::new);
 
-static SESSION_STATE: LazyLock<DashMap<String, SessionState>> = LazyLock::new(DashMap::new);
+pub static SESSION_STATE: LazyLock<DashMap<String, SessionState>> = LazyLock::new(DashMap::new);
 
-struct SessionState {
-    resuming: bool,
-    timeout: u64,
+static DISPATCHER_STARTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+pub struct SessionState {
+    pub resuming: bool,
+    pub timeout: u64,
+    pub guild_ids: HashSet<String>,
+    pub event_buffer: VecDeque<String>,
+    pub connected: bool,
 }
 
 impl Default for SessionState {
@@ -32,7 +39,70 @@ impl Default for SessionState {
         Self {
             resuming: false,
             timeout: 60,
+            guild_ids: HashSet::new(),
+            event_buffer: VecDeque::new(),
+            connected: true,
         }
+    }
+}
+
+pub fn add_guild_to_session(session_id: &str, guild_id: &str) {
+    let mut entry = SESSION_STATE
+        .entry(session_id.to_string())
+        .or_insert_with(SessionState::default);
+    entry.guild_ids.insert(guild_id.to_string());
+}
+
+pub fn remove_guild_from_session(session_id: &str, guild_id: &str) {
+    if let Some(mut entry) = SESSION_STATE.get_mut(session_id) {
+        entry.guild_ids.remove(guild_id);
+    }
+}
+
+pub fn ensure_event_dispatcher(event_tx: &tokio::sync::broadcast::Sender<String>) {
+    if DISPATCHER_STARTED
+        .compare_exchange(
+            false,
+            true,
+            std::sync::atomic::Ordering::SeqCst,
+            std::sync::atomic::Ordering::SeqCst,
+        )
+        .is_ok()
+    {
+        let mut rx = event_tx.subscribe();
+        tokio::spawn(async move {
+            loop {
+                match rx.recv().await {
+                    Ok(msg) => {
+                        let guild_id = serde_json::from_str::<serde_json::Value>(&msg)
+                            .ok()
+                            .and_then(|v| {
+                                v.get("guildId")
+                                    .and_then(|g| g.as_str())
+                                    .map(|s| s.to_string())
+                            });
+
+                        for mut entry in SESSION_STATE.iter_mut() {
+                            let state = entry.value_mut();
+                            if !state.connected {
+                                let should_buffer = match &guild_id {
+                                    Some(gid) => state.guild_ids.contains(gid),
+                                    None => true,
+                                };
+                                if should_buffer {
+                                    if state.event_buffer.len() >= 100 {
+                                        state.event_buffer.pop_front();
+                                    }
+                                    state.event_buffer.push_back(msg.clone());
+                                }
+                            }
+                        }
+                    }
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                    Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                }
+            }
+        });
     }
 }
 
@@ -117,8 +187,10 @@ pub async fn ws_handler(
 }
 
 async fn handle_socket(mut socket: WebSocket, state: AppState, resume_session_id: Option<String>) {
+    ensure_event_dispatcher(&state.event_tx);
+
     let (session_id, is_resumed) = if let Some(resume_id) = resume_session_id {
-        if SESSION_STORE.contains_key(&resume_id) {
+        if SESSION_STORE.contains_key(&resume_id) || SESSION_STATE.contains_key(&resume_id) {
             (resume_id, true)
         } else {
             let new_id = crate::util::uuid_v4();
@@ -139,38 +211,86 @@ async fn handle_socket(mut socket: WebSocket, state: AppState, resume_session_id
 
     if let Err(e) = socket.send(Message::Text(ready_msg.to_string())).await {
         error!("Failed to send ready: {:?}", e);
+        SESSION_STORE.remove(&session_id);
+        SESSION_STATE.remove(&session_id);
         return;
     }
 
+    if is_resumed {
+        if let Some(mut entry) = SESSION_STATE.get_mut(&session_id) {
+            entry.connected = true;
+            let replay_events: Vec<String> = entry.event_buffer.drain(..).collect();
+            drop(entry);
+            for event in replay_events {
+                if let Err(e) = socket.send(Message::Text(event)).await {
+                    error!("Failed to replay event on resume: {:?}", e);
+                    break;
+                }
+            }
+        }
+    } else {
+        let mut entry = SESSION_STATE
+            .entry(session_id.clone())
+            .or_insert_with(SessionState::default);
+        entry.connected = true;
+    }
+
+    crate::metrics::Metrics::global().ws_connections.inc();
+    crate::metrics::Metrics::global().active_sessions.inc();
+
     let (mut sender, mut receiver) = socket.split();
     let mut event_rx = state.event_tx.subscribe();
+    let (direct_tx, mut direct_rx) = mpsc::channel::<Message>(32);
+    let sess_id = session_id.clone();
 
     let event_task = tokio::spawn(async move {
         loop {
-            match event_rx.recv().await {
-                Ok(msg) => {
-                    if sender.send(Message::Text(msg)).await.is_err() {
-                        break;
+            tokio::select! {
+                direct_msg = direct_rx.recv() => {
+                    match direct_msg {
+                        Some(msg) => {
+                            if sender.send(msg).await.is_err() {
+                                break;
+                            }
+                        }
+                        None => break,
                     }
                 }
-                Err(tokio::sync::broadcast::error::RecvError::Lagged(skipped)) => {
-                    warn!("WebSocket subscriber lagged, skipped {} events", skipped);
-                    continue;
-                }
-                Err(tokio::sync::broadcast::error::RecvError::Closed) => {
-                    break;
+                event_msg = event_rx.recv() => {
+                    match event_msg {
+                        Ok(msg) => {
+                            let should_forward = if let Ok(v) = serde_json::from_str::<serde_json::Value>(&msg) {
+                                if let Some(gid) = v.get("guildId").and_then(|g| g.as_str()) {
+                                    SESSION_STATE
+                                        .get(&sess_id)
+                                        .map(|s| s.guild_ids.contains(gid))
+                                        .unwrap_or(false)
+                                } else {
+                                    true
+                                }
+                            } else {
+                                true
+                            };
+
+                            if should_forward {
+                                if sender.send(Message::Text(msg)).await.is_err() {
+                                    break;
+                                }
+                            }
+                        }
+                        Err(tokio::sync::broadcast::error::RecvError::Lagged(skipped)) => {
+                            warn!("WebSocket subscriber lagged, skipped {} events", skipped);
+                            continue;
+                        }
+                        Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                            break;
+                        }
+                    }
                 }
             }
         }
     });
 
-    // We need a mutable sender here to respond to Ping frames.
-    // Split was already done above for the event_task, so we need to
-    // handle pong responses through the event broadcast channel instead.
-    // Actually, the sender was moved into event_task. We need to restructure
-    // to keep a sender handle for pong responses.
-    //
-    // Re-architecture: don't split the socket. Use a select! loop instead.
     while let Some(msg) = receiver.next().await {
         match msg {
             Ok(Message::Text(text)) => {
@@ -181,24 +301,13 @@ async fn handle_socket(mut socket: WebSocket, state: AppState, resume_session_id
                     );
                     continue;
                 }
-                handle_ws_message(&state, &text).await;
+                handle_ws_message(&state, &session_id, &text, &direct_tx).await;
             }
             Ok(Message::Ping(payload)) => {
-                // Critical: lavalink-client sends WS-level pings every 30s
-                // and terminates the connection if no pong is received.
-                // We respond via the event broadcast channel which the
-                // sender task picks up.
-                // However, axum's WebSocket auto-responds to Ping with Pong
-                // at the protocol level — so this should already work.
-                // Let's just log it for debugging.
                 info!("WebSocket Ping received ({} bytes)", payload.len());
             }
-            Ok(Message::Pong(_)) => {
-                // Client sent a pong (response to our ping, if any)
-            }
-            Ok(Message::Binary(_)) => {
-                // Ignore binary frames
-            }
+            Ok(Message::Pong(_)) => {}
+            Ok(Message::Binary(_)) => {}
             Ok(Message::Close(frame)) => {
                 if let Some(cf) = frame {
                     info!(
@@ -219,12 +328,49 @@ async fn handle_socket(mut socket: WebSocket, state: AppState, resume_session_id
 
     event_task.abort();
 
-    SESSION_STORE.remove(&session_id);
-    SESSION_STATE.remove(&session_id);
-    info!("WebSocket session {} cleaned up", session_id);
+    crate::metrics::Metrics::global().ws_connections.dec();
+
+    let timeout = SESSION_STATE
+        .get(&session_id)
+        .map(|s| s.timeout)
+        .unwrap_or(60);
+
+    if let Some(mut entry) = SESSION_STATE.get_mut(&session_id) {
+        entry.connected = false;
+    }
+
+    if timeout > 0 {
+        let s_id = session_id.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(tokio::time::Duration::from_secs(timeout)).await;
+            if let Some(entry) = SESSION_STATE.get(&s_id) {
+                if !entry.connected {
+                    drop(entry);
+                    SESSION_STORE.remove(&s_id);
+                    SESSION_STATE.remove(&s_id);
+                    crate::metrics::Metrics::global().active_sessions.dec();
+                    info!("WebSocket session {} expired after resume timeout", s_id);
+                }
+            }
+        });
+        info!(
+            "WebSocket session {} disconnected, waiting up to {}s to resume",
+            session_id, timeout
+        );
+    } else {
+        SESSION_STORE.remove(&session_id);
+        SESSION_STATE.remove(&session_id);
+        crate::metrics::Metrics::global().active_sessions.dec();
+        info!("WebSocket session {} cleaned up", session_id);
+    }
 }
 
-async fn handle_ws_message(state: &AppState, text: &str) {
+async fn handle_ws_message(
+    state: &AppState,
+    session_id: &str,
+    text: &str,
+    direct_tx: &mpsc::Sender<Message>,
+) {
     let msg = match serde_json::from_str::<serde_json::Value>(text) {
         Ok(v) => v,
         Err(_) => return,
@@ -280,6 +426,7 @@ async fn handle_ws_message(state: &AppState, text: &str) {
             }
 
             if let Some(voice_obj) = msg.get("voice") {
+                add_guild_to_session(session_id, guild_id);
                 payload.voice = Some(crate::models::protocol::VoiceStateUpdate {
                     token: voice_obj
                         .get("token")
@@ -383,11 +530,12 @@ async fn handle_ws_message(state: &AppState, text: &str) {
                 .map_err(|e| warn!("WS clearQueue failed for guild {}: {}", guild_id, e));
         }
         "destroyPlayer" => {
+            remove_guild_from_session(session_id, guild_id);
             state.player_manager.destroy_player(guild_id);
         }
         "ping" => {
             let pong = serde_json::json!({ "op": "pong" });
-            let _ = state.event_tx.send(pong.to_string());
+            let _ = direct_tx.send(Message::Text(pong.to_string())).await;
         }
         _ => {
             warn!("Unknown WebSocket op: {}", op);

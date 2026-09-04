@@ -61,6 +61,25 @@ pub async fn load_tracks(
     };
 
     if let Some(path_str) = local_path {
+        // Validate local path: prevent directory traversal and access to sensitive system directories
+        let clean = path_str.trim_start_matches('/');
+        if path_str.contains("..")
+            || clean == "etc"
+            || clean.starts_with("etc/")
+            || clean == "proc"
+            || clean.starts_with("proc/")
+            || clean == "sys"
+            || clean.starts_with("sys/")
+            || clean == "dev"
+            || clean.starts_with("dev/")
+        {
+            return Err(LavalinkError::new(
+                axum::http::StatusCode::BAD_REQUEST,
+                "Access to sensitive or relative paths is forbidden",
+                "/v4/loadtracks",
+            ));
+        }
+
         let path = std::path::Path::new(path_str);
         if path.is_file() {
             let file_name = path

@@ -14,6 +14,8 @@ pub mod track_encoding;
 pub mod util;
 pub mod ws;
 
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+
 use std::sync::Arc;
 use tokio::sync::broadcast;
 use player::manager::PlayerManager;

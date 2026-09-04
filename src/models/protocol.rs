@@ -59,6 +59,14 @@ pub struct PlayerResponse {
     pub autoplay: bool,
     #[serde(rename = "loop")]
     pub loop_mode: String,
+    #[serde(skip)]
+    pub is_playing: bool,
+}
+
+impl PlayerResponse {
+    pub fn is_actively_playing(&self) -> bool {
+        self.is_playing && !self.paused && self.track.is_some()
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

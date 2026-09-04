@@ -12,13 +12,12 @@ pub fn current_timestamp() -> u64 {
 pub fn constant_time_eq(a: &str, b: &str) -> bool {
     let a_bytes = a.as_bytes();
     let b_bytes = b.as_bytes();
+    let max_len = a_bytes.len().max(b_bytes.len());
 
-    if a_bytes.len() != b_bytes.len() {
-        return false;
-    }
-
-    let mut diff = 0u8;
-    for (x, y) in a_bytes.iter().zip(b_bytes.iter()) {
+    let mut diff = if a_bytes.len() == b_bytes.len() { 0u8 } else { 1u8 };
+    for i in 0..max_len {
+        let x = a_bytes.get(i).copied().unwrap_or(0);
+        let y = b_bytes.get(i).copied().unwrap_or(0);
         diff |= x ^ y;
     }
     diff == 0
@@ -67,10 +66,18 @@ pub fn create_http_track(url: &str) -> LavalinkTrack {
 }
 
 pub fn uuid_v4() -> String {
-    let rand_part: u64 = rand::random();
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_nanos();
-    format!("{:016x}{:016x}", nanos as u64, rand_part)
+    let mut bytes: [u8; 16] = rand::random();
+    // Set version to 4 (0100)
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    // Set variant to RFC 4122 (10xx)
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+
+    format!(
+        "{:02x}{:02x}{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
+        bytes[0], bytes[1], bytes[2], bytes[3],
+        bytes[4], bytes[5],
+        bytes[6], bytes[7],
+        bytes[8], bytes[9],
+        bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15]
+    )
 }

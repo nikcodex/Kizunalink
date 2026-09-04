@@ -124,6 +124,10 @@ pub async fn update_player(
 
     let no_replace = query.no_replace.unwrap_or(false);
 
+    if payload.voice.is_some() {
+        crate::ws::handler::add_guild_to_session(&session_id, &guild_id);
+    }
+
     match state
         .player_manager
         .update_player(&guild_id, payload, no_replace)
@@ -152,6 +156,8 @@ pub async fn destroy_player(
     if let Err(e) = security::validate_guild_id(&guild_id) {
         return Err(LavalinkError::new(StatusCode::BAD_REQUEST, e, path));
     }
+
+    crate::ws::handler::remove_guild_from_session(&session_id, &guild_id);
 
     if state.player_manager.destroy_player(&guild_id) {
         Ok(StatusCode::NO_CONTENT)

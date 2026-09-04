@@ -51,6 +51,9 @@ impl TrackQueue {
                 self.tracks.pop_front()
             }
             LoopMode::Queue => {
+                if self.tracks.is_empty() {
+                    return self.current.clone();
+                }
                 // Move current to history first
                 if let Some(current) = self.current.take() {
                     self.previous.push(current);
