@@ -1,14 +1,9 @@
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ConnectionState {
+    #[default]
     Disconnected,
     Connecting,
     Connected,
     Reconnecting,
     Failed,
-}
-
-impl Default for ConnectionState {
-    fn default() -> Self {
-        Self::Disconnected
-    }
 }

@@ -249,7 +249,7 @@ impl DaveSession {
             }
         }
 
-        self.pending_messages.drain(..).collect()
+        std::mem::take(&mut self.pending_messages)
     }
 
     /// Process the external sender package from the voice gateway (opcode 25).
@@ -582,15 +582,14 @@ impl DaveSession {
 // Thread-safe DAVE session manager
 // ---------------------------------------------------------------------------
 
+#[derive(Default)]
 pub struct DaveManager {
     sessions: Arc<RwLock<HashMap<String, Arc<RwLock<DaveSession>>>>>,
 }
 
 impl DaveManager {
     pub fn new() -> Self {
-        Self {
-            sessions: Arc::new(RwLock::new(HashMap::new())),
-        }
+        Self::default()
     }
 
     pub async fn get_or_create(&self, guild_id: &str) -> Arc<RwLock<DaveSession>> {

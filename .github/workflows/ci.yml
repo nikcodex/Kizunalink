@@ -32,7 +32,7 @@ jobs:
           components: clippy
       - uses: Swatinem/rust-cache@v2
       - run: sudo apt-get update && sudo apt-get install -y cmake
-      - run: cargo clippy --workspace --all-targets --all-features -- -D warnings || true
+      - run: cargo clippy --workspace --all-targets --all-features -- -D warnings
 
   fmt:
     name: Format
@@ -43,13 +43,24 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
-      - run: cargo fmt --check || true
+      - run: cargo fmt --check
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: sudo apt-get update && sudo apt-get install -y cmake
+      - run: cargo test --workspace --all-targets --all-features
 
   build-release:
     name: Build Release
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    needs: [check, clippy, fmt]
+    needs: [check, test, clippy, fmt]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
