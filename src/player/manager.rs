@@ -232,7 +232,8 @@ impl PlayerManager {
         // hold a DashMap shard lock across an await.
         let player_arc = entry.value().player.clone();
         drop(entry);
-        Some(player_arc.read().await.to_response())
+        let response = player_arc.read().await.to_response();
+        Some(response)
     }
 
     /// List only the players owned by `session_id`.

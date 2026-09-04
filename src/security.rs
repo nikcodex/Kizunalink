@@ -127,14 +127,14 @@ pub fn validate_url(url: &str) -> Result<(), String> {
 /// ranges, metadata endpoints, or blocked hostnames are never followed.
 pub fn redirect_policy() -> reqwest::redirect::Policy {
     reqwest::redirect::Policy::custom(|attempt| match validate_url(attempt.url().as_str()) {
-        Ok(()) => reqwest::redirect::Action::Follow,
+        Ok(()) => attempt.follow(),
         Err(e) => {
             tracing::warn!(
                 "Blocked SSRF-unsafe redirect to '{}': {}",
                 sanitize_for_log(attempt.url().as_str()),
                 e
             );
-            reqwest::redirect::Action::Stop
+            attempt.stop()
         }
     })
 }

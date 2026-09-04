@@ -9,9 +9,9 @@ pub struct Metrics {
     pub players_total: IntGauge,
     pub players_playing: IntGauge,
     pub uptime_seconds: Gauge,
-    pub frames_sent: IntCounter,
-    pub frames_nulled: IntCounter,
-    pub frames_deficit: IntCounter,
+    pub frames_sent: IntGauge,
+    pub frames_nulled: IntGauge,
+    pub frames_deficit: IntGauge,
     pub tracks_loaded: IntCounter,
     pub tracks_failed: IntCounter,
     pub ws_connections: IntGauge,
@@ -67,22 +67,22 @@ impl Metrics {
             )
             .unwrap();
 
-            let frames_sent = register_int_counter_with_registry!(
-                opts!("kizunalink_frames_sent_total", "Total audio frames sent"),
+            let frames_sent = register_int_gauge_with_registry!(
+                opts!("kizunalink_frames_sent", "Audio frames sent (snapshot)"),
                 registry
             )
             .unwrap();
 
-            let frames_nulled = register_int_counter_with_registry!(
-                opts!("kizunalink_frames_nulled_total", "Total null frames sent"),
+            let frames_nulled = register_int_gauge_with_registry!(
+                opts!("kizunalink_frames_nulled", "Null frames sent (snapshot)"),
                 registry
             )
             .unwrap();
 
-            let frames_deficit = register_int_counter_with_registry!(
+            let frames_deficit = register_int_gauge_with_registry!(
                 opts!(
-                    "kizunalink_frames_deficit_total",
-                    "Total frame deficit events"
+                    "kizunalink_frames_deficit",
+                    "Frame deficit events (snapshot)"
                 ),
                 registry
             )

@@ -115,7 +115,7 @@ fn build_trace_string(value: &serde_json::Value) -> String {
 /// When `trace_requested` is true and the response carries a Lavalink error JSON
 /// body (with a null `trace` field), replaces the null with a useful trace
 /// string. All other responses pass through untouched.
-pub async fn maybe_inject_trace(mut response: Response, trace_requested: bool) -> Response {
+pub async fn maybe_inject_trace(response: Response, trace_requested: bool) -> Response {
     if !trace_requested {
         return response;
     }
@@ -155,27 +155,27 @@ pub async fn maybe_inject_trace(mut response: Response, trace_requested: bool) -
 
     axum::response::Response::from_parts(parts, axum::body::Body::from(bytes))
 }
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn response_body(resp: Response) -> serde_json::Value {
+    async fn response_body(resp: Response) -> serde_json::Value {
         let body = resp.into_body();
-        let bytes = axum::body::to_bytes(body, 1024 * 1024);
-        let bytes = futures_util::executor::block_on(bytes).expect("read body");
+        let bytes = axum::body::to_bytes(body, 1024 * 1024)
+            .await
+            .expect("read body");
         serde_json::from_slice(&bytes).expect("json body")
     }
 
-    #[test]
-    fn test_error_response_trace_null_by_default() {
+    #[tokio::test]
+    async fn test_error_response_trace_null_by_default() {
         let err = LavalinkError::new(
             StatusCode::NOT_FOUND,
             "Session not found: abc",
             "/v4/sessions/abc",
         );
         let resp = err.into_response();
-        let body = response_body(resp);
+        let body = response_body(resp).await;
         assert!(body.get("trace").unwrap().is_null());
         assert_eq!(body.get("status").unwrap().as_u64(), Some(404));
         assert_eq!(body.get("error").unwrap().as_str(), Some("Not Found"));
@@ -192,7 +192,7 @@ mod tests {
         );
         let injected = maybe_inject_trace(err.into_response(), true).await;
         assert_eq!(injected.status(), StatusCode::NOT_FOUND);
-        let body = response_body(injected);
+        let body = response_body(injected).await;
         let trace = body.get("trace").unwrap();
         assert!(trace.is_string());
         let trace_str = trace.as_str().unwrap();
@@ -212,7 +212,8 @@ mod tests {
             "/v4/sessions/abc",
         );
         let resp = maybe_inject_trace(err.into_response(), false).await;
-        assert!(response_body(resp).get("trace").unwrap().is_null());
+        let body = response_body(resp).await;
+        assert!(body.get("trace").unwrap().is_null());
     }
 
     #[tokio::test]
@@ -223,7 +224,7 @@ mod tests {
             "/v4/info",
         );
         let injected = maybe_inject_trace(err.into_response(), true).await;
-        let body = response_body(injected);
+        let body = response_body(injected).await;
         let trace_str = body.get("trace").unwrap().as_str().unwrap();
         // The trace must never contain an actual credential value or auth scheme.
         for secret in ["youshallnotpass", "Bearer ", "ghp_", "xoxb-"] {
@@ -236,7 +237,7 @@ mod tests {
         let resp = axum::response::Json(serde_json::json!({"ok": true})).into_response();
         let resp = maybe_inject_trace(resp, true).await;
         assert_eq!(resp.status(), StatusCode::OK);
-        let body = response_body(resp);
+        let body = response_body(resp).await;
         assert_eq!(body.get("ok").unwrap().as_bool(), Some(true));
     }
 }
