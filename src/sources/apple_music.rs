@@ -113,7 +113,7 @@ impl AppleMusicSource {
                 is_stream: false,
                 position: 0,
                 title,
-                uri: preview_url.or(track_view_url),
+                uri: track_view_url.or(preview_url),
                 artwork_url: artwork,
                 isrc: None,
                 source_name: "applemusic".to_string(),

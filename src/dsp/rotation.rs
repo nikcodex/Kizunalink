@@ -19,19 +19,18 @@ impl Rotation {
         }
     }
 
-    /// Set rotation speed in Hz. 0 disables.
+    /// Set rotation speed in Hz. 0 disables. Supports negative values for counter-clockwise rotation.
     pub fn set_rotation_hz(&mut self, hz: f64) {
-        if !hz.is_finite() || hz <= 0.0 {
+        if !hz.is_finite() {
             self.rotation_hz = 0.0;
             return;
         }
-        self.rotation_hz = hz.clamp(0.0, 10.0);
+        self.rotation_hz = hz.clamp(-10.0, 10.0);
     }
 
     /// Process stereo interleaved buffer in place.
     pub fn process_buffer(&mut self, buffer: &mut [f32]) {
-        if self.rotation_hz <= 0.0
-            || self.rotation_hz.abs() < 1e-6
+        if self.rotation_hz.abs() < 1e-6
             || !self.sample_rate.is_finite()
             || self.sample_rate <= 0.0
         {
@@ -50,10 +49,7 @@ impl Rotation {
             chunk[0] = new_l as f32;
             chunk[1] = new_r as f32;
 
-            self.phase += self.rotation_hz / self.sample_rate;
-            if self.phase >= 1.0 {
-                self.phase -= 1.0;
-            }
+            self.phase = (self.phase + self.rotation_hz / self.sample_rate).rem_euclid(1.0);
         }
     }
 
@@ -160,7 +156,18 @@ mod tests {
         assert_eq!(rot.rotation_hz, 0.0);
 
         rot.set_rotation_hz(-5.0);
-        assert_eq!(rot.rotation_hz, 0.0);
+        assert_eq!(rot.rotation_hz, -5.0);
+    }
+
+    #[test]
+    fn test_rotation_negative_hz() {
+        let mut rot = Rotation::new(48000.0);
+        rot.set_rotation_hz(-1.0);
+        assert_eq!(rot.rotation_hz, -1.0);
+
+        let mut buf = vec![1.0f32, 0.0f32; 48000];
+        rot.process_buffer(&mut buf);
+        assert!(rot.phase >= 0.0 && rot.phase < 1.0);
     }
 
     #[test]

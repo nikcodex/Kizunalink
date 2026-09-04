@@ -547,15 +547,11 @@ impl GuildPlayer {
     }
 
     pub async fn seek(&mut self, position: u64) {
-        let chain_active = self.shared_chain.lock().unwrap().is_active();
-
-        if chain_active || self.filtered_active {
-            if self.is_playing {
-                self.restart_at(position).await;
-            }
-            self.play_started_at = Some(Instant::now() - Duration::from_millis(position));
+        if self.is_playing {
+            self.restart_at(position).await;
+        } else {
+            self.paused_position = position;
         }
-        self.paused_position = position;
         self.last_update = util::current_timestamp();
         self.emit_player_update();
     }
@@ -641,18 +637,7 @@ impl GuildPlayer {
             }
         }
 
-        match self.queue.loop_mode {
-            LoopMode::Track => self.queue.current.clone(),
-            LoopMode::Queue => {
-                if let Some(track) = self.queue.tracks.pop_front() {
-                    self.queue.tracks.push_back(track.clone());
-                    Some(track)
-                } else {
-                    self.queue.current.clone()
-                }
-            }
-            LoopMode::None => self.queue.tracks.pop_front(),
-        }
+        self.queue.next_track()
     }
 
     pub fn to_response(&self) -> PlayerResponse {

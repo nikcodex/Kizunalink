@@ -94,20 +94,17 @@ impl PlayerManager {
     }
 
     pub async fn get_player(&self, guild_id: &str) -> Option<PlayerResponse> {
-        if let Some(player_arc) = self.players.get(guild_id) {
-            let player = player_arc.read().await;
-            Some(player.to_response())
-        } else {
-            None
-        }
+        let player_arc = self.players.get(guild_id).map(|r| r.value().clone())?;
+        let player = player_arc.read().await;
+        Some(player.to_response())
     }
 
     pub async fn get_or_create_player(
         &self,
         guild_id: &str,
     ) -> Result<Arc<RwLock<GuildPlayer>>, String> {
-        if let Some(p) = self.players.get(guild_id) {
-            return Ok(p.clone());
+        if let Some(p) = self.players.get(guild_id).map(|r| r.value().clone()) {
+            return Ok(p);
         }
 
         if self.players.len() >= MAX_PLAYERS {
@@ -158,6 +155,13 @@ impl PlayerManager {
             .or(payload.identifier.clone());
 
         let mut should_stop_track = false;
+        if let Some(ref tp) = payload.track {
+            if tp.encoded.as_deref().unwrap_or("").trim().is_empty()
+                && tp.identifier.as_deref().unwrap_or("").trim().is_empty()
+            {
+                should_stop_track = true;
+            }
+        }
         let mut resolved_track = None;
         let mut resolved_stream_url = None;
 
@@ -350,21 +354,8 @@ impl PlayerManager {
                         return Some(url.clone());
                     }
                 }
-                let yt_url = self
-                    .youtube
-                    .resolve_video(identifier)
-                    .await
-                    .ok()
-                    .flatten()
-                    .and_then(|t| t.info.uri);
-
-                if let Some(ref u) = yt_url {
-                    if u.starts_with("http")
-                        && !u.contains("youtube.com")
-                        && !u.contains("youtu.be")
-                    {
-                        return Some(u.clone());
-                    }
+                if let Ok(stream_url) = self.youtube.resolve_stream_url(identifier).await {
+                    return Some(stream_url);
                 }
 
                 // Fallback: Mirror to JioSaavn for 320kbps audio if YouTube stream is ciphered/blocked
@@ -391,7 +382,15 @@ impl PlayerManager {
             "deezer" => self.resolve_deezer_mirror(track).await,
             "applemusic" => self.resolve_apple_music_mirror(track).await,
             "http" => track.info.uri.clone(),
-            _ => track.info.uri.clone(),
+            _ => {
+                if let Some(stream_url) =
+                    track.plugin_info.get("streamUrl").and_then(|u| u.as_str())
+                {
+                    Some(stream_url.to_string())
+                } else {
+                    track.info.uri.clone()
+                }
+            }
         }
     }
 
@@ -402,27 +401,7 @@ impl PlayerManager {
     ) -> Option<String> {
         let query = format!("{} {}", track.info.title, track.info.author);
 
-        // 1. Try ISRC-based YouTube search for exact match
-        if let Some(isrc) = &track.info.isrc {
-            let isrc_query = format!("isrc:{}", isrc);
-            if let Ok(yt_tracks) = self.youtube.search(&isrc_query, 1).await {
-                if let Some(yt_track) = yt_tracks.into_iter().next() {
-                    if let Ok(Some(yt_res)) =
-                        self.youtube.resolve_video(&yt_track.info.identifier).await
-                    {
-                        if let Some(url) = &yt_res.info.uri {
-                            info!(
-                                "⚡ Spotify->YouTube via ISRC: '{}' for '{}'",
-                                isrc, track.info.title
-                            );
-                            return Some(url.clone());
-                        }
-                    }
-                }
-            }
-        }
-
-        // 2. Try JioSaavn for 320kbps
+        // 1. Try JioSaavn for 320kbps high quality audio
         if let Ok(js_tracks) = self.jiosaavn.search(&query, 1).await {
             if let Some(first_js) = js_tracks.into_iter().next() {
                 if let Ok(url) = self
@@ -436,16 +415,32 @@ impl PlayerManager {
             }
         }
 
+        // 2. Try ISRC-based YouTube search for exact match
+        if let Some(isrc) = &track.info.isrc {
+            let isrc_query = format!("isrc:{}", isrc);
+            if let Ok(yt_tracks) = self.youtube.search(&isrc_query, 1).await {
+                if let Some(yt_track) = yt_tracks.into_iter().next() {
+                    if let Ok(url) =
+                        self.youtube.resolve_stream_url(&yt_track.info.identifier).await
+                    {
+                        info!(
+                            "⚡ Spotify->YouTube via ISRC: '{}' for '{}'",
+                            isrc, track.info.title
+                        );
+                        return Some(url);
+                    }
+                }
+            }
+        }
+
         // 3. Fallback to YouTube title/artist search
         if let Ok(yt_tracks) = self.youtube.search(&query, 1).await {
             if let Some(first_yt) = yt_tracks.into_iter().next() {
-                if let Ok(Some(yt_res)) =
-                    self.youtube.resolve_video(&first_yt.info.identifier).await
+                if let Ok(url) =
+                    self.youtube.resolve_stream_url(&first_yt.info.identifier).await
                 {
-                    if let Some(url) = yt_res.info.uri {
-                        info!("⚡ Spotify->YouTube for '{}'", track.info.title);
-                        return Some(url);
-                    }
+                    info!("⚡ Spotify->YouTube for '{}'", track.info.title);
+                    return Some(url);
                 }
             }
         }
@@ -460,24 +455,7 @@ impl PlayerManager {
     ) -> Option<String> {
         let query = format!("{} {}", track.info.title, track.info.author);
 
-        // 1. Try ISRC-based YouTube search for exact match
-        if let Some(isrc) = &track.info.isrc {
-            let isrc_query = format!("isrc:{}", isrc);
-            if let Ok(yt_tracks) = self.youtube.search(&isrc_query, 1).await {
-                if let Some(yt_track) = yt_tracks.into_iter().next() {
-                    if let Ok(Some(yt_res)) =
-                        self.youtube.resolve_video(&yt_track.info.identifier).await
-                    {
-                        if let Some(url) = &yt_res.info.uri {
-                            info!("⚡ Deezer->YouTube via ISRC for '{}'", track.info.title);
-                            return Some(url.clone());
-                        }
-                    }
-                }
-            }
-        }
-
-        // 2. Try JioSaavn
+        // 1. Try JioSaavn for 320kbps
         if let Ok(js_tracks) = self.jiosaavn.search(&query, 1).await {
             if let Some(first_js) = js_tracks.into_iter().next() {
                 if let Ok(url) = self
@@ -491,16 +469,29 @@ impl PlayerManager {
             }
         }
 
+        // 2. Try ISRC-based YouTube search for exact match
+        if let Some(isrc) = &track.info.isrc {
+            let isrc_query = format!("isrc:{}", isrc);
+            if let Ok(yt_tracks) = self.youtube.search(&isrc_query, 1).await {
+                if let Some(yt_track) = yt_tracks.into_iter().next() {
+                    if let Ok(url) =
+                        self.youtube.resolve_stream_url(&yt_track.info.identifier).await
+                    {
+                        info!("⚡ Deezer->YouTube via ISRC for '{}'", track.info.title);
+                        return Some(url);
+                    }
+                }
+            }
+        }
+
         // 3. Fallback to YouTube title/artist search
         if let Ok(yt_tracks) = self.youtube.search(&query, 1).await {
             if let Some(first_yt) = yt_tracks.into_iter().next() {
-                if let Ok(Some(yt_res)) =
-                    self.youtube.resolve_video(&first_yt.info.identifier).await
+                if let Ok(url) =
+                    self.youtube.resolve_stream_url(&first_yt.info.identifier).await
                 {
-                    if let Some(url) = yt_res.info.uri {
-                        info!("⚡ Deezer->YouTube for '{}'", track.info.title);
-                        return Some(url);
-                    }
+                    info!("⚡ Deezer->YouTube for '{}'", track.info.title);
+                    return Some(url);
                 }
             }
         }
@@ -526,24 +517,7 @@ impl PlayerManager {
     ) -> Option<String> {
         let query = format!("{} {}", track.info.title, track.info.author);
 
-        // 1. Try ISRC-based YouTube search for exact match
-        if let Some(isrc) = &track.info.isrc {
-            let isrc_query = format!("isrc:{}", isrc);
-            if let Ok(yt_tracks) = self.youtube.search(&isrc_query, 1).await {
-                if let Some(yt_track) = yt_tracks.into_iter().next() {
-                    if let Ok(Some(yt_res)) =
-                        self.youtube.resolve_video(&yt_track.info.identifier).await
-                    {
-                        if let Some(url) = &yt_res.info.uri {
-                            info!("⚡ AppleMusic->YouTube via ISRC for '{}'", track.info.title);
-                            return Some(url.clone());
-                        }
-                    }
-                }
-            }
-        }
-
-        // 2. Try JioSaavn
+        // 1. Try JioSaavn
         if let Ok(js_tracks) = self.jiosaavn.search(&query, 1).await {
             if let Some(first_js) = js_tracks.into_iter().next() {
                 if let Ok(url) = self
@@ -557,16 +531,29 @@ impl PlayerManager {
             }
         }
 
+        // 2. Try ISRC-based YouTube search for exact match
+        if let Some(isrc) = &track.info.isrc {
+            let isrc_query = format!("isrc:{}", isrc);
+            if let Ok(yt_tracks) = self.youtube.search(&isrc_query, 1).await {
+                if let Some(yt_track) = yt_tracks.into_iter().next() {
+                    if let Ok(url) =
+                        self.youtube.resolve_stream_url(&yt_track.info.identifier).await
+                    {
+                        info!("⚡ AppleMusic->YouTube via ISRC for '{}'", track.info.title);
+                        return Some(url);
+                    }
+                }
+            }
+        }
+
         // 3. Fallback to YouTube title/artist search
         if let Ok(yt_tracks) = self.youtube.search(&query, 1).await {
             if let Some(first_yt) = yt_tracks.into_iter().next() {
-                if let Ok(Some(yt_res)) =
-                    self.youtube.resolve_video(&first_yt.info.identifier).await
+                if let Ok(url) =
+                    self.youtube.resolve_stream_url(&first_yt.info.identifier).await
                 {
-                    if let Some(url) = yt_res.info.uri {
-                        info!("⚡ AppleMusic->YouTube for '{}'", track.info.title);
-                        return Some(url);
-                    }
+                    info!("⚡ AppleMusic->YouTube for '{}'", track.info.title);
+                    return Some(url);
                 }
             }
         }
@@ -613,85 +600,93 @@ impl PlayerManager {
     }
 
     pub async fn skip_track(&self, guild_id: &str) -> Result<PlayerResponse, String> {
-        if let Some(player_arc) = self.players.get(guild_id) {
-            let mut player = player_arc.write().await;
-            let next = player.skip_to_next();
+        let player_arc = self
+            .players
+            .get(guild_id)
+            .map(|r| r.value().clone())
+            .ok_or_else(|| "Player not found".to_string())?;
 
-            if let Some(track) = next {
-                drop(player);
-                if let Some(url) = self.resolve_stream_url(&track).await {
-                    let mut player = player_arc.write().await;
-                    player.play_track(track, url).await;
-                    return Ok(player.to_response());
-                }
+        let mut player = player_arc.write().await;
+        let next = player.skip_to_next();
+
+        if let Some(track) = next {
+            drop(player);
+            if let Some(url) = self.resolve_stream_url(&track).await {
+                let mut player = player_arc.write().await;
+                player.play_track(track, url).await;
+                return Ok(player.to_response());
             }
-
-            let player = player_arc.read().await;
-            Ok(player.to_response())
-        } else {
-            Err("Player not found".to_string())
         }
+
+        let player = player_arc.read().await;
+        Ok(player.to_response())
     }
 
     pub async fn previous_track(&self, guild_id: &str) -> Result<PlayerResponse, String> {
-        if let Some(player_arc) = self.players.get(guild_id) {
-            let mut player = player_arc.write().await;
-            let prev = player.skip_to_previous();
+        let player_arc = self
+            .players
+            .get(guild_id)
+            .map(|r| r.value().clone())
+            .ok_or_else(|| "Player not found".to_string())?;
 
-            if let Some(track) = prev {
-                drop(player);
-                if let Some(url) = self.resolve_stream_url(&track).await {
-                    let mut player = player_arc.write().await;
-                    player.play_track(track, url).await;
-                    return Ok(player.to_response());
-                }
+        let mut player = player_arc.write().await;
+        let prev = player.skip_to_previous();
+
+        if let Some(track) = prev {
+            drop(player);
+            if let Some(url) = self.resolve_stream_url(&track).await {
+                let mut player = player_arc.write().await;
+                player.play_track(track, url).await;
+                return Ok(player.to_response());
             }
-
-            let player = player_arc.read().await;
-            Ok(player.to_response())
-        } else {
-            Err("Player not found".to_string())
         }
+
+        let player = player_arc.read().await;
+        Ok(player.to_response())
     }
 
     pub async fn toggle_autoplay(&self, guild_id: &str) -> Result<bool, String> {
-        if let Some(player_arc) = self.players.get(guild_id) {
-            let mut player = player_arc.write().await;
-            let enabled = player.autoplay.toggle();
-            Ok(enabled)
-        } else {
-            Err("Player not found".to_string())
-        }
+        let player_arc = self
+            .players
+            .get(guild_id)
+            .map(|r| r.value().clone())
+            .ok_or_else(|| "Player not found".to_string())?;
+        let mut player = player_arc.write().await;
+        let enabled = player.autoplay.toggle();
+        Ok(enabled)
     }
 
     pub async fn set_loop_mode(&self, guild_id: &str, mode: LoopMode) -> Result<LoopMode, String> {
-        if let Some(player_arc) = self.players.get(guild_id) {
-            let mut player = player_arc.write().await;
-            player.set_loop(mode);
-            Ok(player.queue.loop_mode)
-        } else {
-            Err("Player not found".to_string())
-        }
+        let player_arc = self
+            .players
+            .get(guild_id)
+            .map(|r| r.value().clone())
+            .ok_or_else(|| "Player not found".to_string())?;
+        let mut player = player_arc.write().await;
+        player.set_loop(mode);
+        Ok(player.queue.loop_mode)
     }
 
     pub async fn shuffle_queue(&self, guild_id: &str) -> Result<PlayerResponse, String> {
-        if let Some(player_arc) = self.players.get(guild_id) {
-            let mut player = player_arc.write().await;
-            player.shuffle_queue();
-            Ok(player.to_response())
-        } else {
-            Err("Player not found".to_string())
-        }
+        let player_arc = self
+            .players
+            .get(guild_id)
+            .map(|r| r.value().clone())
+            .ok_or_else(|| "Player not found".to_string())?;
+        let mut player = player_arc.write().await;
+        player.shuffle_queue();
+        Ok(player.to_response())
     }
 
     pub async fn clear_queue(&self, guild_id: &str) -> Result<PlayerResponse, String> {
-        if let Some(player_arc) = self.players.get(guild_id) {
-            let mut player = player_arc.write().await;
-            player.clear_queue();
-            Ok(player.to_response())
-        } else {
-            Err("Player not found".to_string())
-        }
+        let player_arc = self
+            .players
+            .get(guild_id)
+            .map(|r| r.value().clone())
+            .ok_or_else(|| "Player not found".to_string())?;
+        let mut player = player_arc.write().await;
+        player.clear_queue();
+        Ok(player.to_response())
     }
 
     pub fn destroy_player(&self, guild_id: &str) -> bool {
@@ -707,8 +702,8 @@ impl PlayerManager {
     }
 
     pub async fn handle_track_end(&self, guild_id: &str) {
-        let player_arc = match self.players.get(guild_id) {
-            Some(p) => p.clone(),
+        let player_arc = match self.players.get(guild_id).map(|r| r.value().clone()) {
+            Some(p) => p,
             None => return,
         };
 
@@ -766,10 +761,12 @@ impl PlayerManager {
     }
 
     pub async fn count_players(&self) -> (usize, usize) {
-        let total = self.players.len();
+        let players: Vec<Arc<RwLock<GuildPlayer>>> =
+            self.players.iter().map(|r| r.value().clone()).collect();
+        let total = players.len();
         let mut playing = 0;
-        for item in self.players.iter() {
-            if item.value().read().await.is_actively_playing() {
+        for p in players {
+            if p.read().await.is_actively_playing() {
                 playing += 1;
             }
         }
@@ -777,16 +774,19 @@ impl PlayerManager {
     }
 
     pub async fn get_all_players(&self) -> Vec<PlayerResponse> {
-        let mut responses = Vec::new();
-        for item in self.players.iter() {
-            let player = item.value().read().await;
+        let players: Vec<Arc<RwLock<GuildPlayer>>> =
+            self.players.iter().map(|r| r.value().clone()).collect();
+        let mut responses = Vec::with_capacity(players.len());
+        for p in players {
+            let player = p.read().await;
             responses.push(player.to_response());
         }
         responses
     }
 
     pub async fn is_actively_playing(&self, guild_id: &str) -> bool {
-        if let Some(player) = self.players.get(guild_id) {
+        let player_arc = self.players.get(guild_id).map(|r| r.value().clone());
+        if let Some(player) = player_arc {
             player.read().await.is_actively_playing()
         } else {
             false

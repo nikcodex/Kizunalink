@@ -64,19 +64,22 @@ pub async fn get_info(
         },
         jvm: "Rust (Tokio)".to_string(),
         lavaplayer: "symphonia-0.5".to_string(),
-        source_managers: vec![
-            "jiosaavn".to_string(),
-            "youtube".to_string(),
-            "spotify".to_string(),
-            "soundcloud".to_string(),
-            "bandcamp".to_string(),
-            "twitch".to_string(),
-            "vimeo".to_string(),
-            "niconico".to_string(),
-            "http".to_string(),
-            "applemusic".to_string(),
-            "deezer".to_string(),
-        ],
+        source_managers: {
+            let mut sm = Vec::new();
+            if state.sources.jiosaavn { sm.push("jiosaavn".to_string()); }
+            if state.sources.youtube { sm.push("youtube".to_string()); }
+            if state.sources.spotify { sm.push("spotify".to_string()); }
+            if state.sources.soundcloud { sm.push("soundcloud".to_string()); }
+            if state.sources.bandcamp { sm.push("bandcamp".to_string()); }
+            if state.sources.twitch { sm.push("twitch".to_string()); }
+            if state.sources.vimeo { sm.push("vimeo".to_string()); }
+            if state.sources.niconico { sm.push("niconico".to_string()); }
+            if state.sources.http { sm.push("http".to_string()); }
+            if state.sources.local { sm.push("local".to_string()); }
+            if state.sources.applemusic { sm.push("applemusic".to_string()); }
+            if state.sources.deezer { sm.push("deezer".to_string()); }
+            sm
+        },
         filters: vec![
             "volume".to_string(),
             "equalizer".to_string(),

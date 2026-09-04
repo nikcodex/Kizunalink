@@ -56,6 +56,7 @@ impl IntoResponse for LavalinkError {
             "timestamp": crate::util::current_timestamp(),
             "status": self.status,
             "error": self.error,
+            "trace": serde_json::Value::Null,
             "message": self.message,
             "path": self.path,
         });

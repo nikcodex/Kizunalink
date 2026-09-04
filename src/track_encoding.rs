@@ -37,7 +37,7 @@ pub fn decode_track(encoded: &str) -> Result<LavalinkTrack, TrackDecodeError> {
     cursor
         .read_exact(&mut buf4)
         .map_err(|e| TrackDecodeError::IoError(e.to_string()))?;
-    let prefix = i32::from_be_bytes(buf4);
+    let prefix = u32::from_be_bytes(buf4);
     let flags = (prefix >> 30) & 1;
 
     // Check version
@@ -69,13 +69,16 @@ pub fn decode_track(encoded: &str) -> Result<LavalinkTrack, TrackDecodeError> {
         .map_err(|e| TrackDecodeError::IoError(e.to_string()))?;
     let is_stream = buf1[0] != 0;
 
-    cursor
-        .read_exact(&mut buf1)
-        .map_err(|e| TrackDecodeError::IoError(e.to_string()))?;
-    let has_uri = buf1[0] != 0;
-
-    let uri = if has_uri {
-        Some(read_utf(&mut cursor)?)
+    let uri = if version >= 2 {
+        cursor
+            .read_exact(&mut buf1)
+            .map_err(|e| TrackDecodeError::IoError(e.to_string()))?;
+        let has_uri = buf1[0] != 0;
+        if has_uri {
+            Some(read_utf(&mut cursor)?)
+        } else {
+            None
+        }
     } else {
         None
     };
@@ -83,10 +86,7 @@ pub fn decode_track(encoded: &str) -> Result<LavalinkTrack, TrackDecodeError> {
     let (artwork_url, isrc, source_name) = if version >= 3 {
         let artwork = read_nullable_text(&mut cursor)?;
         let isrc_code = read_nullable_text(&mut cursor)?;
-        let src = match read_nullable_text(&mut cursor)? {
-            Some(s) if !s.is_empty() => s,
-            _ => read_utf(&mut cursor).unwrap_or_else(|_| "unknown".to_string()),
-        };
+        let src = read_utf(&mut cursor)?;
         (artwork, isrc_code, src)
     } else {
         let src = read_utf(&mut cursor)?;
@@ -161,10 +161,10 @@ pub fn encode_track(track: &LavalinkTrack) -> Result<String, TrackDecodeError> {
         output.push(0);
     }
 
-    // Version 3 fields: artworkUrl, isrc, sourceName (all NullableText)
+    // Version 3 fields: artworkUrl, isrc, sourceName (artwork & isrc are NullableText, sourceName is standard UTF)
     write_nullable_text(&mut output, track.info.artwork_url.as_deref())?;
     write_nullable_text(&mut output, track.info.isrc.as_deref())?;
-    write_nullable_text(&mut output, Some(&track.info.source_name))?;
+    write_utf(&mut output, &track.info.source_name)?;
 
     // Probe info for http / local
     if track.info.source_name == "http" || track.info.source_name == "local" {
@@ -208,35 +208,25 @@ fn write_utf(writer: &mut Vec<u8>, s: &str) -> Result<(), TrackDecodeError> {
 }
 
 fn read_nullable_text(reader: &mut Cursor<&Vec<u8>>) -> Result<Option<String>, TrackDecodeError> {
-    let mut len_buf = [0u8; 2];
+    let mut flag = [0u8; 1];
     reader
-        .read_exact(&mut len_buf)
+        .read_exact(&mut flag)
         .map_err(|e| TrackDecodeError::IoError(e.to_string()))?;
-    let len = u16::from_be_bytes(len_buf);
-    if len == 0xFFFF {
-        return Ok(None);
+    if flag[0] == 0 {
+        Ok(None)
+    } else {
+        read_utf(reader).map(Some)
     }
-    let mut str_buf = vec![0u8; len as usize];
-    reader
-        .read_exact(&mut str_buf)
-        .map_err(|e| TrackDecodeError::IoError(e.to_string()))?;
-    String::from_utf8(str_buf)
-        .map(Some)
-        .map_err(|e| TrackDecodeError::Utf8Error(e.to_string()))
 }
 
 fn write_nullable_text(writer: &mut Vec<u8>, text: Option<&str>) -> Result<(), TrackDecodeError> {
     match text {
         Some(s) if !s.is_empty() => {
-            let bytes = s.as_bytes();
-            if bytes.len() > 0xFFFE {
-                return Err(TrackDecodeError::StringTooLong);
-            }
-            writer.extend_from_slice(&(bytes.len() as u16).to_be_bytes());
-            writer.extend_from_slice(bytes);
+            writer.push(1);
+            write_utf(writer, s)?;
         }
         _ => {
-            writer.extend_from_slice(&0xFFFFu16.to_be_bytes());
+            writer.push(0);
         }
     }
     Ok(())
@@ -364,5 +354,58 @@ mod tests {
     fn test_decode_invalid_data() {
         assert!(decode_track("invalid-base64-content!").is_err());
         assert!(decode_track("").is_err());
+    }
+
+    #[test]
+    fn test_v1_legacy_track_decoding() {
+        let mut output = Vec::new();
+        output.extend_from_slice(&[0, 0, 0, 0]); // header placeholder (flags = 0, v1)
+        write_utf(&mut output, "V1 Title").unwrap();
+        write_utf(&mut output, "V1 Author").unwrap();
+        output.extend_from_slice(&60000u64.to_be_bytes());
+        write_utf(&mut output, "v1_id").unwrap();
+        output.push(0); // not stream
+        // In v1, NO uri exists! Immediately writes sourceName:
+        write_utf(&mut output, "youtube").unwrap();
+        output.extend_from_slice(&0u64.to_be_bytes()); // position
+
+        let len = (output.len() - 4) as u32;
+        let header = len & 0x3FFFFFFF; // flags = 0
+        output[0..4].copy_from_slice(&header.to_be_bytes());
+
+        let b64 = STANDARD.encode(&output);
+        let decoded = decode_track(&b64).expect("Failed to decode v1 track");
+        assert_eq!(decoded.info.title, "V1 Title");
+        assert_eq!(decoded.info.author, "V1 Author");
+        assert_eq!(decoded.info.source_name, "youtube");
+        assert_eq!(decoded.info.uri, None);
+    }
+
+    #[test]
+    fn test_v3_with_null_artwork_and_isrc() {
+        let mut output = Vec::new();
+        output.extend_from_slice(&[0, 0, 0, 0]); // header placeholder
+        output.push(3); // version 3
+        write_utf(&mut output, "V3 Title").unwrap();
+        write_utf(&mut output, "V3 Author").unwrap();
+        output.extend_from_slice(&120000u64.to_be_bytes());
+        write_utf(&mut output, "v3_id").unwrap();
+        output.push(0); // not stream
+        output.push(1); // has uri
+        write_utf(&mut output, "https://example.com/v3").unwrap();
+        output.push(0); // artwork null (1 byte 0x00)
+        output.push(0); // isrc null (1 byte 0x00)
+        write_utf(&mut output, "spotify").unwrap();
+        output.extend_from_slice(&0u64.to_be_bytes()); // position
+
+        let len = (output.len() - 4) as u32;
+        let header = (len & 0x3FFFFFFF) | (1 << 30);
+        output[0..4].copy_from_slice(&header.to_be_bytes());
+
+        let b64 = STANDARD.encode(&output);
+        let decoded = decode_track(&b64).expect("Failed to decode v3 track");
+        assert_eq!(decoded.info.artwork_url, None);
+        assert_eq!(decoded.info.isrc, None);
+        assert_eq!(decoded.info.source_name, "spotify");
     }
 }

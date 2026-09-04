@@ -228,7 +228,7 @@ impl DeezerSource {
                 is_stream: false,
                 position: 0,
                 title,
-                uri: preview.or(link),
+                uri: link.or(preview),
                 artwork_url: artwork,
                 isrc,
                 source_name: "deezer".to_string(),

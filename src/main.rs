@@ -34,10 +34,8 @@ async fn health_check() -> axum::Json<serde_json::Value> {
     }))
 }
 
-async fn version_handler() -> axum::Json<serde_json::Value> {
-    axum::Json(serde_json::json!({
-        "version": VERSION,
-    }))
+async fn version_handler() -> &'static str {
+    VERSION
 }
 
 #[tokio::main]
@@ -130,6 +128,7 @@ async fn main() {
         password,
         start_time: std::time::Instant::now(),
         event_tx,
+        sources: config.sources.clone(),
     };
 
     // Clone state for global broadcast tasks and shutdown cleanup before the router consumes it
@@ -252,12 +251,16 @@ async fn main() {
     });
 
     // Periodic cleanup task for rate limiter and stale sessions
+    let cleanup_pm = state.player_manager.clone();
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(300));
         loop {
             interval.tick().await;
             rate_limiter.cleanup().await;
-            session_cleanup.cleanup_stale();
+            let expired_guilds = session_cleanup.cleanup_stale();
+            for gid in expired_guilds {
+                cleanup_pm.destroy_player(&gid);
+            }
         }
     });
 

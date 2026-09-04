@@ -53,10 +53,13 @@ impl VoiceUdp {
             .map_err(|e| Error::Transport(e.to_string()))?;
 
         let mut response = vec![0u8; 74];
-        let len = socket
-            .recv(&mut response)
-            .await
-            .map_err(|e| Error::Transport(e.to_string()))?;
+        let len = tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            socket.recv(&mut response),
+        )
+        .await
+        .map_err(|_| Error::Transport("IP discovery request timed out".into()))?
+        .map_err(|e| Error::Transport(e.to_string()))?;
 
         if len < 74 {
             return Err(Error::Transport(

@@ -135,12 +135,15 @@ impl VimeoSource {
                 is_stream: false,
                 position: 0,
                 title,
-                uri: stream_url,
+                uri: Some(format!("https://vimeo.com/{}", video_id)),
                 artwork_url: thumbnail,
                 isrc: None,
                 source_name: "vimeo".to_string(),
             },
-            plugin_info: serde_json::json!({}),
+            plugin_info: match stream_url {
+                Some(ref u) => serde_json::json!({ "streamUrl": u }),
+                None => serde_json::json!({}),
+            },
             user_data: serde_json::json!({}),
         };
 

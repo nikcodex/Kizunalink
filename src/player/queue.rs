@@ -57,23 +57,14 @@ impl TrackQueue {
                 self.tracks.pop_front()
             }
             LoopMode::Queue => {
-                if self.tracks.is_empty() {
-                    return self.current.clone();
-                }
-                // Move current to history first
                 if let Some(current) = self.current.take() {
-                    self.previous.push_back(current);
+                    self.previous.push_back(current.clone());
                     if self.previous.len() > self.max_history {
                         self.previous.pop_front();
                     }
+                    self.tracks.push_back(current);
                 }
-                if let Some(track) = self.tracks.pop_front() {
-                    self.tracks.push_back(track.clone());
-                    Some(track)
-                } else {
-                    // Queue exhausted — loop back from history
-                    None
-                }
+                self.tracks.pop_front()
             }
             LoopMode::None => {
                 // Move current to history first
@@ -138,5 +129,70 @@ impl TrackQueue {
             LoopMode::Queue => LoopMode::None,
         };
         self.loop_mode
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::track::TrackInfo;
+
+    fn make_test_track(id: &str) -> LavalinkTrack {
+        LavalinkTrack {
+            encoded: id.to_string(),
+            info: TrackInfo {
+                identifier: id.to_string(),
+                is_seekable: true,
+                author: "Test Author".to_string(),
+                length: 1000,
+                is_stream: false,
+                position: 0,
+                title: format!("Title {}", id),
+                uri: Some(format!("https://example.com/{}", id)),
+                artwork_url: None,
+                isrc: None,
+                source_name: "test".to_string(),
+            },
+            plugin_info: serde_json::Value::Null,
+            user_data: serde_json::Value::Null,
+        }
+    }
+
+    #[test]
+    fn test_queue_loop_mode_rotates_in_order() {
+        let mut queue = TrackQueue::new(10);
+        queue.set_loop(LoopMode::Queue);
+
+        let t1 = make_test_track("1");
+        let t2 = make_test_track("2");
+        let t3 = make_test_track("3");
+
+        queue.add(t1);
+        queue.add(t2);
+        queue.add(t3);
+
+        // First track popped from queue
+        let track1 = queue.next_track().unwrap();
+        assert_eq!(track1.info.identifier, "1");
+        queue.current = Some(track1);
+
+        // When track 1 finishes, track 2 should play, track 1 is requeued
+        let track2 = queue.next_track().unwrap();
+        assert_eq!(track2.info.identifier, "2");
+        queue.current = Some(track2);
+
+        // When track 2 finishes, track 3 should play, track 2 is requeued
+        let track3 = queue.next_track().unwrap();
+        assert_eq!(track3.info.identifier, "3");
+        queue.current = Some(track3);
+
+        // When track 3 finishes, track 1 should play again!
+        let track1_again = queue.next_track().unwrap();
+        assert_eq!(track1_again.info.identifier, "1");
+        queue.current = Some(track1_again);
+
+        // Followed by track 2 again
+        let track2_again = queue.next_track().unwrap();
+        assert_eq!(track2_again.info.identifier, "2");
     }
 }

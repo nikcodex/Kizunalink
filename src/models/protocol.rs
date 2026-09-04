@@ -77,7 +77,7 @@ pub struct StatsPayload {
     pub uptime: u64,
     pub memory: MemoryStats,
     pub cpu: CpuStats,
-    #[serde(rename = "frameStats")]
+    #[serde(rename = "frameStats", skip_serializing_if = "Option::is_none")]
     pub frame_stats: Option<FrameStats>,
 }
 

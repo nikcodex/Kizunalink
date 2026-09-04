@@ -47,4 +47,5 @@ pub struct AppState {
     pub password: String,
     pub start_time: std::time::Instant,
     pub event_tx: broadcast::Sender<String>,
+    pub sources: config::SourcesConfig,
 }

@@ -19,7 +19,6 @@ pub async fn get_stats(
     let uptime = state.start_time.elapsed().as_millis() as u64;
     let memory = system_stats.get_memory_stats().await;
     let cpu = system_stats.get_cpu_stats().await;
-    let frame_stats = Some(FrameCounters::global().snapshot());
 
     Ok(Json(StatsPayload {
         players: total_players,
@@ -27,6 +26,6 @@ pub async fn get_stats(
         uptime,
         memory,
         cpu,
-        frame_stats,
+        frame_stats: None,
     }))
 }

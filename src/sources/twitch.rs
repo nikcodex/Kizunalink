@@ -107,12 +107,12 @@ impl TwitchSource {
                     is_stream: true,
                     position: 0,
                     title: format!("Twitch: {}", channel),
-                    uri: Some(stream_url),
+                    uri: Some(format!("https://twitch.tv/{}", channel)),
                     artwork_url: None,
                     isrc: None,
                     source_name: "twitch".to_string(),
                 },
-                plugin_info: serde_json::json!({}),
+                plugin_info: serde_json::json!({ "streamUrl": stream_url }),
                 user_data: serde_json::json!({}),
             };
 

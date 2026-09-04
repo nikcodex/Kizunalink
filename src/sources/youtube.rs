@@ -108,26 +108,19 @@ impl YouTubeSource {
                 endpoint, INNERTUBE_API_KEY
             );
 
-            let mut headers = HeaderMap::new();
-            headers.insert(USER_AGENT, HeaderValue::from_static(it_client.user_agent));
-            headers.insert(
-                "X-YouTube-Client-Name",
-                HeaderValue::from_str(&it_client.client_id.to_string()).unwrap(),
-            );
-            headers.insert(
-                "X-YouTube-Client-Version",
-                HeaderValue::from_static(it_client.client_version),
-            );
-            headers.insert(ACCEPT, HeaderValue::from_static("application/json"));
-
-            let it_client_http = crate::config::global_proxy()
-                .apply_to_builder(reqwest::Client::builder())
-                .default_headers(headers)
-                .timeout(std::time::Duration::from_secs(10))
-                .build()
-                .unwrap_or_else(|_| client.clone());
-
-            let mut req = it_client_http.post(&url).json(payload);
+            let mut req = client
+                .post(&url)
+                .header(USER_AGENT, it_client.user_agent)
+                .header(
+                    "X-YouTube-Client-Name",
+                    it_client.client_id.to_string(),
+                )
+                .header(
+                    "X-YouTube-Client-Version",
+                    it_client.client_version,
+                )
+                .header(ACCEPT, "application/json")
+                .json(payload);
 
             if let Some(oauth) = self.oauth_token.read().await.as_ref() {
                 req = req.bearer_auth(oauth);
@@ -266,9 +259,6 @@ impl YouTubeSource {
                     .map(|s| s.to_string())
             });
 
-        let stream_url =
-            audio_url.unwrap_or_else(|| format!("https://www.youtube.com/watch?v={}", video_id));
-
         let mut track = LavalinkTrack {
             encoded: String::new(),
             info: TrackInfo {
@@ -279,7 +269,7 @@ impl YouTubeSource {
                 is_stream: false,
                 position: 0,
                 title,
-                uri: Some(stream_url),
+                uri: Some(format!("https://www.youtube.com/watch?v={}", video_id)),
                 artwork_url: artwork,
                 isrc: None,
                 source_name: "youtube".to_string(),
@@ -293,6 +283,58 @@ impl YouTubeSource {
         }
 
         Ok(Some(track))
+    }
+
+    /// Resolve direct playable audio stream URL for a YouTube video ID.
+    pub async fn resolve_stream_url(&self, video_id: &str) -> Result<String, String> {
+        let mut payload = serde_json::json!({
+            "context": {
+                "client": {
+                    "clientName": "WEB",
+                    "clientVersion": "2.20241126.01.00",
+                    "hl": "en",
+                    "gl": "US",
+                }
+            },
+            "videoId": video_id,
+        });
+
+        if let Some(po) = self.po_token.read().await.as_ref() {
+            if let Some(obj) = payload.as_object_mut() {
+                obj.insert(
+                    "serviceIntegrityDimensions".to_string(),
+                    serde_json::json!({ "poToken": po }),
+                );
+            }
+        }
+
+        let json = self.innertube_request("player", &payload).await?;
+        let audio_url = json
+            .get("streamingData")
+            .and_then(|s| s.get("adaptiveFormats"))
+            .and_then(|f| f.as_array())
+            .and_then(|formats| {
+                formats
+                    .iter()
+                    .find(|f| {
+                        f.get("mimeType")
+                            .and_then(|m| m.as_str())
+                            .map(|m| m.contains("audio/webm") && m.contains("opus"))
+                            .unwrap_or(false)
+                    })
+                    .or_else(|| {
+                        formats.iter().find(|f| {
+                            f.get("mimeType")
+                                .and_then(|m| m.as_str())
+                                .map(|m| m.contains("audio/"))
+                                .unwrap_or(false)
+                        })
+                    })
+                    .and_then(|f| f.get("url").and_then(|u| u.as_str()))
+                    .map(|s| s.to_string())
+            });
+
+        audio_url.ok_or_else(|| "No direct audio stream URL found in YouTube player response".to_string())
     }
 
     /// Search YouTube using InnerTube with multi-client fallback

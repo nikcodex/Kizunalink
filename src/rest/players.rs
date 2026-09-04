@@ -69,9 +69,19 @@ pub async fn get_players(
     let path = format!("/v4/sessions/{}/players", session_id);
     require_auth(&headers, &state.password, &path)?;
 
-    // Single-session server: return all players.
-    // In a multi-session setup, filter by session_id stored on each player.
-    let players = state.player_manager.get_all_players().await;
+    if state.session_manager.get_session(&session_id).is_none() {
+        return Err(LavalinkError::new(
+            StatusCode::NOT_FOUND,
+            format!("Session not found: {}", session_id),
+            path,
+        ));
+    }
+
+    let all = state.player_manager.get_all_players().await;
+    let players: Vec<PlayerResponse> = all
+        .into_iter()
+        .filter(|p| state.session_manager.is_guild_subscribed(&session_id, &p.guild_id))
+        .collect();
     Ok(Json(players))
 }
 
@@ -83,8 +93,24 @@ pub async fn get_player(
     let path = format!("/v4/sessions/{}/players/{}", session_id, guild_id);
     require_auth(&headers, &state.password, &path)?;
 
+    if state.session_manager.get_session(&session_id).is_none() {
+        return Err(LavalinkError::new(
+            StatusCode::NOT_FOUND,
+            format!("Session not found: {}", session_id),
+            &path,
+        ));
+    }
+
     if let Err(e) = security::validate_guild_id(&guild_id) {
         return Err(LavalinkError::new(StatusCode::BAD_REQUEST, e, path));
+    }
+
+    if !state.session_manager.is_guild_subscribed(&session_id, &guild_id) {
+        return Err(LavalinkError::new(
+            StatusCode::NOT_FOUND,
+            format!("Player not found for guild: {}", guild_id),
+            path,
+        ));
     }
 
     match state.player_manager.get_player(&guild_id).await {
@@ -106,6 +132,14 @@ pub async fn update_player(
 ) -> Result<Json<PlayerResponse>, LavalinkError> {
     let path = format!("/v4/sessions/{}/players/{}", session_id, guild_id);
     require_auth(&headers, &state.password, &path)?;
+
+    if state.session_manager.get_session(&session_id).is_none() {
+        return Err(LavalinkError::new(
+            StatusCode::NOT_FOUND,
+            format!("Session not found: {}", session_id),
+            &path,
+        ));
+    }
 
     // Rate limit check
     let ip = extract_ip(&headers, "0.0.0.0");
@@ -152,8 +186,24 @@ pub async fn destroy_player(
     let path = format!("/v4/sessions/{}/players/{}", session_id, guild_id);
     require_auth(&headers, &state.password, &path)?;
 
+    if state.session_manager.get_session(&session_id).is_none() {
+        return Err(LavalinkError::new(
+            StatusCode::NOT_FOUND,
+            format!("Session not found: {}", session_id),
+            &path,
+        ));
+    }
+
     if let Err(e) = security::validate_guild_id(&guild_id) {
         return Err(LavalinkError::new(StatusCode::BAD_REQUEST, e, path));
+    }
+
+    if !state.session_manager.is_guild_subscribed(&session_id, &guild_id) {
+        return Err(LavalinkError::new(
+            StatusCode::NOT_FOUND,
+            format!("Player not found for guild: {}", guild_id),
+            path,
+        ));
     }
 
     state.session_manager.remove_guild(&session_id, &guild_id);

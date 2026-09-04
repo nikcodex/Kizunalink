@@ -69,22 +69,16 @@ impl Distortion {
         m.tan()
     }
 
-    #[inline]
-    fn unit(x: f64, scale: f64, offset: f64) -> f64 {
-        // normalize output of each shaping function into roughly [-1, 1]
-        (x * scale + offset).clamp(-4.0, 4.0) / 4.0
-    }
-
     /// Process a single sample.
     #[inline]
     pub fn process(&mut self, input: f64) -> f64 {
-        let x = input * self.scale + self.offset;
+        let sin_part = (input * self.sin_scale + self.sin_offset).sin();
+        let cos_part = (input * self.cos_scale + self.cos_offset).cos();
+        let tan_arg = input * self.tan_scale + self.tan_offset;
+        let tan_part = Self::wrapped_tan(tan_arg);
+        let linear_part = input * self.scale + self.offset;
 
-        let sin_part = Self::unit(x.sin(), self.sin_scale, self.sin_offset);
-        let cos_part = Self::unit(x.cos(), self.cos_scale, self.cos_offset);
-        let tan_part = Self::unit(Self::wrapped_tan(x), self.tan_scale, self.tan_offset);
-
-        (sin_part + cos_part + tan_part) / 3.0
+        sin_part + cos_part + tan_part + linear_part
     }
 
     /// Process stereo interleaved buffer in place.
@@ -132,7 +126,7 @@ mod tests {
         dist.process_buffer(&mut buf);
 
         assert!(
-            buf.iter().all(|s| s.is_finite() && s.abs() <= 2.0),
+            buf.iter().all(|s| s.is_finite() && s.abs() <= 5.0),
             "distortion output must stay bounded"
         );
     }

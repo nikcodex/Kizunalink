@@ -191,19 +191,20 @@ impl SessionManager {
         }
     }
 
-    /// Remove a session completely and decrement metrics.
-    pub fn remove_session(&self, session_id: &str) -> bool {
-        if self.sessions.remove(session_id).is_some() {
+    /// Remove a session completely and decrement metrics. Returns the removed session state if found.
+    pub fn remove_session(&self, session_id: &str) -> Option<SessionState> {
+        if let Some((_, state)) = self.sessions.remove(session_id) {
             crate::metrics::Metrics::global().active_sessions.dec();
             info!("Session {} cleaned up", session_id);
-            true
+            Some(state)
         } else {
-            false
+            None
         }
     }
 
     /// Check if a disconnected session has expired, and remove it if so.
-    pub fn expire_if_disconnected(&self, session_id: &str) -> bool {
+    /// Returns the session's subscribed guild IDs if expired.
+    pub fn expire_if_disconnected(&self, session_id: &str) -> Option<HashSet<String>> {
         let should_remove = self
             .sessions
             .get(session_id)
@@ -211,14 +212,15 @@ impl SessionManager {
             .unwrap_or(false);
 
         if should_remove {
-            self.remove_session(session_id)
+            self.remove_session(session_id).map(|s| s.guild_ids)
         } else {
-            false
+            None
         }
     }
 
     /// Periodic cleanup of stale expired sessions.
-    pub fn cleanup_stale(&self) {
+    /// Returns all guild IDs belonging to the expired sessions.
+    pub fn cleanup_stale(&self) -> Vec<String> {
         let mut expired = Vec::new();
         for entry in self.sessions.iter() {
             let s = entry.value();
@@ -229,9 +231,13 @@ impl SessionManager {
                 }
             }
         }
+        let mut expired_guilds = Vec::new();
         for id in expired {
-            self.remove_session(&id);
+            if let Some(state) = self.remove_session(&id) {
+                expired_guilds.extend(state.guild_ids);
+            }
         }
+        expired_guilds
     }
 
     /// Count total registered sessions.

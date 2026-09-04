@@ -31,7 +31,9 @@ impl Tremolo {
     /// Process a single sample
     #[inline]
     pub fn process(&mut self, input: f64) -> f64 {
-        let modulation = 1.0 - self.depth * (self.phase * 2.0 * std::f64::consts::PI).sin();
+        let modulation =
+            ((1.0 - self.depth) + self.depth * (self.phase * 2.0 * std::f64::consts::PI).sin())
+                .max(0.0);
         self.phase += self.frequency / self.sample_rate;
         if self.phase >= 1.0 {
             self.phase -= 1.0;
@@ -42,7 +44,9 @@ impl Tremolo {
     /// Process stereo interleaved buffer
     pub fn process_buffer(&mut self, buffer: &mut [f32]) {
         for chunk in buffer.as_chunks_mut::<2>().0 {
-            let modulation = 1.0 - self.depth * (self.phase * 2.0 * std::f64::consts::PI).sin();
+            let modulation =
+                ((1.0 - self.depth) + self.depth * (self.phase * 2.0 * std::f64::consts::PI).sin())
+                    .max(0.0);
             let mod_f32 = modulation as f32;
             chunk[0] *= mod_f32;
             chunk[1] *= mod_f32;
@@ -103,8 +107,7 @@ mod tests {
         trem.set_depth(0.5);
         trem.set_frequency(2.0);
 
-        let _sample_rate = 48000.0;
-        let input: Vec<f32> = vec![1.0; 1000]; // DC signal
+        let input: Vec<f32> = vec![1.0; 48000]; // 1 second DC signal covers full cycles
 
         let mut output = input;
         trem.process_buffer(&mut output);
@@ -114,6 +117,7 @@ mod tests {
         let min = output.iter().cloned().fold(f32::INFINITY, f32::min);
 
         assert!(max > min, "Tremolo should create amplitude variation");
-        assert!(max <= 1.0, "Output should not exceed input level");
+        assert!(max <= 1.0001, "Output should not exceed input level");
+        assert!(min >= 0.0, "Output should not be negative for DC input");
     }
 }

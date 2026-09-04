@@ -242,3 +242,30 @@ fn test_lrc_integer_parser_accuracy() {
     assert_eq!(lines[3].timestamp, 150000);
     assert_eq!(lines[3].line, "Fourth line");
 }
+
+#[tokio::test]
+async fn test_session_isolation_and_guild_tracking() {
+    let sm = SessionManager::new(100, 50);
+
+    let (session_a, _, _) = sm.handle_connection(None, "user_a".to_string()).unwrap();
+    let (session_b, _, _) = sm.handle_connection(None, "user_b".to_string()).unwrap();
+
+    // Subscribe session A to guild 100
+    sm.add_guild(&session_a, "guild_100");
+
+    assert!(sm.is_guild_subscribed(&session_a, "guild_100"));
+    assert!(!sm.is_guild_subscribed(&session_b, "guild_100"));
+
+    let a_guilds = sm.get_session_guilds(&session_a);
+    let b_guilds = sm.get_session_guilds(&session_b);
+
+    assert!(a_guilds.contains("guild_100"));
+    assert!(!b_guilds.contains("guild_100"));
+}
+
+#[test]
+fn test_load_result_empty_json_matches_lavalink_v4() {
+    let empty_result = kizunalink::models::track::LoadResult::Empty;
+    let json_str = serde_json::to_string(&empty_result).expect("serialization failed");
+    assert_eq!(json_str, r#"{"loadType":"empty","data":null}"#);
+}

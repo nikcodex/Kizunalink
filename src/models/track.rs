@@ -54,7 +54,7 @@ pub struct ErrorInfo {
     pub cause_stack_trace: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "loadType", content = "data")]
 #[allow(clippy::large_enum_variant)]
 pub enum LoadResult {
@@ -68,4 +68,57 @@ pub enum LoadResult {
     Empty,
     #[serde(rename = "error")]
     Error(ErrorInfo),
+}
+
+impl Serialize for LoadResult {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeStruct;
+        match self {
+            LoadResult::Track(t) => {
+                let mut s = serializer.serialize_struct("LoadResult", 2)?;
+                s.serialize_field("loadType", "track")?;
+                s.serialize_field("data", t)?;
+                s.end()
+            }
+            LoadResult::Playlist(p) => {
+                let mut s = serializer.serialize_struct("LoadResult", 2)?;
+                s.serialize_field("loadType", "playlist")?;
+                s.serialize_field("data", p)?;
+                s.end()
+            }
+            LoadResult::Search(tracks) => {
+                let mut s = serializer.serialize_struct("LoadResult", 2)?;
+                s.serialize_field("loadType", "search")?;
+                s.serialize_field("data", tracks)?;
+                s.end()
+            }
+            LoadResult::Empty => {
+                let mut s = serializer.serialize_struct("LoadResult", 2)?;
+                s.serialize_field("loadType", "empty")?;
+                s.serialize_field("data", &serde_json::Value::Null)?;
+                s.end()
+            }
+            LoadResult::Error(e) => {
+                let mut s = serializer.serialize_struct("LoadResult", 2)?;
+                s.serialize_field("loadType", "error")?;
+                s.serialize_field("data", e)?;
+                s.end()
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_load_result_empty_serializes_with_data_null() {
+        let res = LoadResult::Empty;
+        let json = serde_json::to_string(&res).unwrap();
+        assert_eq!(json, r#"{"loadType":"empty","data":null}"#);
+    }
 }

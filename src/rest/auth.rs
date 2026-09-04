@@ -10,6 +10,7 @@ pub fn require_auth(
     let auth = match headers.get("authorization").and_then(|h| h.to_str().ok()) {
         Some(a) if !a.is_empty() => a,
         _ => {
+            crate::metrics::Metrics::global().errors_auth.inc();
             return Err(LavalinkError::new(
                 StatusCode::UNAUTHORIZED,
                 "Unauthorized: Missing authorization header",
@@ -19,6 +20,7 @@ pub fn require_auth(
     };
 
     if !constant_time_eq(auth, expected_password) {
+        crate::metrics::Metrics::global().errors_auth.inc();
         return Err(LavalinkError::new(
             StatusCode::UNAUTHORIZED,
             "Unauthorized: Invalid authorization header",

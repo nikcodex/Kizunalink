@@ -50,7 +50,7 @@ pub async fn load_tracks(
         ));
     }
 
-    info!("Resolving track query: \"{}\"", identifier);
+    info!("Resolving track query: \"{}\"", security::sanitize_for_log(&identifier));
 
     // Local audio file playback (e.g. /media/song.mp3 or file:///media/song.mp3)
     let local_path = if let Some(stripped) = identifier.strip_prefix("file://") {
@@ -62,6 +62,10 @@ pub async fn load_tracks(
     };
 
     if let Some(path_str) = local_path {
+        if !state.sources.local {
+            return Ok(Json(LoadResult::Empty));
+        }
+
         // Validate local path: prevent directory traversal and access to sensitive system directories
         let clean = path_str.trim_start_matches('/');
         if path_str.contains("..")
@@ -118,8 +122,7 @@ pub async fn load_tracks(
     // SSRF protection: validate URL for identifier-based loads
     if identifier.starts_with("http://") || identifier.starts_with("https://") {
         if let Err(e) = security::validate_url(&identifier) {
-            warn!("SSRF blocked for '{}': {}", identifier, e);
-            crate::metrics::Metrics::global().errors_auth.inc();
+            warn!("SSRF blocked for '{}': {}", security::sanitize_for_log(&identifier), e);
             return Ok(Json(LoadResult::Error(crate::models::track::ErrorInfo {
                 message: Some(format!("URL rejected: {}", e)),
                 severity: "fault".to_string(),
@@ -133,6 +136,9 @@ pub async fn load_tracks(
     if (identifier.starts_with("http://") || identifier.starts_with("https://"))
         && is_direct_audio_url(&identifier)
     {
+        if !state.sources.http {
+            return Ok(Json(LoadResult::Empty));
+        }
         let m = crate::metrics::Metrics::global();
         m.inc_source("http");
         m.tracks_loaded.inc();
@@ -143,6 +149,9 @@ pub async fn load_tracks(
 
     // Bandcamp URLs
     if identifier.contains("bandcamp.com") || identifier.contains("bcvc.live") {
+        if !state.sources.bandcamp {
+            return Ok(Json(LoadResult::Empty));
+        }
         if let Ok(Some(track)) = state.bandcamp.resolve_track(&identifier).await {
             let m = crate::metrics::Metrics::global();
             m.inc_source("bandcamp");
@@ -153,6 +162,9 @@ pub async fn load_tracks(
 
     // Twitch URLs
     if identifier.contains("twitch.tv/") {
+        if !state.sources.twitch {
+            return Ok(Json(LoadResult::Empty));
+        }
         let channel = identifier
             .split("twitch.tv/")
             .nth(1)
@@ -170,6 +182,9 @@ pub async fn load_tracks(
 
     // Vimeo URLs
     if identifier.contains("vimeo.com/") {
+        if !state.sources.vimeo {
+            return Ok(Json(LoadResult::Empty));
+        }
         let video_id = identifier
             .split("vimeo.com/")
             .nth(1)
@@ -185,6 +200,9 @@ pub async fn load_tracks(
 
     // NicoNico URLs
     if identifier.contains("nicovideo.jp/") || identifier.contains("nico.ms/") {
+        if !state.sources.niconico {
+            return Ok(Json(LoadResult::Empty));
+        }
         let video_id = identifier
             .split("nicovideo.jp/watch/")
             .nth(1)
@@ -214,6 +232,9 @@ pub async fn load_tracks(
 
     // Recommendation prefixes
     if let Some(stripped) = identifier.strip_prefix("jsrec:") {
+        if !state.sources.jiosaavn {
+            return Ok(Json(LoadResult::Empty));
+        }
         check_source_limit("jiosaavn")?;
         if let Ok(tracks) = state.jiosaavn.get_recommendations(stripped.trim()).await {
             if !tracks.is_empty() {
@@ -224,6 +245,9 @@ pub async fn load_tracks(
     }
 
     if let Some(stripped) = identifier.strip_prefix("scsearch:") {
+        if !state.sources.soundcloud {
+            return Ok(Json(LoadResult::Empty));
+        }
         check_source_limit("soundcloud")?;
         if let Ok(tracks) = state.soundcloud.search(stripped.trim(), 10).await {
             if !tracks.is_empty() {
@@ -235,6 +259,9 @@ pub async fn load_tracks(
 
     // SoundCloud set / playlist URLs
     if identifier.contains("soundcloud.com/") && identifier.contains("/sets/") {
+        if !state.sources.soundcloud {
+            return Ok(Json(LoadResult::Empty));
+        }
         check_source_limit("soundcloud")?;
         if let Ok(Some(pl)) = state.soundcloud.resolve_set(&identifier).await {
             crate::metrics::Metrics::global().inc_source("soundcloud");
@@ -244,6 +271,9 @@ pub async fn load_tracks(
 
     // Spotify URLs & search
     if identifier.contains("open.spotify.com/track/") {
+        if !state.sources.spotify {
+            return Ok(Json(LoadResult::Empty));
+        }
         check_source_limit("spotify")?;
         if let Some(track_id) = extract_spotify_id(&identifier, "track") {
             if let Ok(Some(track)) = state.spotify.resolve_track(&track_id).await {
@@ -252,6 +282,9 @@ pub async fn load_tracks(
             }
         }
     } else if identifier.contains("open.spotify.com/playlist/") {
+        if !state.sources.spotify {
+            return Ok(Json(LoadResult::Empty));
+        }
         check_source_limit("spotify")?;
         if let Some(pl_id) = extract_spotify_id(&identifier, "playlist") {
             if let Ok(Some(pl)) = state.spotify.resolve_playlist(&pl_id).await {
@@ -260,6 +293,9 @@ pub async fn load_tracks(
             }
         }
     } else if let Some(stripped) = identifier.strip_prefix("spsearch:") {
+        if !state.sources.spotify {
+            return Ok(Json(LoadResult::Empty));
+        }
         check_source_limit("spotify")?;
         if let Ok(tracks) = state.spotify.search(stripped.trim(), 10).await {
             crate::metrics::Metrics::global().inc_source("spotify");
@@ -269,6 +305,9 @@ pub async fn load_tracks(
 
     // YouTube URLs & search
     if is_youtube_url(&identifier) {
+        if !state.sources.youtube {
+            return Ok(Json(LoadResult::Empty));
+        }
         check_source_limit("youtube")?;
         if let Some(list_id) = extract_youtube_playlist_id(&identifier) {
             if let Ok(Some(pl)) = state.youtube.resolve_playlist(&list_id).await {
@@ -282,6 +321,9 @@ pub async fn load_tracks(
             return Ok(Json(LoadResult::Track(track)));
         }
     } else if let Some(stripped) = identifier.strip_prefix("ytsearch:") {
+        if !state.sources.youtube {
+            return Ok(Json(LoadResult::Empty));
+        }
         check_source_limit("youtube")?;
         if let Ok(tracks) = state.youtube.search(stripped.trim(), 10).await {
             if !tracks.is_empty() {
@@ -290,7 +332,7 @@ pub async fn load_tracks(
             }
         }
         // Fallback to JioSaavn if YouTube API is dead/rate-limited
-        if state.rate_limiter.check_source(&ip, "jiosaavn") {
+        if state.sources.jiosaavn && state.rate_limiter.check_source(&ip, "jiosaavn") {
             if let Ok(tracks) = state.jiosaavn.search(stripped.trim(), 10).await {
                 if !tracks.is_empty() {
                     crate::metrics::Metrics::global().inc_source("jiosaavn");
@@ -299,6 +341,9 @@ pub async fn load_tracks(
             }
         }
     } else if let Some(stripped) = identifier.strip_prefix("ytmsearch:") {
+        if !state.sources.youtube {
+            return Ok(Json(LoadResult::Empty));
+        }
         check_source_limit("youtube")?;
         if let Ok(tracks) = state.youtube.search(stripped.trim(), 10).await {
             if !tracks.is_empty() {
@@ -307,7 +352,7 @@ pub async fn load_tracks(
             }
         }
         // Fallback to JioSaavn if YouTube API is dead
-        if state.rate_limiter.check_source(&ip, "jiosaavn") {
+        if state.sources.jiosaavn && state.rate_limiter.check_source(&ip, "jiosaavn") {
             if let Ok(tracks) = state.jiosaavn.search(stripped.trim(), 10).await {
                 if !tracks.is_empty() {
                     crate::metrics::Metrics::global().inc_source("jiosaavn");
@@ -319,6 +364,9 @@ pub async fn load_tracks(
 
     // Apple Music URLs
     if identifier.contains("music.apple.com/") {
+        if !state.sources.applemusic {
+            return Ok(Json(LoadResult::Empty));
+        }
         check_source_limit("applemusic")?;
         if let Some(track_id) = extract_apple_music_id(&identifier) {
             if let Ok(Some(track)) = state.apple_music.resolve_track(&track_id).await {
@@ -329,6 +377,9 @@ pub async fn load_tracks(
             }
         }
     } else if let Some(stripped) = identifier.strip_prefix("amsearch:") {
+        if !state.sources.applemusic {
+            return Ok(Json(LoadResult::Empty));
+        }
         check_source_limit("applemusic")?;
         if let Ok(tracks) = state.apple_music.search(stripped.trim(), 10).await {
             if !tracks.is_empty() {
@@ -340,6 +391,9 @@ pub async fn load_tracks(
 
     // Deezer URLs
     if identifier.contains("deezer.com/") {
+        if !state.sources.deezer {
+            return Ok(Json(LoadResult::Empty));
+        }
         check_source_limit("deezer")?;
         if let Some(track_id) = extract_deezer_id(&identifier, "track") {
             if let Ok(Some(track)) = state.deezer.resolve_track(&track_id).await {
@@ -355,6 +409,9 @@ pub async fn load_tracks(
             }
         }
     } else if let Some(stripped) = identifier.strip_prefix("dzsearch:") {
+        if !state.sources.deezer {
+            return Ok(Json(LoadResult::Empty));
+        }
         check_source_limit("deezer")?;
         if let Ok(tracks) = state.deezer.search(stripped.trim(), 10).await {
             if !tracks.is_empty() {
@@ -366,6 +423,9 @@ pub async fn load_tracks(
 
     // Bandcamp search
     if let Some(stripped) = identifier.strip_prefix("bcsearch:") {
+        if !state.sources.bandcamp {
+            return Ok(Json(LoadResult::Empty));
+        }
         if let Ok(tracks) = state.bandcamp.search(stripped.trim(), 10).await {
             if !tracks.is_empty() {
                 crate::metrics::Metrics::global().inc_source("bandcamp");
@@ -376,6 +436,9 @@ pub async fn load_tracks(
 
     // NicoNico search
     if let Some(stripped) = identifier.strip_prefix("nisearch:") {
+        if !state.sources.niconico {
+            return Ok(Json(LoadResult::Empty));
+        }
         if let Ok(tracks) = state.niconico.search(stripped.trim(), 10).await {
             if !tracks.is_empty() {
                 crate::metrics::Metrics::global().inc_source("niconico");
@@ -386,6 +449,9 @@ pub async fn load_tracks(
 
     // Twitch stream resolve
     if let Some(stripped) = identifier.strip_prefix("twsearch:") {
+        if !state.sources.twitch {
+            return Ok(Json(LoadResult::Empty));
+        }
         if let Ok(tracks) = state.twitch.search(stripped.trim(), 10).await {
             if !tracks.is_empty() {
                 crate::metrics::Metrics::global().inc_source("twitch");
@@ -396,6 +462,9 @@ pub async fn load_tracks(
 
     // Vimeo search
     if let Some(stripped) = identifier.strip_prefix("vmsearch:") {
+        if !state.sources.vimeo {
+            return Ok(Json(LoadResult::Empty));
+        }
         if let Ok(tracks) = state.vimeo.search(stripped.trim(), 10).await {
             if !tracks.is_empty() {
                 crate::metrics::Metrics::global().inc_source("vimeo");
@@ -410,43 +479,45 @@ pub async fn load_tracks(
         .unwrap_or(&identifier)
         .trim();
 
-    check_source_limit("jiosaavn")?;
-
-    match state.jiosaavn.search(search_term, 10).await {
-        Ok(tracks) if !tracks.is_empty() => {
-            crate::metrics::Metrics::global().inc_source("jiosaavn");
-            if identifier.starts_with("http") && tracks.len() == 1 {
-                Ok(Json(LoadResult::Track(tracks.into_iter().next().unwrap())))
-            } else {
-                Ok(Json(LoadResult::Search(tracks)))
-            }
-        }
-        _ => {
-            if state.rate_limiter.check_source(&ip, "youtube") {
-                if let Ok(yt_tracks) = state.youtube.search(search_term, 10).await {
-                    if !yt_tracks.is_empty() {
-                        crate::metrics::Metrics::global().inc_source("youtube");
-                        return Ok(Json(LoadResult::Search(yt_tracks)));
-                    }
+    if state.sources.jiosaavn {
+        check_source_limit("jiosaavn")?;
+        if let Ok(tracks) = state.jiosaavn.search(search_term, 10).await {
+            if !tracks.is_empty() {
+                crate::metrics::Metrics::global().inc_source("jiosaavn");
+                if identifier.starts_with("http") && tracks.len() == 1 {
+                    return Ok(Json(LoadResult::Track(tracks.into_iter().next().unwrap())));
+                } else {
+                    return Ok(Json(LoadResult::Search(tracks)));
                 }
             }
-            if state.rate_limiter.check_source(&ip, "soundcloud") {
-                if let Ok(sc_tracks) = state.soundcloud.search(search_term, 10).await {
-                    if !sc_tracks.is_empty() {
-                        crate::metrics::Metrics::global().inc_source("soundcloud");
-                        return Ok(Json(LoadResult::Search(sc_tracks)));
-                    }
-                }
-            }
-            if let Ok(bc_tracks) = state.bandcamp.search(search_term, 10).await {
-                if !bc_tracks.is_empty() {
-                    crate::metrics::Metrics::global().inc_source("bandcamp");
-                    return Ok(Json(LoadResult::Search(bc_tracks)));
-                }
-            }
-            Ok(Json(LoadResult::Empty))
         }
     }
+
+    if state.sources.youtube && state.rate_limiter.check_source(&ip, "youtube") {
+        if let Ok(yt_tracks) = state.youtube.search(search_term, 10).await {
+            if !yt_tracks.is_empty() {
+                crate::metrics::Metrics::global().inc_source("youtube");
+                return Ok(Json(LoadResult::Search(yt_tracks)));
+            }
+        }
+    }
+    if state.sources.soundcloud && state.rate_limiter.check_source(&ip, "soundcloud") {
+        if let Ok(sc_tracks) = state.soundcloud.search(search_term, 10).await {
+            if !sc_tracks.is_empty() {
+                crate::metrics::Metrics::global().inc_source("soundcloud");
+                return Ok(Json(LoadResult::Search(sc_tracks)));
+            }
+        }
+    }
+    if state.sources.bandcamp {
+        if let Ok(bc_tracks) = state.bandcamp.search(search_term, 10).await {
+            if !bc_tracks.is_empty() {
+                crate::metrics::Metrics::global().inc_source("bandcamp");
+                return Ok(Json(LoadResult::Search(bc_tracks)));
+            }
+        }
+    }
+    Ok(Json(LoadResult::Empty))
 }
 
 fn is_direct_audio_url(url: &str) -> bool {

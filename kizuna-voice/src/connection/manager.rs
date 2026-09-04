@@ -405,6 +405,9 @@ impl VoiceConnectionManager {
         } else {
             interval_duration
         };
+        let mut heartbeat_ticker = tokio::time::interval(interval_duration);
+        // The first tick fires immediately; consume it so we wait for the first interval
+        heartbeat_ticker.tick().await;
 
         loop {
             tokio::select! {
@@ -413,16 +416,26 @@ impl VoiceConnectionManager {
                     self.set_state(ConnectionState::Disconnected).await;
                     return Ok(());
                 }
-                event_result = tokio::time::timeout(interval_duration, gw.receive_event()) => {
+                _ = heartbeat_ticker.tick() => {
+                    let nonce = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_millis() as u64;
+                    if let Err(e) = gw.send_heartbeat(nonce).await {
+                        tracing::error!("Failed to send heartbeat: {}", e);
+                        return Err(format!("Failed to send heartbeat: {}", e));
+                    }
+                }
+                event_result = gw.receive_event() => {
                     match event_result {
-                        Ok(Ok(GatewayEvent::DaveMessage(dave_msg))) => {
+                        Ok(GatewayEvent::DaveMessage(dave_msg)) => {
                             let mut dave = self.dave.lock().await;
                             let responses = dave.handle_gateway_message(dave_msg);
                             for msg in responses {
                                 let _ = gw.send_dave_message(msg).await;
                             }
                         }
-                        Ok(Ok(GatewayEvent::SessionDescription(sd))) => {
+                        Ok(GatewayEvent::SessionDescription(sd)) => {
                             tracing::info!("VoiceConnectionManager: received SessionDescription");
                             match TransportCrypto::new(&sd.secret_key) {
                                 Ok(crypto) => {
@@ -435,28 +448,17 @@ impl VoiceConnectionManager {
                             }
                             let _ = gw.send_speaking(true, 0).await;
                         }
-                        Ok(Ok(GatewayEvent::HeartbeatAck)) => {
+                        Ok(GatewayEvent::HeartbeatAck) => {
                             // Heartbeat acknowledged — connection is healthy
                         }
-                        Ok(Ok(GatewayEvent::Resumed)) => {
+                        Ok(GatewayEvent::Resumed) => {
                             tracing::info!("VoiceConnectionManager: resumed");
                         }
-                        Ok(Ok(_)) => {}
-                        Ok(Err(e)) => {
+                        Ok(_) => {}
+                        Err(e) => {
                             tracing::error!("VoiceConnectionManager: gateway error in event loop: {}", e);
                             self.set_state(ConnectionState::Reconnecting).await;
                             return Err(format!("Gateway disconnected: {}", e));
-                        }
-                        Err(_) => {
-                            // Timeout -> send heartbeat
-                            let nonce = std::time::SystemTime::now()
-                                .duration_since(std::time::UNIX_EPOCH)
-                                .unwrap_or_default()
-                                .as_millis() as u64;
-                            if let Err(e) = gw.send_heartbeat(nonce).await {
-                                tracing::error!("Failed to send heartbeat: {}", e);
-                                return Err(format!("Failed to send heartbeat: {}", e));
-                            }
                         }
                     }
                 }
