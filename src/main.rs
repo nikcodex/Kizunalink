@@ -188,7 +188,7 @@ async fn main() {
         .layer(tower_http::limit::RequestBodyLimitLayer::new(
             config.security.max_body_size,
         ))
-        .with_state(state)
+        .with_state(state.clone())
         .layer(middleware::from_fn(track_requests));
 
     let addr = format!("{}:{}", config.server.host, config.server.port);

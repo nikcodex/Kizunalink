@@ -122,6 +122,14 @@ impl SessionManager {
             .unwrap_or(false)
     }
 
+    /// Get all subscribed guild IDs for a session.
+    pub fn get_session_guilds(&self, session_id: &str) -> HashSet<String> {
+        self.sessions
+            .get(session_id)
+            .map(|s| s.guild_ids.clone())
+            .unwrap_or_default()
+    }
+
     /// Update session configuration (resuming and timeout).
     pub fn update_session(
         &self,
