@@ -144,7 +144,7 @@ async fn resolve_lyrics_internal(
 
     // 1. Try LRCLIB exact match if artist is provided
     if !artist.is_empty() {
-        if let Some(lyrics) = fetch_lrclib_lyrics(client, title, artist).await {
+        if let Some(lyrics) = fetch_lrclib_lyrics(&client, title, artist).await {
             return Ok(Json(lyrics));
         }
     }
@@ -156,7 +156,7 @@ async fn resolve_lyrics_internal(
         title.to_string()
     };
 
-    if let Some(lyrics) = search_lrclib_lyrics(client, &search_query).await {
+    if let Some(lyrics) = search_lrclib_lyrics(&client, &search_query).await {
         return Ok(Json(lyrics));
     }
 
@@ -346,15 +346,53 @@ pub fn parse_lrc(lrc: &str) -> Vec<LyricLine> {
         let trimmed = raw_line.trim();
         if let Some(rest) = trimmed.strip_prefix('[') {
             if let Some((time_part, text)) = rest.split_once(']') {
-                let parts: Vec<&str> = time_part.split(':').collect();
-                if parts.len() == 2 {
-                    if let (Ok(min), Ok(sec)) = (parts[0].parse::<f64>(), parts[1].parse::<f64>()) {
-                        let ms = ((min * 60.0 + sec) * 1000.0).round() as u64;
-                        lines.push(LyricLine {
-                            timestamp: ms,
-                            line: text.trim().to_string(),
-                        });
+                let (min_part, sec_part) = if let Some((m, s)) = time_part.split_once(':') {
+                    (m, s)
+                } else {
+                    // Fallback for timestamps using dots instead of colon, e.g. "01.23.45"
+                    let dot_parts: Vec<&str> = time_part.split('.').collect();
+                    if dot_parts.len() >= 3 {
+                        (
+                            dot_parts[0],
+                            time_part
+                                .strip_prefix(dot_parts[0])
+                                .unwrap_or("")
+                                .trim_start_matches('.'),
+                        )
+                    } else {
+                        continue;
                     }
+                };
+
+                // Clean min part (strip any extra dots)
+                let min_str = min_part.split('.').next().unwrap_or(min_part);
+
+                // Handle malformed extra dots in seconds gracefully (e.g. "23.45.67" -> "23.45", "23..45" -> "23.45")
+                let sec_cleaned = {
+                    let non_empty: Vec<&str> =
+                        sec_part.split('.').filter(|s| !s.is_empty()).collect();
+                    match non_empty.len() {
+                        0 => "0".to_string(),
+                        1 => non_empty[0].to_string(),
+                        _ => format!("{}.{}", non_empty[0], non_empty[1]),
+                    }
+                };
+
+                if let (Ok(min), Ok(sec)) = (min_str.parse::<f64>(), sec_cleaned.parse::<f64>()) {
+                    if !min.is_finite()
+                        || !sec.is_finite()
+                        || min < 0.0
+                        || min > 99.0
+                        || sec < 0.0
+                        || sec > 59.99
+                    {
+                        continue;
+                    }
+                    let ms = ((min * 60.0 + sec) * 1000.0).round() as u64;
+                    lines.push(LyricLine {
+                        timestamp: ms,
+                        line: text.trim().to_string(),
+                    });
                 }
             }
         }

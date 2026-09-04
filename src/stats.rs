@@ -23,14 +23,17 @@ impl FrameCounters {
         })
     }
 
+    /// Record successfully sent audio frames.
     pub fn record_sent(&self, frames: u64) {
         self.sent.fetch_add(frames, Ordering::Relaxed);
     }
 
+    /// Record nulled / silence frames sent.
     pub fn record_nulled(&self, frames: u64) {
         self.nulled.fetch_add(frames, Ordering::Relaxed);
     }
 
+    /// Record frame deficit / dropped frames.
     pub fn record_deficit(&self, frames: u64) {
         self.deficit.fetch_add(frames, Ordering::Relaxed);
     }

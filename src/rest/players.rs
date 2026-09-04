@@ -15,7 +15,7 @@ use crate::AppState;
 
 #[derive(Deserialize, Default)]
 pub struct NoReplaceQuery {
-    #[serde(rename = "noReplace")]
+    #[serde(rename = "noReplace", alias = "no_replace")]
     pub no_replace: Option<bool>,
 }
 
@@ -114,7 +114,8 @@ pub async fn update_player(
             StatusCode::TOO_MANY_REQUESTS,
             "Rate limit exceeded",
             &path,
-        ));
+        )
+        .with_retry_after(state.rate_limiter.window_secs()));
     }
 
     // Validate guild ID

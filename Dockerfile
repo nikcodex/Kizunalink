@@ -12,6 +12,7 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /app
 COPY --from=builder /app/target/release/kizunalink .
+COPY config.toml /app/config.toml
 
 ENV KIZUNA_HOST=0.0.0.0
 ENV KIZUNA_PORT=2333

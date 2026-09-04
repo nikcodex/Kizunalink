@@ -23,7 +23,7 @@ pub fn constant_time_eq(a: &str, b: &str) -> bool {
     diff == 0
 }
 
-pub fn decode_track(encoded: &str) -> Result<LavalinkTrack, String> {
+pub fn decode_track_safe(encoded: &str) -> Result<LavalinkTrack, String> {
     crate::track_encoding::decode_track(encoded).map_err(|e| e.to_string())
 }
 
@@ -65,6 +65,9 @@ pub fn create_http_track(url: &str) -> LavalinkTrack {
     track
 }
 
+/// Generates a UUID v4 string using cryptographically secure randomness from `rand::random()`.
+/// With 122 bits of random entropy, collision probability is astronomically low (1 in 2^122)
+/// and collision is practically impossible.
 pub fn uuid_v4() -> String {
     let mut bytes: [u8; 16] = rand::random();
     // Set version to 4 (0100)

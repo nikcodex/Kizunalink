@@ -11,19 +11,25 @@ pub enum LoopMode {
 pub struct TrackQueue {
     pub tracks: VecDeque<LavalinkTrack>,
     pub current: Option<LavalinkTrack>,
-    pub previous: Vec<LavalinkTrack>,
+    pub previous: VecDeque<LavalinkTrack>,
     pub loop_mode: LoopMode,
     max_history: usize,
 }
 
+impl Default for TrackQueue {
+    fn default() -> Self {
+        Self::new(50)
+    }
+}
+
 impl TrackQueue {
-    pub fn new() -> Self {
+    pub fn new(max_history: usize) -> Self {
         Self {
             tracks: VecDeque::new(),
             current: None,
-            previous: Vec::new(),
+            previous: VecDeque::new(),
             loop_mode: LoopMode::None,
-            max_history: 50,
+            max_history,
         }
     }
 
@@ -56,9 +62,9 @@ impl TrackQueue {
                 }
                 // Move current to history first
                 if let Some(current) = self.current.take() {
-                    self.previous.push(current);
+                    self.previous.push_back(current);
                     if self.previous.len() > self.max_history {
-                        self.previous.remove(0);
+                        self.previous.pop_front();
                     }
                 }
                 if let Some(track) = self.tracks.pop_front() {
@@ -72,9 +78,9 @@ impl TrackQueue {
             LoopMode::None => {
                 // Move current to history first
                 if let Some(current) = self.current.take() {
-                    self.previous.push(current);
+                    self.previous.push_back(current);
                     if self.previous.len() > self.max_history {
-                        self.previous.remove(0);
+                        self.previous.pop_front();
                     }
                 }
                 self.tracks.pop_front()
@@ -83,7 +89,7 @@ impl TrackQueue {
     }
 
     pub fn previous_track(&mut self) -> Option<LavalinkTrack> {
-        self.previous.pop()
+        self.previous.pop_back()
     }
 
     pub fn clear(&mut self) {

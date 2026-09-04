@@ -5,6 +5,7 @@ use crate::transport::crypto::TransportCrypto;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{watch, Mutex, Notify};
+use tracing;
 
 /// Configuration for reconnect behavior
 #[derive(Clone, Debug)]
@@ -138,7 +139,7 @@ impl VoiceConnectionManager {
             {
                 let shut = self.is_shutdown.lock().await;
                 if *shut {
-                    println!("VoiceConnectionManager: shutdown requested, exiting");
+                    tracing::info!("VoiceConnectionManager: shutdown requested, exiting");
                     self.set_state(ConnectionState::Disconnected).await;
                     return Ok(());
                 }
@@ -146,7 +147,7 @@ impl VoiceConnectionManager {
 
             if attempt > 0 {
                 self.set_state(ConnectionState::Reconnecting).await;
-                println!(
+                tracing::info!(
                     "VoiceConnectionManager: reconnect attempt {}/{}",
                     attempt, self.config.max_retries
                 );
@@ -162,10 +163,10 @@ impl VoiceConnectionManager {
                         return Ok(());
                     }
                     // Connection ended unexpectedly but without error — treat as disconnect
-                    println!("VoiceConnectionManager: gateway loop ended without error, reconnecting");
+                    tracing::warn!("VoiceConnectionManager: gateway loop ended without error, reconnecting");
                 }
                 Err(e) => {
-                    println!("VoiceConnectionManager: gateway error: {}", e);
+                    tracing::error!("VoiceConnectionManager: gateway error: {}", e);
                 }
             }
 
@@ -179,7 +180,7 @@ impl VoiceConnectionManager {
 
             attempt += 1;
             if attempt > self.config.max_retries {
-                println!(
+                tracing::error!(
                     "VoiceConnectionManager: max retries ({}) exceeded",
                     self.config.max_retries
                 );
@@ -195,7 +196,7 @@ impl VoiceConnectionManager {
             };
             let sleep_duration = delay.min(self.config.max_delay) + jitter;
 
-            println!(
+            tracing::info!(
                 "VoiceConnectionManager: waiting {:?} before reconnect attempt {}",
                 sleep_duration, attempt
             );
@@ -203,7 +204,7 @@ impl VoiceConnectionManager {
             tokio::select! {
                 _ = tokio::time::sleep(sleep_duration) => {}
                 _ = self.shutdown.notified() => {
-                    println!("VoiceConnectionManager: shutdown during backoff");
+                    tracing::info!("VoiceConnectionManager: shutdown during backoff");
                     self.set_state(ConnectionState::Disconnected).await;
                     return Ok(());
                 }
@@ -232,7 +233,7 @@ impl VoiceConnectionManager {
             _ => return Err("Expected Hello event".into()),
         };
         
-        println!("VoiceConnectionManager: heartbeat interval is {} ms", heartbeat_interval);
+        tracing::info!("VoiceConnectionManager: heartbeat interval is {} ms", heartbeat_interval);
 
         let has_session = {
             let hs = self.has_established_session.lock().await;
@@ -241,7 +242,7 @@ impl VoiceConnectionManager {
 
         if is_reconnect && has_session {
             // Attempt Resume (Op 7)
-            println!("VoiceConnectionManager: attempting Resume");
+            tracing::info!("VoiceConnectionManager: attempting Resume");
             gw.send_resume(
                 &self.credentials.server_id,
                 &self.credentials.session_id,
@@ -256,7 +257,7 @@ impl VoiceConnectionManager {
             while tokio::time::Instant::now() < resume_deadline {
                 match tokio::time::timeout(Duration::from_millis(1500), gw.receive_event()).await {
                     Ok(Ok(GatewayEvent::Resumed)) => {
-                        println!("VoiceConnectionManager: Resume successful");
+                        tracing::info!("VoiceConnectionManager: Resume successful");
                         self.set_state(ConnectionState::Connected).await;
                         resume_success = true;
                         break;
@@ -274,11 +275,11 @@ impl VoiceConnectionManager {
                         continue;
                     }
                     Ok(Ok(other)) => {
-                        println!("VoiceConnectionManager: Resume got unexpected event: {:?}", other);
+                        tracing::warn!("VoiceConnectionManager: Resume got unexpected event: {:?}", other);
                         break;
                     }
                     Ok(Err(e)) => {
-                        println!("VoiceConnectionManager: Gateway error during resume: {}", e);
+                        tracing::error!("VoiceConnectionManager: Gateway error during resume: {}", e);
                         return Err(format!("Resume failed: {}", e));
                     }
                     Err(_) => {
@@ -288,7 +289,7 @@ impl VoiceConnectionManager {
             }
 
             if !resume_success {
-                println!("VoiceConnectionManager: Resume not confirmed, falling back to fresh Identify");
+                tracing::warn!("VoiceConnectionManager: Resume not confirmed, falling back to fresh Identify");
                 return self.do_fresh_identify(&mut gw, heartbeat_interval).await;
             }
         } else {
@@ -382,7 +383,7 @@ impl VoiceConnectionManager {
         loop {
             tokio::select! {
                 _ = self.shutdown.notified() => {
-                    println!("VoiceConnectionManager: shutdown in event loop");
+                    tracing::info!("VoiceConnectionManager: shutdown in event loop");
                     self.set_state(ConnectionState::Disconnected).await;
                     return Ok(());
                 }
@@ -396,14 +397,14 @@ impl VoiceConnectionManager {
                             }
                         }
                         Ok(Ok(GatewayEvent::SessionDescription(sd))) => {
-                            println!("VoiceConnectionManager: received SessionDescription");
+                            tracing::info!("VoiceConnectionManager: received SessionDescription");
                             match TransportCrypto::new(&sd.secret_key) {
                                 Ok(crypto) => {
                                     let mut tc = self.transport_crypto.lock().await;
                                     *tc = Some(crypto);
                                 }
                                 Err(e) => {
-                                    println!("Failed to setup transport crypto: {}", e);
+                                    tracing::error!("Failed to setup transport crypto: {}", e);
                                 }
                             }
                             let _ = gw.send_speaking(true, 0).await;
@@ -412,11 +413,11 @@ impl VoiceConnectionManager {
                             // Heartbeat acknowledged — connection is healthy
                         }
                         Ok(Ok(GatewayEvent::Resumed)) => {
-                            println!("VoiceConnectionManager: resumed");
+                            tracing::info!("VoiceConnectionManager: resumed");
                         }
                         Ok(Ok(_)) => {}
                         Ok(Err(e)) => {
-                            println!("VoiceConnectionManager: gateway error in event loop: {}", e);
+                            tracing::error!("VoiceConnectionManager: gateway error in event loop: {}", e);
                             self.set_state(ConnectionState::Reconnecting).await;
                             return Err(format!("Gateway disconnected: {}", e));
                         }
@@ -427,7 +428,7 @@ impl VoiceConnectionManager {
                                 .unwrap_or_default()
                                 .as_millis() as u64;
                             if let Err(e) = gw.send_heartbeat(nonce).await {
-                                println!("Failed to send heartbeat: {}", e);
+                                tracing::error!("Failed to send heartbeat: {}", e);
                                 return Err(format!("Failed to send heartbeat: {}", e));
                             }
                         }

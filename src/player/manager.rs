@@ -26,6 +26,7 @@ pub struct PlayerManager {
     soundcloud: Arc<SoundCloudSource>,
     deezer: Arc<DeezerSource>,
     apple_music: Arc<AppleMusicSource>,
+    pub queue_max_history: usize,
 }
 
 impl PlayerManager {
@@ -37,6 +38,7 @@ impl PlayerManager {
         soundcloud: Arc<SoundCloudSource>,
         deezer: Arc<DeezerSource>,
         apple_music: Arc<AppleMusicSource>,
+        queue_max_history: usize,
     ) -> Self {
         let (track_end_tx, mut track_end_rx) = mpsc::unbounded_channel::<String>();
 
@@ -51,6 +53,7 @@ impl PlayerManager {
             soundcloud,
             deezer,
             apple_music,
+            queue_max_history,
         };
 
         let manager_arc = Arc::new(manager);
@@ -81,6 +84,7 @@ impl PlayerManager {
             soundcloud: self.soundcloud.clone(),
             deezer: self.deezer.clone(),
             apple_music: self.apple_music.clone(),
+            queue_max_history: self.queue_max_history,
         }
     }
 
@@ -100,6 +104,7 @@ impl PlayerManager {
             user_id,
             self.event_tx.clone(),
             self.track_end_tx.clone(),
+            self.queue_max_history,
         );
         Arc::new(RwLock::new(player))
     }
@@ -232,19 +237,22 @@ impl PlayerManager {
             info!("Stopping player for guild: {}", guild_id);
             player.stop();
         } else if let Some(track) = resolved_track {
-            let is_currently_playing = player.is_playing();
-            if !(no_replace && is_currently_playing) {
-                if let Some(stream_url) = resolved_stream_url {
-                    info!(
-                        "Playing track '{}' for guild {}",
-                        track.info.title, guild_id
-                    );
-                    player.play_track(track, stream_url).await;
-                } else {
-                    warn!("Failed to resolve stream URL for guild {}", guild_id);
-                    player
-                        .emit_track_load_failed(&track, "Failed to resolve playable audio stream");
-                }
+            let has_track = player.queue.current.is_some() || player.is_playing();
+            if no_replace && has_track {
+                info!(
+                    "Skipping track replacement for guild {} because noReplace is true and track is already loaded",
+                    guild_id
+                );
+            } else if let Some(stream_url) = resolved_stream_url {
+                info!(
+                    "Playing track '{}' for guild {}",
+                    track.info.title, guild_id
+                );
+                player.play_track(track, stream_url).await;
+            } else {
+                warn!("Failed to resolve stream URL for guild {}", guild_id);
+                player
+                    .emit_track_load_failed(&track, "Failed to resolve playable audio stream");
             }
         }
 

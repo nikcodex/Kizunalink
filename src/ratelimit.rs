@@ -20,15 +20,22 @@ pub struct RateLimitConfig {
     pub source_limits: std::collections::HashMap<String, u32>,
 }
 
+/// Default rate limits per audio source (source name, max requests per window).
+pub const DEFAULT_SOURCE_LIMITS: [(&str, u32); 6] = [
+    ("spotify", 30),
+    ("youtube", 30),
+    ("soundcloud", 20),
+    ("deezer", 20),
+    ("applemusic", 20),
+    ("jiosaavn", 30),
+];
+
 impl Default for RateLimitConfig {
     fn default() -> Self {
-        let mut source_limits = std::collections::HashMap::new();
-        source_limits.insert("spotify".to_string(), 30);
-        source_limits.insert("youtube".to_string(), 30);
-        source_limits.insert("soundcloud".to_string(), 20);
-        source_limits.insert("deezer".to_string(), 20);
-        source_limits.insert("applemusic".to_string(), 20);
-        source_limits.insert("jiosaavn".to_string(), 30);
+        let source_limits = DEFAULT_SOURCE_LIMITS
+            .into_iter()
+            .map(|(k, v)| (k.to_string(), v))
+            .collect();
 
         Self {
             max_requests: 60,
@@ -81,33 +88,68 @@ impl RateLimiter {
         })
     }
 
+    /// Window duration in seconds.
+    pub fn window_secs(&self) -> u64 {
+        self.config.window.as_secs()
+    }
+
     /// Check if a request from the given IP is allowed.
     pub fn check(&self, ip: &str) -> bool {
+        self.check_rate_limit(ip)
+    }
+
+    /// Check if a request from the given IP is allowed (atomic token bucket check).
+    pub fn check_rate_limit(&self, ip: &str) -> bool {
         let max = self.config.max_tokens();
         let rate = self.config.refill_rate();
 
-        let mut bucket = self
-            .buckets
+        let mut allowed = false;
+        self.buckets
             .entry(ip.to_string())
-            .or_insert_with(|| TokenBucket::new(max, rate));
+            .and_modify(|bucket| {
+                allowed = bucket.try_consume(1.0);
+            })
+            .or_insert_with(|| {
+                let mut bucket = TokenBucket::new(max, rate);
+                allowed = bucket.try_consume(1.0);
+                bucket
+            });
 
-        bucket.try_consume(1.0)
+        allowed
     }
 
     /// Check if a request for a specific source is allowed.
     pub fn check_source(&self, ip: &str, source: &str) -> bool {
-        if !self.check(ip) {
+        if !self.check_rate_limit(ip) {
             return false;
         }
 
-        if let Some(&limit) = self.config.source_limits.get(source) {
+        // Fast match lookup for known source limits with fallback to configured source_limits
+        let limit = match source {
+            "spotify" | "youtube" | "jiosaavn" => {
+                self.config.source_limits.get(source).copied().or(Some(30))
+            }
+            "soundcloud" | "deezer" | "applemusic" => {
+                self.config.source_limits.get(source).copied().or(Some(20))
+            }
+            other => self.config.source_limits.get(other).copied(),
+        };
+
+        if let Some(limit) = limit {
             let key = format!("{}:{}", ip, source);
             let rate = limit as f64 / self.config.window.as_secs() as f64;
-            let mut bucket = self
-                .buckets
+            let mut allowed = false;
+            self.buckets
                 .entry(key)
-                .or_insert_with(|| TokenBucket::new(limit as f64, rate));
-            bucket.try_consume(1.0)
+                .and_modify(|bucket| {
+                    allowed = bucket.try_consume(1.0);
+                })
+                .or_insert_with(|| {
+                    let mut bucket = TokenBucket::new(limit as f64, rate);
+                    allowed = bucket.try_consume(1.0);
+                    bucket
+                });
+            allowed
         } else {
             true
         }
@@ -136,6 +178,10 @@ impl RateLimiter {
 }
 
 impl RateLimitConfig {
+    pub fn window_secs(&self) -> u64 {
+        self.window.as_secs()
+    }
+
     fn max_tokens(&self) -> f64 {
         (self.max_requests + self.burst) as f64
     }

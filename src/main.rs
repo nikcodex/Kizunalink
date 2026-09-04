@@ -7,7 +7,6 @@ use axum::{
 };
 use std::sync::Arc;
 use tokio::sync::broadcast;
-use tower_http::cors::{Any, CorsLayer};
 use tracing::{info, warn};
 
 use kizunalink::*;
@@ -36,6 +35,12 @@ async fn health_check() -> axum::Json<serde_json::Value> {
     }))
 }
 
+async fn version_handler() -> axum::Json<serde_json::Value> {
+    axum::Json(serde_json::json!({
+        "version": VERSION,
+    }))
+}
+
 #[tokio::main]
 async fn main() {
     let config = config::AppConfig::load();
@@ -57,8 +62,9 @@ async fn main() {
     );
 
     // Initialize the Cross-Platform WASM Plugin Manager
-    let mut plugin_manager = plugins::PluginManager::new();
-    plugin_manager.load_all();
+    // TODO: Plugin system is dead code / never invoked. Re-enable load_all() when plugin hooks are integrated.
+    let plugin_manager = plugins::PluginManager::new();
+    // plugin_manager.load_all();
     let plugin_manager = Arc::new(plugin_manager);
 
     // Initialize the Route Planner (if configured)
@@ -96,6 +102,7 @@ async fn main() {
         soundcloud.clone(),
         deezer.clone(),
         apple_music.clone(),
+        config.queue_max_history,
     ));
 
     let dave_manager = dave::DaveManager::new();
@@ -134,7 +141,7 @@ async fn main() {
     let rate_limiter = state.rate_limiter.clone();
 
     let app = Router::new()
-        .route("/version", get(|| async { VERSION }))
+        .route("/version", get(version_handler))
         .route("/health", get(health_check))
         .route("/v4/info", get(rest::info::get_info))
         .route("/v4/stats", get(rest::stats::get_stats))
@@ -183,12 +190,6 @@ async fn main() {
         .layer(tower_http::limit::RequestBodyLimitLayer::new(
             config.security.max_body_size,
         ))
-        .layer(
-            CorsLayer::new()
-                .allow_origin(Any)
-                .allow_methods(Any)
-                .allow_headers(Any),
-        )
         .with_state(state)
         .layer(middleware::from_fn(track_requests));
 
@@ -268,16 +269,33 @@ async fn main() {
         }
     };
 
-    // Graceful shutdown via Ctrl+C
-    let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
-    ctrlc::set_handler(move || {
-        warn!("Received Ctrl+C, shutting down gracefully...");
-        let _ = shutdown_tx.send(true);
-    })
-    .expect("Error setting Ctrl+C handler");
+    // Graceful shutdown via SIGINT (Ctrl+C) or SIGTERM
+    let shutdown_signal = async {
+        let ctrl_c = async {
+            tokio::signal::ctrl_c()
+                .await
+                .expect("Failed to install Ctrl+C handler");
+        };
 
-    let shutdown_signal = async move {
-        let _ = shutdown_rx.clone().changed().await;
+        #[cfg(unix)]
+        let terminate = async {
+            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+                .expect("Failed to install SIGTERM handler")
+                .recv()
+                .await;
+        };
+
+        #[cfg(not(unix))]
+        let terminate = std::future::pending::<()>();
+
+        tokio::select! {
+            _ = ctrl_c => {
+                warn!("Received Ctrl+C (SIGINT), shutting down gracefully...");
+            }
+            _ = terminate => {
+                warn!("Received SIGTERM, shutting down gracefully...");
+            }
+        }
     };
 
     info!("⛩️ KizunaLink v{} listening on {}", VERSION, addr);

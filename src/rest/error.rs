@@ -1,26 +1,46 @@
 use axum::{
-    http::StatusCode,
+    http::{HeaderMap, HeaderName, HeaderValue, StatusCode},
     response::{IntoResponse, Response},
     Json,
 };
 use serde_json::json;
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct LavalinkError {
     pub status: u16,
     pub error: String,
     pub message: String,
     pub path: String,
+    pub headers: HeaderMap,
 }
 
 impl LavalinkError {
     pub fn new(status: StatusCode, message: impl Into<String>, path: impl Into<String>) -> Self {
+        let mut headers = HeaderMap::new();
+        if status == StatusCode::TOO_MANY_REQUESTS {
+            if let Ok(val) = HeaderValue::from_str("60") {
+                headers.insert(axum::http::header::RETRY_AFTER, val);
+            }
+        }
         Self {
             status: status.as_u16(),
             error: status.canonical_reason().unwrap_or("Unknown").to_string(),
             message: message.into(),
             path: path.into(),
+            headers,
         }
+    }
+
+    pub fn with_header(mut self, name: HeaderName, value: HeaderValue) -> Self {
+        self.headers.insert(name, value);
+        self
+    }
+
+    pub fn with_retry_after(mut self, retry_after_secs: u64) -> Self {
+        if let Ok(val) = HeaderValue::from_str(&retry_after_secs.to_string()) {
+            self.headers.insert(axum::http::header::RETRY_AFTER, val);
+        }
+        self
     }
 }
 
@@ -33,10 +53,17 @@ impl IntoResponse for LavalinkError {
             "message": self.message,
             "path": self.path,
         });
-        (
-            StatusCode::from_u16(self.status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
-            Json(body),
-        )
-            .into_response()
+        let status = StatusCode::from_u16(self.status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+        let mut resp = (status, Json(body)).into_response();
+        resp.headers_mut().extend(self.headers);
+        resp
     }
 }
+
+impl std::fmt::Display for LavalinkError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}: {}", self.error, self.message)
+    }
+}
+
+impl std::error::Error for LavalinkError {}

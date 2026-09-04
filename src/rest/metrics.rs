@@ -1,6 +1,7 @@
 use axum::{extract::State, http::HeaderMap, response::Response};
 
 use crate::metrics::Metrics;
+use crate::ratelimit::extract_ip;
 use crate::rest::auth::require_auth;
 use crate::rest::error::LavalinkError;
 use crate::stats::SystemStats;
@@ -11,6 +12,16 @@ pub async fn get_metrics(
     headers: HeaderMap,
 ) -> Result<Response<String>, LavalinkError> {
     require_auth(&headers, &state.password, "/v4/metrics")?;
+
+    // Rate limit check
+    let ip = extract_ip(&headers, "0.0.0.0");
+    if !state.rate_limiter.check(&ip) {
+        return Err(LavalinkError::new(
+            axum::http::StatusCode::TOO_MANY_REQUESTS,
+            "Rate limit exceeded",
+            "/v4/metrics",
+        ));
+    }
 
     let system_stats = SystemStats::global();
     let metrics = Metrics::global();

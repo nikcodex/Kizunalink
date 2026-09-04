@@ -59,6 +59,7 @@ pub async fn get_info() -> Json<ServerInfo> {
             "channelMix".to_string(),
             "lowPass".to_string(),
         ],
+        // Plugin list is currently empty because the plugin system is not yet fully wired to report metadata in ServerInfo.
         plugins: vec![],
     })
 }

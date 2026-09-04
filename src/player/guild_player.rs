@@ -77,6 +77,7 @@ impl GuildPlayer {
         user_id: String,
         event_tx: broadcast::Sender<String>,
         track_end_tx: mpsc::UnboundedSender<String>,
+        queue_max_history: usize,
     ) -> Self {
         Self {
             guild_id,
@@ -89,7 +90,7 @@ impl GuildPlayer {
             kizuna_voice_adapter: None,
             kizuna_track_handle: None,
             is_playing: false,
-            queue: TrackQueue::new(),
+            queue: TrackQueue::new(queue_max_history),
             autoplay: AutoplayEngine::new(),
             end_time: None,
             play_started_at: None,

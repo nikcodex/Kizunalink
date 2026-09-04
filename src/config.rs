@@ -17,6 +17,8 @@ pub struct AppConfig {
     pub security: SecurityConfig,
     #[serde(default)]
     pub proxy: ProxyConfig,
+    #[serde(default = "default_queue_max_history")]
+    pub queue_max_history: usize,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -28,6 +30,8 @@ pub struct ServerConfig {
     pub max_connections: usize,
     #[serde(default = "default_request_timeout")]
     pub request_timeout_secs: u64,
+    #[serde(default = "default_queue_max_history")]
+    pub queue_max_history: usize,
 }
 
 fn default_max_connections() -> usize {
@@ -36,6 +40,10 @@ fn default_max_connections() -> usize {
 
 fn default_request_timeout() -> u64 {
     30
+}
+
+fn default_queue_max_history() -> usize {
+    50
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -275,6 +283,7 @@ impl Default for AppConfig {
                 password: "youshallnotpass".to_string(),
                 max_connections: default_max_connections(),
                 request_timeout_secs: default_request_timeout(),
+                queue_max_history: default_queue_max_history(),
             },
             sources: SourcesConfig {
                 jiosaavn: true,
@@ -295,95 +304,92 @@ impl Default for AppConfig {
             metrics: MetricsConfig::default(),
             security: SecurityConfig::default(),
             proxy: ProxyConfig::default(),
+            queue_max_history: default_queue_max_history(),
         }
     }
 }
 
 impl AppConfig {
+    /// Load application configuration.
+    ///
+    /// Configuration priority:
+    /// 1. Environment variables (loaded via dotenvy / process environment) override config.toml values.
+    /// 2. `config.toml` file in working directory.
+    /// 3. Default fallback values.
     pub fn load() -> Self {
-        if Path::new("config.toml").exists() {
+        dotenvy::dotenv().ok();
+
+        let mut config = if Path::new("config.toml").exists() {
             if let Ok(content) = fs::read_to_string("config.toml") {
-                if let Ok(config) = toml::from_str::<AppConfig>(&content) {
-                    return config;
+                if let Ok(mut c) = toml::from_str::<AppConfig>(&content) {
+                    if c.server.queue_max_history != 50 && c.queue_max_history == 50 {
+                        c.queue_max_history = c.server.queue_max_history;
+                    } else if c.queue_max_history != 50 && c.server.queue_max_history == 50 {
+                        c.server.queue_max_history = c.queue_max_history;
+                    }
+                    c
+                } else {
+                    Self::default()
                 }
+            } else {
+                Self::default()
             }
+        } else {
+            Self::default()
+        };
+
+        // Environment variables override config.toml values
+        if let Ok(host) = std::env::var("KIZUNA_HOST") {
+            config.server.host = host;
         }
-
-        let host = std::env::var("KIZUNA_HOST").unwrap_or_else(|_| "0.0.0.0".to_string());
-        let port = std::env::var("KIZUNA_PORT")
-            .ok()
-            .and_then(|p| p.parse().ok())
-            .unwrap_or(2333);
-        let password =
-            std::env::var("KIZUNA_PASSWORD").unwrap_or_else(|_| "youshallnotpass".to_string());
-
-        let mut ratelimit = RatelimitConfig::default();
+        if let Ok(port) = std::env::var("KIZUNA_PORT").ok().and_then(|p| p.parse().ok()) {
+            config.server.port = port;
+        }
+        if let Ok(password) = std::env::var("KIZUNA_PASSWORD") {
+            config.server.password = password;
+        }
         if let Ok(blocks) = std::env::var("KIZUNA_IP_BLOCKS") {
-            ratelimit.ip_blocks = blocks
+            config.ratelimit.ip_blocks = blocks
                 .split(',')
                 .map(|s| s.trim().to_string())
                 .filter(|s| !s.is_empty())
                 .collect();
         }
         if let Ok(strategy) = std::env::var("KIZUNA_ROUTEPLANNER_STRATEGY") {
-            ratelimit.strategy = strategy;
+            config.ratelimit.strategy = strategy;
         }
-        if let Ok(max_req) = std::env::var("KIZUNA_MAX_REQUESTS") {
-            if let Ok(v) = max_req.parse() {
-                ratelimit.max_requests = v;
-            }
+        if let Ok(max_req) = std::env::var("KIZUNA_MAX_REQUESTS").ok().and_then(|v| v.parse().ok()) {
+            config.ratelimit.max_requests = max_req;
+        }
+        if let Ok(level) = std::env::var("KIZUNA_LOG_LEVEL") {
+            config.logging.level = level;
+        }
+        if let Ok(file) = std::env::var("KIZUNA_LOG_FILE") {
+            config.logging.file = Some(file);
+        }
+        if let Ok(colored) = std::env::var("KIZUNA_LOG_COLORED") {
+            config.logging.colored = colored != "false";
+        }
+        if let Ok(proxy_url) = std::env::var("KIZUNA_PROXY_URL") {
+            config.proxy.url = Some(proxy_url);
+        }
+        if let Ok(proxy_user) = std::env::var("KIZUNA_PROXY_USER") {
+            config.proxy.username = Some(proxy_user);
+        }
+        if let Ok(proxy_pass) = std::env::var("KIZUNA_PROXY_PASS") {
+            config.proxy.password = Some(proxy_pass);
+        }
+        if let Ok(proxy_timeout) = std::env::var("KIZUNA_PROXY_TIMEOUT").ok().and_then(|v| v.parse().ok()) {
+            config.proxy.timeout_secs = proxy_timeout;
+        }
+        if let Ok(max_conn) = std::env::var("KIZUNA_MAX_CONNECTIONS").ok().and_then(|v| v.parse().ok()) {
+            config.server.max_connections = max_conn;
+        }
+        if let Ok(history) = std::env::var("KIZUNA_QUEUE_MAX_HISTORY").ok().and_then(|v| v.parse().ok()) {
+            config.queue_max_history = history;
+            config.server.queue_max_history = history;
         }
 
-        let logging = LoggingConfig {
-            level: std::env::var("KIZUNA_LOG_LEVEL").unwrap_or_else(|_| "info".to_string()),
-            file: std::env::var("KIZUNA_LOG_FILE").ok(),
-            colored: std::env::var("KIZUNA_LOG_COLORED")
-                .map(|v| v != "false")
-                .unwrap_or(true),
-        };
-
-        let proxy = ProxyConfig {
-            url: std::env::var("KIZUNA_PROXY_URL").ok(),
-            username: std::env::var("KIZUNA_PROXY_USER").ok(),
-            password: std::env::var("KIZUNA_PROXY_PASS").ok(),
-            timeout_secs: std::env::var("KIZUNA_PROXY_TIMEOUT")
-                .ok()
-                .and_then(|v| v.parse().ok())
-                .unwrap_or(30),
-        };
-
-        let max_connections = std::env::var("KIZUNA_MAX_CONNECTIONS")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(1000);
-
-        Self {
-            server: ServerConfig {
-                host,
-                port,
-                password,
-                max_connections,
-                request_timeout_secs: default_request_timeout(),
-            },
-            sources: SourcesConfig {
-                jiosaavn: true,
-                spotify: true,
-                youtube: true,
-                soundcloud: true,
-                bandcamp: true,
-                twitch: true,
-                vimeo: false,
-                niconico: false,
-                http: true,
-                local: false,
-                applemusic: true,
-                deezer: true,
-            },
-            ratelimit,
-            logging,
-            metrics: MetricsConfig::default(),
-            security: SecurityConfig::default(),
-            proxy,
-        }
+        config
     }
 }

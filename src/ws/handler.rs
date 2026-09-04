@@ -10,6 +10,7 @@ use dashmap::DashMap;
 use futures_util::{SinkExt, StreamExt};
 use std::collections::{HashSet, VecDeque};
 use std::sync::LazyLock;
+use std::time::Duration;
 use tokio::sync::mpsc;
 use tracing::{error, info, warn};
 
@@ -32,6 +33,7 @@ pub struct SessionState {
     pub guild_ids: HashSet<String>,
     pub event_buffer: VecDeque<String>,
     pub connected: bool,
+    pub user_id: String,
 }
 
 impl Default for SessionState {
@@ -42,6 +44,7 @@ impl Default for SessionState {
             guild_ids: HashSet::new(),
             event_buffer: VecDeque::new(),
             connected: true,
+            user_id: String::new(),
         }
     }
 }
@@ -153,7 +156,11 @@ pub async fn ws_handler(
     let ip = extract_ip(&headers, "0.0.0.0");
     if !state.rate_limiter.check(&ip) {
         warn!("WebSocket rate limit exceeded for IP: {}", ip);
-        return StatusCode::TOO_MANY_REQUESTS.into_response();
+        let mut retry_headers = HeaderMap::new();
+        if let Ok(val) = axum::http::HeaderValue::from_str(&state.rate_limiter.window_secs().to_string()) {
+            retry_headers.insert(axum::http::header::RETRY_AFTER, val);
+        }
+        return (StatusCode::TOO_MANY_REQUESTS, retry_headers).into_response();
     }
 
     let user_id = headers
@@ -164,7 +171,9 @@ pub async fn ws_handler(
 
     {
         let mut id_lock = state.player_manager.bot_user_id.write().await;
-        *id_lock = user_id.clone();
+        if *id_lock == "0" && user_id != "0" {
+            *id_lock = user_id.clone();
+        }
     }
 
     let client_name = headers
@@ -183,10 +192,15 @@ pub async fn ws_handler(
         client_name, user_id, ip
     );
 
-    ws.on_upgrade(move |socket| handle_socket(socket, state, session_id))
+    ws.on_upgrade(move |socket| handle_socket(socket, state, session_id, user_id))
 }
 
-async fn handle_socket(mut socket: WebSocket, state: AppState, resume_session_id: Option<String>) {
+async fn handle_socket(
+    mut socket: WebSocket,
+    state: AppState,
+    resume_session_id: Option<String>,
+    user_id: String,
+) {
     ensure_event_dispatcher(&state.event_tx);
 
     let (session_id, is_resumed) = if let Some(resume_id) = resume_session_id {
@@ -219,6 +233,9 @@ async fn handle_socket(mut socket: WebSocket, state: AppState, resume_session_id
     if is_resumed {
         if let Some(mut entry) = SESSION_STATE.get_mut(&session_id) {
             entry.connected = true;
+            if !user_id.is_empty() && user_id != "0" {
+                entry.user_id = user_id;
+            }
             let replay_events: Vec<String> = entry.event_buffer.drain(..).collect();
             drop(entry);
             for event in replay_events {
@@ -233,6 +250,7 @@ async fn handle_socket(mut socket: WebSocket, state: AppState, resume_session_id
             .entry(session_id.clone())
             .or_insert_with(SessionState::default);
         entry.connected = true;
+        entry.user_id = user_id;
     }
 
     crate::metrics::Metrics::global().ws_connections.inc();
@@ -244,8 +262,15 @@ async fn handle_socket(mut socket: WebSocket, state: AppState, resume_session_id
     let sess_id = session_id.clone();
 
     let event_task = tokio::spawn(async move {
+        let mut ping_interval = tokio::time::interval(Duration::from_secs(30));
+        ping_interval.reset();
         loop {
             tokio::select! {
+                _ = ping_interval.tick() => {
+                    if sender.send(Message::Ping(Vec::new())).await.is_err() {
+                        break;
+                    }
+                }
                 direct_msg = direct_rx.recv() => {
                     match direct_msg {
                         Some(msg) => {
