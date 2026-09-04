@@ -25,12 +25,11 @@ pub struct VoiceGatewayClient {
     ws_stream: WebSocketStream<MaybeTlsStream<TcpStream>>,
 }
 
-
 fn parse_bytes(val: Option<&serde_json::Value>) -> Vec<u8> {
     if let Some(v) = val {
         if let Some(s) = v.as_str() {
             // First try base64
-            use base64::{Engine as _, engine::general_purpose::STANDARD};
+            use base64::{engine::general_purpose::STANDARD, Engine as _};
             if let Ok(b) = STANDARD.decode(s) {
                 return b;
             }
@@ -38,7 +37,7 @@ fn parse_bytes(val: Option<&serde_json::Value>) -> Vec<u8> {
             if s.len() % 2 == 0 {
                 let mut decoded = Vec::new();
                 for i in (0..s.len()).step_by(2) {
-                    if let Ok(byte) = u8::from_str_radix(&s[i..i+2], 16) {
+                    if let Ok(byte) = u8::from_str_radix(&s[i..i + 2], 16) {
                         decoded.push(byte);
                     } else {
                         break;
@@ -51,7 +50,10 @@ fn parse_bytes(val: Option<&serde_json::Value>) -> Vec<u8> {
             // fallback: string bytes
             return s.as_bytes().to_vec();
         } else if let Some(arr) = v.as_array() {
-            return arr.iter().filter_map(|x| x.as_u64().map(|n| n as u8)).collect();
+            return arr
+                .iter()
+                .filter_map(|x| x.as_u64().map(|n| n as u8))
+                .collect();
         }
     }
     vec![]
@@ -68,7 +70,8 @@ impl VoiceGatewayClient {
             } else {
                 format!("{}/?v=8", clean_endpoint)
             }
-        } else if clean_endpoint.starts_with("127.0.0.1") || clean_endpoint.starts_with("localhost") {
+        } else if clean_endpoint.starts_with("127.0.0.1") || clean_endpoint.starts_with("localhost")
+        {
             let host_port = clean_endpoint.trim_end_matches('/');
             format!("ws://{}/?v=8", host_port)
         } else {

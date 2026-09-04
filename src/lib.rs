@@ -16,8 +16,6 @@ pub mod ws;
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
-use std::sync::Arc;
-use tokio::sync::broadcast;
 use player::manager::PlayerManager;
 use ratelimit::RateLimiter;
 use sources::{
@@ -26,6 +24,8 @@ use sources::{
     soundcloud::SoundCloudSource, spotify::SpotifySource, twitch::TwitchSource, vimeo::VimeoSource,
     youtube::YouTubeSource,
 };
+use std::sync::Arc;
+use tokio::sync::broadcast;
 
 #[derive(Clone)]
 pub struct AppState {

@@ -9,7 +9,6 @@ use std::sync::Arc;
 use tokio::sync::broadcast;
 use tracing::{info, warn};
 
-use kizunalink::*;
 use kizunalink::player::manager::PlayerManager;
 use kizunalink::ratelimit::{RateLimitConfig, RateLimiter};
 use kizunalink::sources::{
@@ -18,7 +17,7 @@ use kizunalink::sources::{
     soundcloud::SoundCloudSource, spotify::SpotifySource, twitch::TwitchSource, vimeo::VimeoSource,
     youtube::YouTubeSource,
 };
-
+use kizunalink::*;
 
 async fn track_requests(req: Request, next: Next) -> Response {
     if req.uri().path() != "/v4/websocket" {

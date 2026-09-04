@@ -255,8 +255,7 @@ impl PlayerManager {
                 player.play_track(track, stream_url).await;
             } else {
                 warn!("Failed to resolve stream URL for guild {}", guild_id);
-                player
-                    .emit_track_load_failed(&track, "Failed to resolve playable audio stream");
+                player.emit_track_load_failed(&track, "Failed to resolve playable audio stream");
             }
         }
 
@@ -345,7 +344,8 @@ impl PlayerManager {
                         return Some(url.clone());
                     }
                 }
-                let yt_url = self.youtube
+                let yt_url = self
+                    .youtube
                     .resolve_video(identifier)
                     .await
                     .ok()
@@ -353,7 +353,10 @@ impl PlayerManager {
                     .and_then(|t| t.info.uri);
 
                 if let Some(ref u) = yt_url {
-                    if u.starts_with("http") && !u.contains("youtube.com") && !u.contains("youtu.be") {
+                    if u.starts_with("http")
+                        && !u.contains("youtube.com")
+                        && !u.contains("youtu.be")
+                    {
                         return Some(u.clone());
                     }
                 }
@@ -362,8 +365,15 @@ impl PlayerManager {
                 let query = format!("{} {}", track.info.title, track.info.author);
                 if let Ok(js_tracks) = self.jiosaavn.search(&query, 1).await {
                     if let Some(first) = js_tracks.into_iter().next() {
-                        if let Ok(js_url) = self.jiosaavn.resolve_stream_url(&first.info.identifier).await {
-                            info!("⚡ YouTube fallback -> JioSaavn 320kbps for '{}'", track.info.title);
+                        if let Ok(js_url) = self
+                            .jiosaavn
+                            .resolve_stream_url(&first.info.identifier)
+                            .await
+                        {
+                            info!(
+                                "⚡ YouTube fallback -> JioSaavn 320kbps for '{}'",
+                                track.info.title
+                            );
                             return Some(js_url);
                         }
                     }

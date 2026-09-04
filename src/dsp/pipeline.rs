@@ -15,7 +15,6 @@ use super::decoder::{AudioDecoder, ChannelByteSource};
 use super::filters::FilterChain;
 use symphonia::core::io::MediaSource;
 
-
 /// Filter chain shared between a live pipeline reader and GuildPlayer so REST
 /// filter updates propagate into running audio without restarts (except when
 /// the chain reports a structural change).
@@ -169,14 +168,24 @@ pub async fn create_kizuna_source(
     let (tx, rx) = tokio::sync::mpsc::channel::<Vec<u8>>(128);
     let url = stream_url.clone();
     tokio::spawn(async move {
-        if let Some(file_path) = url.strip_prefix("file://").or_else(|| if url.starts_with('/') { Some(url.as_str()) } else { None }) {
+        if let Some(file_path) = url.strip_prefix("file://").or_else(|| {
+            if url.starts_with('/') {
+                Some(url.as_str())
+            } else {
+                None
+            }
+        }) {
             // Local file streaming
             use tokio::io::AsyncReadExt;
             if let Ok(mut file) = tokio::fs::File::open(file_path).await {
                 let mut buf = [0u8; 8192];
                 while let Ok(n) = file.read(&mut buf).await {
-                    if n == 0 { break; }
-                    if tx.send(buf[..n].to_vec()).await.is_err() { break; }
+                    if n == 0 {
+                        break;
+                    }
+                    if tx.send(buf[..n].to_vec()).await.is_err() {
+                        break;
+                    }
                 }
             }
             return;

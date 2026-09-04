@@ -41,7 +41,9 @@ impl Wsola {
         let mut hann = vec![0.0f32; frame_len];
         if frame_len > 1 {
             for (i, h) in hann.iter_mut().enumerate() {
-                *h = (0.5 * (1.0 - (2.0 * std::f64::consts::PI * i as f64 / (frame_len - 1) as f64).cos()))
+                *h = (0.5
+                    * (1.0
+                        - (2.0 * std::f64::consts::PI * i as f64 / (frame_len - 1) as f64).cos()))
                     as f32;
             }
         }

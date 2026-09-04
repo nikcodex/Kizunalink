@@ -470,15 +470,13 @@ impl YouTubeSource {
             .and_then(|h| h.get("playlistHeaderRenderer"))
             .and_then(|p| p.get("title"))
             .and_then(|t| {
-                t.get("simpleText")
-                    .and_then(|s| s.as_str())
-                    .or_else(|| {
-                        t.get("runs")
-                            .and_then(|r| r.as_array())
-                            .and_then(|a| a.first())
-                            .and_then(|r| r.get("text"))
-                            .and_then(|s| s.as_str())
-                    })
+                t.get("simpleText").and_then(|s| s.as_str()).or_else(|| {
+                    t.get("runs")
+                        .and_then(|r| r.as_array())
+                        .and_then(|a| a.first())
+                        .and_then(|r| r.get("text"))
+                        .and_then(|s| s.as_str())
+                })
             })
             .unwrap_or("YouTube Playlist")
             .to_string();
@@ -513,7 +511,9 @@ impl YouTubeSource {
                                 {
                                     for v_item in video_list {
                                         if let Some(video) = v_item.get("playlistVideoRenderer") {
-                                            if let Some(track) = self.parse_playlist_video_renderer(video) {
+                                            if let Some(track) =
+                                                self.parse_playlist_video_renderer(video)
+                                            {
                                                 tracks.push(track);
                                             }
                                         }
@@ -545,15 +545,13 @@ impl YouTubeSource {
         let title = video
             .get("title")
             .and_then(|t| {
-                t.get("simpleText")
-                    .and_then(|s| s.as_str())
-                    .or_else(|| {
-                        t.get("runs")
-                            .and_then(|r| r.as_array())
-                            .and_then(|a| a.first())
-                            .and_then(|r| r.get("text"))
-                            .and_then(|s| s.as_str())
-                    })
+                t.get("simpleText").and_then(|s| s.as_str()).or_else(|| {
+                    t.get("runs")
+                        .and_then(|r| r.as_array())
+                        .and_then(|a| a.first())
+                        .and_then(|r| r.get("text"))
+                        .and_then(|s| s.as_str())
+                })
             })
             .unwrap_or("Unknown Title")
             .to_string();

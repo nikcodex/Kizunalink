@@ -25,7 +25,8 @@ static SESSION_STORE: LazyLock<DashMap<String, std::time::Instant>> = LazyLock::
 
 pub static SESSION_STATE: LazyLock<DashMap<String, SessionState>> = LazyLock::new(DashMap::new);
 
-static DISPATCHER_STARTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+static DISPATCHER_STARTED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
 
 pub struct SessionState {
     pub resuming: bool,
@@ -50,9 +51,7 @@ impl Default for SessionState {
 }
 
 pub fn add_guild_to_session(session_id: &str, guild_id: &str) {
-    let mut entry = SESSION_STATE
-        .entry(session_id.to_string())
-        .or_default();
+    let mut entry = SESSION_STATE.entry(session_id.to_string()).or_default();
     entry.guild_ids.insert(guild_id.to_string());
 }
 
@@ -120,9 +119,7 @@ pub fn update_session_state(
     resuming: Option<bool>,
     timeout: Option<u64>,
 ) -> (bool, u64) {
-    let mut entry = SESSION_STATE
-        .entry(session_id.to_string())
-        .or_default();
+    let mut entry = SESSION_STATE.entry(session_id.to_string()).or_default();
     if let Some(r) = resuming {
         entry.resuming = r;
     }
@@ -157,7 +154,9 @@ pub async fn ws_handler(
     if !state.rate_limiter.check(&ip) {
         warn!("WebSocket rate limit exceeded for IP: {}", ip);
         let mut retry_headers = HeaderMap::new();
-        if let Ok(val) = axum::http::HeaderValue::from_str(&state.rate_limiter.window_secs().to_string()) {
+        if let Ok(val) =
+            axum::http::HeaderValue::from_str(&state.rate_limiter.window_secs().to_string())
+        {
             retry_headers.insert(axum::http::header::RETRY_AFTER, val);
         }
         return (StatusCode::TOO_MANY_REQUESTS, retry_headers).into_response();
@@ -246,9 +245,7 @@ async fn handle_socket(
             }
         }
     } else {
-        let mut entry = SESSION_STATE
-            .entry(session_id.clone())
-            .or_default();
+        let mut entry = SESSION_STATE.entry(session_id.clone()).or_default();
         entry.connected = true;
         entry.user_id = user_id;
     }

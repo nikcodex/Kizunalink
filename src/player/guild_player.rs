@@ -205,7 +205,6 @@ impl GuildPlayer {
             return false;
         }
 
-
         let mut adapter = crate::player::kizuna_adapter::KizunaVoiceAdapter::new(
             merged.session_id.clone(),
             merged.token.clone(),
@@ -295,7 +294,10 @@ impl GuildPlayer {
                     self.kizuna_track_handle = Some(k_handle);
                 }
                 Err(e) => {
-                    warn!("Failed to recreate audio source on restart for guild {}: {}", self.guild_id, e);
+                    warn!(
+                        "Failed to recreate audio source on restart for guild {}: {}",
+                        self.guild_id, e
+                    );
                     return;
                 }
             }
@@ -388,13 +390,22 @@ impl GuildPlayer {
                     self.kizuna_track_handle = Some(k_handle);
                 }
                 Err(e) => {
-                    warn!("Failed to create audio source for guild {}: {}", self.guild_id, e);
-                    self.emit_track_load_failed(&track, &format!("Failed to open audio stream: {}", e));
+                    warn!(
+                        "Failed to create audio source for guild {}: {}",
+                        self.guild_id, e
+                    );
+                    self.emit_track_load_failed(
+                        &track,
+                        &format!("Failed to open audio stream: {}", e),
+                    );
                     return false;
                 }
             }
         } else {
-            warn!("Cannot play track: voice not connected for guild {}", self.guild_id);
+            warn!(
+                "Cannot play track: voice not connected for guild {}",
+                self.guild_id
+            );
             self.emit_track_load_failed(&track, "Voice connection not established");
             return false;
         }

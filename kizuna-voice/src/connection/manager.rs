@@ -63,7 +63,8 @@ pub struct VoiceConnectionManager {
     /// If true, we can attempt Resume (Op 7) instead of fresh Identify (Op 0).
     has_established_session: Arc<Mutex<bool>>,
     #[allow(clippy::type_complexity)]
-    on_fresh_identify: Arc<Mutex<Option<Box<dyn FnMut(u32, Arc<crate::transport::VoiceUdp>) + Send + Sync>>>>,
+    on_fresh_identify:
+        Arc<Mutex<Option<Box<dyn FnMut(u32, Arc<crate::transport::VoiceUdp>) + Send + Sync>>>>,
 }
 
 impl VoiceConnectionManager {
@@ -149,7 +150,8 @@ impl VoiceConnectionManager {
                 self.set_state(ConnectionState::Reconnecting).await;
                 tracing::info!(
                     "VoiceConnectionManager: reconnect attempt {}/{}",
-                    attempt, self.config.max_retries
+                    attempt,
+                    self.config.max_retries
                 );
             } else {
                 self.set_state(ConnectionState::Connecting).await;
@@ -163,7 +165,9 @@ impl VoiceConnectionManager {
                         return Ok(());
                     }
                     // Connection ended unexpectedly but without error — treat as disconnect
-                    tracing::warn!("VoiceConnectionManager: gateway loop ended without error, reconnecting");
+                    tracing::warn!(
+                        "VoiceConnectionManager: gateway loop ended without error, reconnecting"
+                    );
                 }
                 Err(e) => {
                     tracing::error!("VoiceConnectionManager: gateway error: {}", e);
@@ -198,7 +202,8 @@ impl VoiceConnectionManager {
 
             tracing::info!(
                 "VoiceConnectionManager: waiting {:?} before reconnect attempt {}",
-                sleep_duration, attempt
+                sleep_duration,
+                attempt
             );
 
             tokio::select! {
@@ -232,8 +237,11 @@ impl VoiceConnectionManager {
             GatewayEvent::Hello(interval) => interval,
             _ => return Err("Expected Hello event".into()),
         };
-        
-        tracing::info!("VoiceConnectionManager: heartbeat interval is {} ms", heartbeat_interval);
+
+        tracing::info!(
+            "VoiceConnectionManager: heartbeat interval is {} ms",
+            heartbeat_interval
+        );
 
         let has_session = {
             let hs = self.has_established_session.lock().await;
@@ -275,11 +283,17 @@ impl VoiceConnectionManager {
                         continue;
                     }
                     Ok(Ok(other)) => {
-                        tracing::warn!("VoiceConnectionManager: Resume got unexpected event: {:?}", other);
+                        tracing::warn!(
+                            "VoiceConnectionManager: Resume got unexpected event: {:?}",
+                            other
+                        );
                         break;
                     }
                     Ok(Err(e)) => {
-                        tracing::error!("VoiceConnectionManager: Gateway error during resume: {}", e);
+                        tracing::error!(
+                            "VoiceConnectionManager: Gateway error during resume: {}",
+                            e
+                        );
                         return Err(format!("Resume failed: {}", e));
                     }
                     Err(_) => {
@@ -289,7 +303,9 @@ impl VoiceConnectionManager {
             }
 
             if !resume_success {
-                tracing::warn!("VoiceConnectionManager: Resume not confirmed, falling back to fresh Identify");
+                tracing::warn!(
+                    "VoiceConnectionManager: Resume not confirmed, falling back to fresh Identify"
+                );
                 return self.do_fresh_identify(&mut gw, heartbeat_interval).await;
             }
         } else {
@@ -302,7 +318,11 @@ impl VoiceConnectionManager {
     }
 
     /// Perform a fresh Identify handshake
-    async fn do_fresh_identify(&self, gw: &mut VoiceGatewayClient, heartbeat_interval: f64) -> Result<(), String> {
+    async fn do_fresh_identify(
+        &self,
+        gw: &mut VoiceGatewayClient,
+        heartbeat_interval: f64,
+    ) -> Result<(), String> {
         gw.send_identify(
             &self.credentials.server_id,
             &self.credentials.user_id,
@@ -371,7 +391,11 @@ impl VoiceConnectionManager {
     }
 
     /// Main event loop — processes gateway events until disconnect or shutdown.
-    async fn event_loop(&self, gw: &mut VoiceGatewayClient, heartbeat_interval: f64) -> Result<(), String> {
+    async fn event_loop(
+        &self,
+        gw: &mut VoiceGatewayClient,
+        heartbeat_interval: f64,
+    ) -> Result<(), String> {
         let interval_duration = Duration::from_millis(heartbeat_interval as u64);
         // Add a bit of buffer so we send slightly faster than requested
         let interval_duration = if interval_duration.as_secs() > 1 {

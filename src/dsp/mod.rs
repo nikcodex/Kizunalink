@@ -13,6 +13,5 @@ pub mod tremolo;
 pub mod vibrato;
 pub mod wsola;
 
-
 pub use filters::FilterChain;
 pub use pipeline::{new_shared_chain, SharedChain};

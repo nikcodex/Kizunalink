@@ -32,7 +32,6 @@ impl Default for AutoplayEngine {
 }
 
 impl AutoplayEngine {
-
     pub fn enable(&mut self) {
         self.enabled = true;
     }

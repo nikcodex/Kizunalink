@@ -14,7 +14,11 @@ pub fn constant_time_eq(a: &str, b: &str) -> bool {
     let b_bytes = b.as_bytes();
     let max_len = a_bytes.len().max(b_bytes.len());
 
-    let mut diff = if a_bytes.len() == b_bytes.len() { 0u8 } else { 1u8 };
+    let mut diff = if a_bytes.len() == b_bytes.len() {
+        0u8
+    } else {
+        1u8
+    };
     for i in 0..max_len {
         let x = a_bytes.get(i).copied().unwrap_or(0);
         let y = b_bytes.get(i).copied().unwrap_or(0);

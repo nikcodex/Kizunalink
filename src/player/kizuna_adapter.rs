@@ -1,11 +1,11 @@
 use kizuna_voice::audio::{
     AudioFrame, AudioSource, FrameScheduler, KizunaTrackHandle, OpusEncoder, OpusSource,
 };
+use kizuna_voice::connection::manager::{VoiceConnectionManager, VoiceCredentials};
 use kizuna_voice::connection::session::VoiceSession;
+use kizuna_voice::connection::state::ConnectionState;
 use kizuna_voice::dave::protocol::DaveSession;
 use kizuna_voice::transport::{RtpHeader, TransportCrypto, VoiceUdp};
-use kizuna_voice::connection::manager::{VoiceConnectionManager, VoiceCredentials};
-use kizuna_voice::connection::state::ConnectionState;
 use std::sync::Arc;
 use tokio::sync::{broadcast, mpsc, Mutex, RwLock};
 use tracing::{error, info};
@@ -55,15 +55,20 @@ impl KizunaVoiceAdapter {
         let udp_ref = self.udp.clone();
         let ssrc_ref = self.ssrc.clone();
 
-        manager.set_on_fresh_identify(move |new_ssrc, new_udp| {
-            info!("Adapter: Session established, new SSRC={}, UDP socket created", new_ssrc);
-            ssrc_ref.store(new_ssrc, std::sync::atomic::Ordering::SeqCst);
-            let udp_ref = udp_ref.clone();
-            tokio::spawn(async move {
-                let mut guard = udp_ref.write().await;
-                *guard = Some(new_udp);
-            });
-        }).await;
+        manager
+            .set_on_fresh_identify(move |new_ssrc, new_udp| {
+                info!(
+                    "Adapter: Session established, new SSRC={}, UDP socket created",
+                    new_ssrc
+                );
+                ssrc_ref.store(new_ssrc, std::sync::atomic::Ordering::SeqCst);
+                let udp_ref = udp_ref.clone();
+                tokio::spawn(async move {
+                    let mut guard = udp_ref.write().await;
+                    *guard = Some(new_udp);
+                });
+            })
+            .await;
 
         self.manager = Some(manager.clone());
         let mut rx = manager.state_receiver();
@@ -131,8 +136,12 @@ impl KizunaVoiceAdapter {
                     let current_ssrc = ssrc_ref.load(std::sync::atomic::Ordering::SeqCst);
 
                     async move {
-                        let cur_seq = seq_atomic.fetch_add(1, std::sync::atomic::Ordering::SeqCst).wrapping_add(1);
-                        let cur_ts = ts_atomic.fetch_add(960, std::sync::atomic::Ordering::SeqCst).wrapping_add(960);
+                        let cur_seq = seq_atomic
+                            .fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+                            .wrapping_add(1);
+                        let cur_ts = ts_atomic
+                            .fetch_add(960, std::sync::atomic::Ordering::SeqCst)
+                            .wrapping_add(960);
 
                         let opus_data = match frame {
                             AudioFrame::Opus(data) => data,
@@ -171,7 +180,9 @@ impl KizunaVoiceAdapter {
                         if let Some(ref current_udp) = *udp_guard {
                             let mut tc_guard = transport_crypto.lock().await;
                             if let Some(ref mut tc) = *tc_guard {
-                                if let Ok(encrypted_packet) = tc.encrypt_rtp_packet(&header_buf, &packet_payload) {
+                                if let Ok(encrypted_packet) =
+                                    tc.encrypt_rtp_packet(&header_buf, &packet_payload)
+                                {
                                     if current_udp.send_packet(&encrypted_packet).await.is_ok() {
                                         crate::stats::FrameCounters::global().record_sent(1);
                                     } else {
@@ -196,8 +207,12 @@ impl KizunaVoiceAdapter {
             let udp_guard = udp_ref.read().await;
             if let Some(ref current_udp) = *udp_guard {
                 for _ in 0..5 {
-                    let cur_seq = sequence.fetch_add(1, std::sync::atomic::Ordering::SeqCst).wrapping_add(1);
-                    let cur_ts = timestamp.fetch_add(960, std::sync::atomic::Ordering::SeqCst).wrapping_add(960);
+                    let cur_seq = sequence
+                        .fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+                        .wrapping_add(1);
+                    let cur_ts = timestamp
+                        .fetch_add(960, std::sync::atomic::Ordering::SeqCst)
+                        .wrapping_add(960);
                     let current_ssrc = ssrc_ref.load(std::sync::atomic::Ordering::SeqCst);
                     let header = RtpHeader::new(cur_seq, cur_ts, current_ssrc);
                     let mut header_buf = Vec::new();
@@ -221,7 +236,9 @@ impl KizunaVoiceAdapter {
                         };
                         let mut tc_guard = transport_crypto.lock().await;
                         if let Some(ref mut tc) = *tc_guard {
-                            if let Ok(encrypted) = tc.encrypt_rtp_packet(&header_buf, &silence_payload) {
+                            if let Ok(encrypted) =
+                                tc.encrypt_rtp_packet(&header_buf, &silence_payload)
+                            {
                                 if current_udp.send_packet(&encrypted).await.is_ok() {
                                     crate::stats::FrameCounters::global().record_nulled(1);
                                 }

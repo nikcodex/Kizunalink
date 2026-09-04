@@ -127,7 +127,7 @@ mod tests {
         let payload = [2u8; 50];
 
         let mut encrypted = crypto.encrypt_rtp_packet(&header, &payload).unwrap();
-        
+
         // Tamper with ciphertext
         encrypted[20] ^= 1;
         assert!(crypto.decrypt_rtp_packet(&encrypted).is_err());
@@ -142,7 +142,7 @@ mod tests {
         let payload = [2u8; 50];
 
         let mut encrypted = crypto.encrypt_rtp_packet(&header, &payload).unwrap();
-        
+
         // Tamper with RTP header (AAD)
         encrypted[0] ^= 1;
         assert!(crypto.decrypt_rtp_packet(&encrypted).is_err());
@@ -160,9 +160,9 @@ mod tests {
         let enc2 = crypto.encrypt_rtp_packet(&header, &payload).unwrap();
 
         assert_eq!(crypto.nonce_counter, 2);
-        
+
         // Nonce is the last 4 bytes
-        assert_eq!(&enc1[enc1.len()-4..], &[0, 0, 0, 0]);
-        assert_eq!(&enc2[enc2.len()-4..], &[0, 0, 0, 1]);
+        assert_eq!(&enc1[enc1.len() - 4..], &[0, 0, 0, 0]);
+        assert_eq!(&enc2[enc2.len() - 4..], &[0, 0, 0, 1]);
     }
 }

@@ -472,7 +472,10 @@ fn is_youtube_url(url: &str) -> bool {
 }
 
 fn extract_youtube_playlist_id(url: &str) -> Option<String> {
-    url.split("list=").nth(1).and_then(|s| s.split('&').next()).map(|s| s.to_string())
+    url.split("list=")
+        .nth(1)
+        .and_then(|s| s.split('&').next())
+        .map(|s| s.to_string())
 }
 
 fn extract_youtube_id(url: &str) -> String {

@@ -544,7 +544,13 @@ impl DaveSession {
         // Decrypt AES-CTR keystream by encrypting zero bytes of same length
         let zeros = vec![0u8; encrypted_media.len()];
         let keystream = cipher
-            .encrypt(nonce, aes_gcm::aead::Payload { msg: &zeros, aad: &[] })
+            .encrypt(
+                nonce,
+                aes_gcm::aead::Payload {
+                    msg: &zeros,
+                    aad: &[],
+                },
+            )
             .map_err(|e| format!("AES keystream generation failed: {}", e))?;
 
         let mut plaintext = Vec::with_capacity(encrypted_media.len());
@@ -554,7 +560,13 @@ impl DaveSession {
 
         // Re-authenticate by encrypting recovered plaintext and comparing 8-byte tag
         let check_ciphertext = cipher
-            .encrypt(nonce, aes_gcm::aead::Payload { msg: &plaintext, aad: &[] })
+            .encrypt(
+                nonce,
+                aes_gcm::aead::Payload {
+                    msg: &plaintext,
+                    aad: &[],
+                },
+            )
             .map_err(|e| format!("AES re-authentication failed: {}", e))?;
 
         let check_tag = &check_ciphertext[encrypted_media.len()..encrypted_media.len() + 8];

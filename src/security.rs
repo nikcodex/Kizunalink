@@ -152,10 +152,7 @@ fn is_private_ip(ip: IpAddr) -> bool {
 
 /// Sanitize a string for safe logging (removes control characters).
 pub fn sanitize_for_log(s: &str) -> String {
-    s.chars()
-        .filter(|c| !c.is_control())
-        .take(256)
-        .collect()
+    s.chars().filter(|c| !c.is_control()).take(256).collect()
 }
 
 #[cfg(test)]

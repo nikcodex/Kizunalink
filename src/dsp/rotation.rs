@@ -136,6 +136,9 @@ mod tests {
         let mut buf = vec![0.5f32; 200];
         let input = buf.clone();
         rot.process_buffer(&mut buf);
-        assert_eq!(buf, input, "Near-zero Hz rotation should not modify samples");
+        assert_eq!(
+            buf, input,
+            "Near-zero Hz rotation should not modify samples"
+        );
     }
 }
