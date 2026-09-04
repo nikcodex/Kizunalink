@@ -158,7 +158,8 @@ impl RateLimiter {
     /// Cleanup old buckets periodically.
     pub async fn cleanup(&self) {
         let ttl = self.config.window * 2;
-        self.buckets.retain(|_, bucket| bucket.last_refill.elapsed() <= ttl);
+        self.buckets
+            .retain(|_, bucket| bucket.last_refill.elapsed() <= ttl);
     }
 }
 

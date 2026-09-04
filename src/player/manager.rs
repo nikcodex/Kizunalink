@@ -7,6 +7,7 @@ use crate::sources::jiosaavn::JioSaavnSource;
 use crate::sources::soundcloud::SoundCloudSource;
 use crate::sources::spotify::SpotifySource;
 use crate::sources::youtube::YouTubeSource;
+use dashmap::mapref::entry::Entry;
 use dashmap::DashMap;
 use std::sync::Arc;
 use tokio::sync::{broadcast, mpsc, RwLock};
@@ -124,8 +125,8 @@ impl PlayerManager {
         let user_id = self.bot_user_id.read().await.clone();
 
         match self.players.entry(guild_id.to_string()) {
-            dashmap::Entry::Occupied(entry) => Ok(entry.get().clone()),
-            dashmap::Entry::Vacant(entry) => {
+            Entry::Occupied(entry) => Ok(entry.get().clone()),
+            Entry::Vacant(entry) => {
                 if self.players.len() >= MAX_PLAYERS {
                     return Err(format!(
                         "Player limit reached: maximum {} players allowed",

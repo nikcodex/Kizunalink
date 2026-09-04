@@ -425,7 +425,8 @@ mod tests {
 
     #[test]
     fn test_parse_lrc_rejects_invalid() {
-        let lrc = "[invalid]No time\n[01:65.00]Invalid seconds\n[-01:20]Negative\n[00:05.12]Valid line";
+        let lrc =
+            "[invalid]No time\n[01:65.00]Invalid seconds\n[-01:20]Negative\n[00:05.12]Valid line";
         let parsed = parse_lrc(lrc);
         assert_eq!(parsed.len(), 1);
         assert_eq!(parsed[0].timestamp, 5120);

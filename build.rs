@@ -13,7 +13,9 @@ fn main() {
         .ok()
         .and_then(|out| {
             if out.status.success() {
-                String::from_utf8(out.stdout).ok().map(|s| s.trim().to_string())
+                String::from_utf8(out.stdout)
+                    .ok()
+                    .map(|s| s.trim().to_string())
             } else {
                 None
             }
@@ -29,7 +31,9 @@ fn main() {
         .ok()
         .and_then(|out| {
             if out.status.success() {
-                String::from_utf8(out.stdout).ok().map(|s| s.trim().to_string())
+                String::from_utf8(out.stdout)
+                    .ok()
+                    .map(|s| s.trim().to_string())
             } else {
                 None
             }
@@ -53,6 +57,6 @@ fn main() {
                 None
             }
         })
-        .unwrap_or_else(|| build_time);
+        .unwrap_or(build_time);
     println!("cargo:rustc-env=GIT_COMMIT_TIME={}", git_commit_time);
 }

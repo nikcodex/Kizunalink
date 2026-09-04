@@ -23,7 +23,7 @@ pub fn is_private_ipv4(ipv4: Ipv4Addr) -> bool {
         || (octets[0] == 100 && (64..=127).contains(&octets[1])) // 100.64.0.0/10 Carrier-grade NAT (RFC 6598)
         || (octets[0] == 192 && octets[1] == 0 && octets[2] == 0) // 192.0.0.0/24 IETF Protocol Assignments
         || (octets[0] == 198 && (18..=19).contains(&octets[1]))  // 198.18.0.0/15 Network Benchmark (RFC 2544)
-        || octets[0] >= 224                      // 224.0.0.0/4 Multicast & 240.0.0.0/4 Reserved
+        || octets[0] >= 224 // 224.0.0.0/4 Multicast & 240.0.0.0/4 Reserved
 }
 
 /// Check if an IPv6 address is in a private, loopback, link-local, or reserved range.
@@ -108,7 +108,11 @@ pub fn validate_url(url: &str) -> Result<(), String> {
             }
             // Check global security blocked hosts
             let sec = crate::config::global_security();
-            if sec.blocked_hosts.iter().any(|b| b.eq_ignore_ascii_case(&lower)) {
+            if sec
+                .blocked_hosts
+                .iter()
+                .any(|b| b.eq_ignore_ascii_case(&lower))
+            {
                 return Err(format!("Blocked configured host: {}", domain));
             }
         }
@@ -280,6 +284,9 @@ mod tests {
         assert_eq!(sanitize_for_log("hello world"), "hello world");
         assert_eq!(sanitize_for_log("hello\x00world"), "helloworld");
         assert_eq!(sanitize_for_log("hello\n\tworld"), "helloworld");
-        assert_eq!(sanitize_for_log("hello\x1b[31mred\x1b[0m"), "hello[31mred[0m");
+        assert_eq!(
+            sanitize_for_log("hello\x1b[31mred\x1b[0m"),
+            "hello[31mred[0m"
+        );
     }
 }

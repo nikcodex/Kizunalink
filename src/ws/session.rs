@@ -1,6 +1,5 @@
 use dashmap::DashMap;
 use std::collections::{HashSet, VecDeque};
-use std::sync::Arc;
 use std::time::Instant;
 use tracing::info;
 
@@ -146,7 +145,9 @@ impl SessionManager {
 
     /// Get session state summary.
     pub fn get_session(&self, session_id: &str) -> Option<(bool, u64)> {
-        self.sessions.get(session_id).map(|s| (s.resuming, s.timeout))
+        self.sessions
+            .get(session_id)
+            .map(|s| (s.resuming, s.timeout))
     }
 
     /// Buffer an event for disconnected sessions that are subscribed to the guild (or global events).
