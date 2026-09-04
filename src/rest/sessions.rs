@@ -1,8 +1,8 @@
 use axum::{extract::State, http::HeaderMap, response::Json};
 
-use crate::AppState;
 use crate::rest::auth::require_auth;
 use crate::rest::error::LavalinkError;
+use crate::AppState;
 /// GET /v4/sessions — List all active WebSocket session IDs.
 pub async fn list_sessions(
     State(state): State<AppState>,

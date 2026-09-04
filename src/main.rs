@@ -137,6 +137,7 @@ async fn main() {
     let update_state = state.clone();
     let shutdown_manager = state.player_manager.clone();
     let rate_limiter = state.rate_limiter.clone();
+    let session_cleanup = state.session_manager.clone();
 
     let app = Router::new()
         .route("/version", get(version_handler))
@@ -251,7 +252,6 @@ async fn main() {
     });
 
     // Periodic cleanup task for rate limiter and stale sessions
-    let session_cleanup = state.session_manager.clone();
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(300));
         loop {

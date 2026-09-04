@@ -102,18 +102,6 @@ impl PlayerManager {
         }
     }
 
-    async fn create_guild_player(&self, guild_id: &str) -> Arc<RwLock<GuildPlayer>> {
-        let user_id = self.bot_user_id.read().await.clone();
-        let player = GuildPlayer::new(
-            guild_id.to_string(),
-            user_id,
-            self.event_tx.clone(),
-            self.track_end_tx.clone(),
-            self.queue_max_history,
-        );
-        Arc::new(RwLock::new(player))
-    }
-
     pub async fn get_or_create_player(
         &self,
         guild_id: &str,

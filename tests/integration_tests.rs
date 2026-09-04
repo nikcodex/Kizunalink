@@ -1,8 +1,7 @@
-use axum::http::{HeaderMap, HeaderValue, StatusCode};
+use axum::http::{HeaderMap, HeaderValue};
 use kizunalink::models::protocol::VoiceStateUpdate;
 use kizunalink::player::guild_player::GuildPlayer;
 use kizunalink::player::manager::{PlayerManager, SourceBundle};
-use kizunalink::player::queue::LoopMode;
 use kizunalink::rest::auth::require_auth;
 use kizunalink::rest::lyrics::parse_lrc;
 use kizunalink::security::{
@@ -14,7 +13,6 @@ use kizunalink::sources::{
     soundcloud::SoundCloudSource, spotify::SpotifySource, youtube::YouTubeSource,
 };
 use kizunalink::ws::session::SessionManager;
-use std::sync::Arc;
 use tokio::sync::{broadcast, mpsc};
 
 fn mock_player_manager() -> PlayerManager {
@@ -139,7 +137,6 @@ async fn test_player_manager_atomic_player_limit() {
     let pm = mock_player_manager();
 
     // Concurrent player creation
-    let mut handles = Vec::new();
     for i in 0..20 {
         let gid = format!("guild_{}", i);
         let player = pm.get_or_create_player(&gid).await;

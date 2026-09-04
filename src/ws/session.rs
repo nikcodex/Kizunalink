@@ -85,10 +85,12 @@ impl SessionManager {
         }
 
         let new_id = crate::util::uuid_v4();
-        let mut initial_state = SessionState::default();
-        initial_state.user_id = user_id;
-        initial_state.connected = true;
-        initial_state.last_active = Instant::now();
+        let initial_state = SessionState {
+            user_id,
+            connected: true,
+            last_active: Instant::now(),
+            ..Default::default()
+        };
 
         self.sessions.insert(new_id.clone(), initial_state);
         crate::metrics::Metrics::global().active_sessions.inc();
@@ -175,13 +177,10 @@ impl SessionManager {
     /// Otherwise, immediately removes the session and returns `None`.
     pub fn mark_disconnected(&self, session_id: &str) -> Option<u64> {
         let (resuming, timeout) = {
-            if let Some(mut entry) = self.sessions.get_mut(session_id) {
-                entry.connected = false;
-                entry.last_active = Instant::now();
-                (entry.resuming, entry.timeout)
-            } else {
-                return None;
-            }
+            let mut entry = self.sessions.get_mut(session_id)?;
+            entry.connected = false;
+            entry.last_active = Instant::now();
+            (entry.resuming, entry.timeout)
         };
 
         if resuming && timeout > 0 {
