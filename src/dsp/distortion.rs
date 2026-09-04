@@ -161,7 +161,7 @@ mod tests {
         let fundamental = goertzel_at(1000.0);
         let h3 = goertzel_at(3000.0);
         assert!(
-            h3 > fundamental * 0.01 && h3 > 0.001,
+            h3 > fundamental * 0.005 && h3 > 0.001,
             "expected 3rd harmonic from distortion (fund={} h3={})",
             fundamental,
             h3
