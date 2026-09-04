@@ -455,37 +455,47 @@ fn test_session_expiration_exact_timeout_semantics() {
 
     let now = Instant::now();
 
-    let mut fresh = SessionState::default();
-    fresh.connected = false;
-    fresh.resuming = true;
-    fresh.timeout = 60;
-    fresh.last_active = now - Duration::from_secs(30);
+    let disconnected = SessionState {
+        connected: false,
+        resuming: true,
+        timeout: 60,
+        last_active: now - Duration::from_secs(30),
+        ..SessionState::default()
+    };
     assert!(
-        !SessionManager::is_session_expired(&fresh, now),
+        !SessionManager::is_session_expired(&disconnected, now),
         "30s elapsed with 60s timeout must not expire"
     );
 
-    let mut expired = fresh.clone();
-    expired.last_active = now - Duration::from_secs(61);
+    let expired = SessionState {
+        last_active: now - Duration::from_secs(61),
+        ..disconnected.clone()
+    };
     assert!(
         SessionManager::is_session_expired(&expired, now),
         "61s elapsed with 60s timeout must expire (exact timeout, not doubled)"
     );
 
     // timeout = 0: disconnected session expires immediately (no resume window)
-    let mut zero_timeout = fresh.clone();
-    zero_timeout.timeout = 0;
+    let zero_timeout = SessionState {
+        timeout: 0,
+        ..disconnected.clone()
+    };
     assert!(SessionManager::is_session_expired(&zero_timeout, now));
 
     // Connected sessions never expire, even with an old last_active
-    let mut connected = fresh.clone();
-    connected.connected = true;
-    connected.last_active = now - Duration::from_secs(3600);
+    let connected = SessionState {
+        connected: true,
+        last_active: now - Duration::from_secs(3600),
+        ..disconnected.clone()
+    };
     assert!(!SessionManager::is_session_expired(&connected, now));
 
     // Non-resuming disconnected sessions are immediately expired
-    let mut no_resume = fresh.clone();
-    no_resume.resuming = false;
+    let no_resume = SessionState {
+        resuming: false,
+        ..disconnected
+    };
     assert!(SessionManager::is_session_expired(&no_resume, now));
 }
 
