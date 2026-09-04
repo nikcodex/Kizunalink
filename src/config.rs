@@ -71,6 +71,25 @@ pub struct SourcesConfig {
     pub deezer: bool,
 }
 
+impl Default for SourcesConfig {
+    fn default() -> Self {
+        Self {
+            jiosaavn: true,
+            spotify: true,
+            youtube: true,
+            soundcloud: true,
+            bandcamp: true,
+            twitch: true,
+            vimeo: false,
+            niconico: false,
+            http: true,
+            local: false,
+            applemusic: true,
+            deezer: true,
+        }
+    }
+}
+
 fn default_true() -> bool {
     true
 }
