@@ -193,7 +193,7 @@ impl Default for SecurityConfig {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ProxyConfig {
     #[serde(default)]
     pub url: Option<String>,
@@ -201,16 +201,6 @@ pub struct ProxyConfig {
     pub username: Option<String>,
     #[serde(default)]
     pub password: Option<String>,
-}
-
-impl Default for ProxyConfig {
-    fn default() -> Self {
-        Self {
-            url: None,
-            username: None,
-            password: None,
-        }
-    }
 }
 
 impl ProxyConfig {
