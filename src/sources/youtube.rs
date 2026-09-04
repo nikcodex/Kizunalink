@@ -39,14 +39,12 @@ const INNERTUBE_CLIENTS: &[InnerTubeClient] = &[
     },
     InnerTubeClient {
         name: "TVHTML5_SIMPLY",
-        client_name: "TVHTML5_SIMPLY_EMBEDDED_PLAYER",
         client_version: "2.0",
         user_agent: "Mozilla/5.0 (ChromiumStylePlatform) Cobalt/Version",
         client_id: 85,
     },
     InnerTubeClient {
         name: "IOS",
-        client_name: "IOS",
         client_version: "19.45.4",
         user_agent: "com.google.ios.youtube/19.45.4 (iPhone16,2; U; CPU iOS 18_1_0 like Mac OS X;)",
         client_id: 5,
