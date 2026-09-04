@@ -29,15 +29,19 @@ pub struct PlayerManager {
     pub queue_max_history: usize,
 }
 
+pub struct SourceBundle {
+    pub jiosaavn: Arc<JioSaavnSource>,
+    pub youtube: Arc<YouTubeSource>,
+    pub spotify: Arc<SpotifySource>,
+    pub soundcloud: Arc<SoundCloudSource>,
+    pub deezer: Arc<DeezerSource>,
+    pub apple_music: Arc<AppleMusicSource>,
+}
+
 impl PlayerManager {
     pub fn new(
         event_tx: broadcast::Sender<String>,
-        jiosaavn: Arc<JioSaavnSource>,
-        youtube: Arc<YouTubeSource>,
-        spotify: Arc<SpotifySource>,
-        soundcloud: Arc<SoundCloudSource>,
-        deezer: Arc<DeezerSource>,
-        apple_music: Arc<AppleMusicSource>,
+        sources: SourceBundle,
         queue_max_history: usize,
     ) -> Self {
         let (track_end_tx, mut track_end_rx) = mpsc::unbounded_channel::<String>();
@@ -47,12 +51,12 @@ impl PlayerManager {
             bot_user_id: Arc::new(RwLock::new("0".to_string())),
             event_tx,
             track_end_tx,
-            jiosaavn,
-            youtube,
-            spotify,
-            soundcloud,
-            deezer,
-            apple_music,
+            jiosaavn: sources.jiosaavn,
+            youtube: sources.youtube,
+            spotify: sources.spotify,
+            soundcloud: sources.soundcloud,
+            deezer: sources.deezer,
+            apple_music: sources.apple_music,
             queue_max_history,
         };
 
@@ -321,7 +325,6 @@ impl PlayerManager {
             .ok()?
             .into_iter()
             .next()
-            .or_else(|| None)
     }
 
     pub async fn resolve_stream_url(

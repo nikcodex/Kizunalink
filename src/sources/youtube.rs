@@ -12,7 +12,6 @@ const INNERTUBE_API_KEY: &str = "AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8";
 /// YouTube may block one client but not another, so we try them in order.
 struct InnerTubeClient {
     name: &'static str,
-    client_name: &'static str,
     client_version: &'static str,
     user_agent: &'static str,
     /// Client ID number sent in X-YouTube-Client-Name header
@@ -22,21 +21,18 @@ struct InnerTubeClient {
 const INNERTUBE_CLIENTS: &[InnerTubeClient] = &[
     InnerTubeClient {
         name: "WEB",
-        client_name: "WEB",
         client_version: "2.20241126.01.00",
         user_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
         client_id: 1,
     },
     InnerTubeClient {
         name: "ANDROID_VR",
-        client_name: "ANDROID_VR",
-        client_version: "1.60.19",
-        user_agent: "com.google.android.apps.youtube.vr.oculus/1.60.19 (Linux; U; Android 12; eureka-user Build/SQ3A.220605.009.A1) gzip",
+        client_version: "1.61.48",
+        user_agent: "Mozilla/5.0 (Linux; Android 12; Quest 3) AppleWebKit/537.36 (KHTML, like Gecko) OculusBrowser/34.0.0.49 Chrome/122.0.6261.64 VR Safari/537.36",
         client_id: 28,
     },
     InnerTubeClient {
         name: "MWEB",
-        client_name: "MWEB",
         client_version: "2.20241126.01.00",
         user_agent: "Mozilla/5.0 (Linux; Android 12; Pixel 6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36",
         client_id: 2,
@@ -88,14 +84,12 @@ impl YouTubeSource {
             info!("YouTube: OAuth2 token loaded from environment");
         }
 
-        let source = Arc::new(Self {
+        Arc::new(Self {
             default_client,
             route_planner,
             po_token: RwLock::new(po_token),
             oauth_token: RwLock::new(oauth_token),
-        });
-
-        source
+        })
     }
 
     fn get_http_client(&self) -> (reqwest::Client, Option<std::net::IpAddr>) {

@@ -148,12 +148,17 @@ impl GuildPlayer {
     }
 
     pub fn emit_websocket_closed(&self, code: u16, reason: &str, by_remote: bool) {
+        let effective_reason = if reason.is_empty() {
+            describe_close_code(code)
+        } else {
+            reason
+        };
         let event = serde_json::json!({
             "op": "event",
             "type": "WebSocketClosedEvent",
             "guildId": self.guild_id,
             "code": code,
-            "reason": reason,
+            "reason": effective_reason,
             "byRemote": by_remote,
         });
         let _ = self.event_tx.send(event.to_string());
@@ -258,7 +263,7 @@ impl GuildPlayer {
             match crate::dsp::pipeline::create_kizuna_source(
                 crate::config::http_client(),
                 url.clone(),
-                None,
+                Self::extension_hint(&url),
                 self.shared_chain.clone(),
                 skip_frames,
             )
@@ -351,7 +356,7 @@ impl GuildPlayer {
             match crate::dsp::pipeline::create_kizuna_source(
                 crate::config::http_client(),
                 stream_url.clone(),
-                None,
+                Self::extension_hint(&stream_url),
                 self.shared_chain.clone(),
                 0,
             )
@@ -474,14 +479,14 @@ impl GuildPlayer {
             let pos = self.get_position();
             info!("Structural filter change; restarting at {} ms", pos);
             self.restart_at(pos).await;
-        } else if !structural && !self.filtered_active {
-            if self.shared_chain.lock().unwrap().is_active()
-                && self.is_playing
-                && self.queue.current.is_some()
-            {
-                let pos = self.get_position();
-                self.restart_at(pos).await;
-            }
+        } else if !structural
+            && !self.filtered_active
+            && self.shared_chain.lock().unwrap().is_active()
+            && self.is_playing
+            && self.queue.current.is_some()
+        {
+            let pos = self.get_position();
+            self.restart_at(pos).await;
         }
 
         self.last_update = util::current_timestamp();
@@ -567,7 +572,7 @@ impl GuildPlayer {
 
     pub fn skip_to_next(&mut self) -> Option<LavalinkTrack> {
         self.stop();
-        self.queue.next()
+        self.queue.next_track()
     }
 
     pub fn skip_to_previous(&mut self) -> Option<LavalinkTrack> {

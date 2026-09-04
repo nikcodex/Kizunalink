@@ -73,7 +73,7 @@ impl Vibrato {
 
     /// Process stereo interleaved buffer in place.
     pub fn process_buffer(&mut self, buffer: &mut [f32]) {
-        for chunk in buffer.chunks_exact_mut(2) {
+        for chunk in buffer.as_chunks_mut::<2>().0 {
             let l = chunk[0];
             let r = chunk[1];
 

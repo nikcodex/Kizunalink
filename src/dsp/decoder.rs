@@ -19,7 +19,6 @@ use symphonia::core::meta::MetadataOptions;
 use symphonia::core::probe::Hint;
 
 pub const TARGET_SAMPLE_RATE: u32 = 48000;
-const TARGET_CHANNELS: usize = 2;
 
 const DECODE_CHUNK_FRAMES: usize = 4096;
 
@@ -192,7 +191,7 @@ impl AudioDecoder {
             if self.sample_buf.is_none() {
                 self.sample_buf = Some(SampleBuffer::<f32>::new(
                     decoded.capacity() as u64,
-                    decoded.spec().clone(),
+                    *decoded.spec(),
                 ));
             }
             let sample_buf = self.sample_buf.as_mut().unwrap();
@@ -226,7 +225,7 @@ impl AudioDecoder {
                 // average channel pairs heuristically: L=(ch0+ch3)/2 R=(ch1+ch2)/2 style fallback
                 let mut s = Vec::with_capacity(src.len() / n * 2);
                 for frame in src.chunks(n) {
-                    let l: f32 = frame.iter().step_by(2).sum::<f32>() / ((n + 1) / 2) as f32;
+                    let l: f32 = frame.iter().step_by(2).sum::<f32>() / n.div_ceil(2) as f32;
                     let r: f32 =
                         frame.iter().skip(1).step_by(2).sum::<f32>() / (n / 2).max(1) as f32;
                     s.push(l);

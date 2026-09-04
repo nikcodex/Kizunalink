@@ -52,7 +52,7 @@ impl Default for SessionState {
 pub fn add_guild_to_session(session_id: &str, guild_id: &str) {
     let mut entry = SESSION_STATE
         .entry(session_id.to_string())
-        .or_insert_with(SessionState::default);
+        .or_default();
     entry.guild_ids.insert(guild_id.to_string());
 }
 
@@ -122,7 +122,7 @@ pub fn update_session_state(
 ) -> (bool, u64) {
     let mut entry = SESSION_STATE
         .entry(session_id.to_string())
-        .or_insert_with(SessionState::default);
+        .or_default();
     if let Some(r) = resuming {
         entry.resuming = r;
     }
@@ -248,7 +248,7 @@ async fn handle_socket(
     } else {
         let mut entry = SESSION_STATE
             .entry(session_id.clone())
-            .or_insert_with(SessionState::default);
+            .or_default();
         entry.connected = true;
         entry.user_id = user_id;
     }
@@ -297,10 +297,8 @@ async fn handle_socket(
                                 true
                             };
 
-                            if should_forward {
-                                if sender.send(Message::Text(msg)).await.is_err() {
-                                    break;
-                                }
+                            if should_forward && sender.send(Message::Text(msg)).await.is_err() {
+                                break;
                             }
                         }
                         Err(tokio::sync::broadcast::error::RecvError::Lagged(skipped)) => {

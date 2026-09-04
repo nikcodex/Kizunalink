@@ -11,15 +11,17 @@ pub struct LavalinkError {
     pub error: String,
     pub message: String,
     pub path: String,
-    pub headers: HeaderMap,
+    pub headers: Option<Box<HeaderMap>>,
 }
 
 impl LavalinkError {
     pub fn new(status: StatusCode, message: impl Into<String>, path: impl Into<String>) -> Self {
-        let mut headers = HeaderMap::new();
+        let mut headers = None;
         if status == StatusCode::TOO_MANY_REQUESTS {
             if let Ok(val) = HeaderValue::from_str("60") {
-                headers.insert(axum::http::header::RETRY_AFTER, val);
+                let mut map = HeaderMap::new();
+                map.insert(axum::http::header::RETRY_AFTER, val);
+                headers = Some(Box::new(map));
             }
         }
         Self {
@@ -32,13 +34,17 @@ impl LavalinkError {
     }
 
     pub fn with_header(mut self, name: HeaderName, value: HeaderValue) -> Self {
-        self.headers.insert(name, value);
+        self.headers
+            .get_or_insert_with(|| Box::new(HeaderMap::new()))
+            .insert(name, value);
         self
     }
 
     pub fn with_retry_after(mut self, retry_after_secs: u64) -> Self {
         if let Ok(val) = HeaderValue::from_str(&retry_after_secs.to_string()) {
-            self.headers.insert(axum::http::header::RETRY_AFTER, val);
+            self.headers
+                .get_or_insert_with(|| Box::new(HeaderMap::new()))
+                .insert(axum::http::header::RETRY_AFTER, val);
         }
         self
     }
@@ -55,7 +61,9 @@ impl IntoResponse for LavalinkError {
         });
         let status = StatusCode::from_u16(self.status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
         let mut resp = (status, Json(body)).into_response();
-        resp.headers_mut().extend(self.headers);
+        if let Some(headers) = self.headers {
+            resp.headers_mut().extend(*headers);
+        }
         resp
     }
 }

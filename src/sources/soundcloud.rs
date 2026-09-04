@@ -131,7 +131,7 @@ impl SoundCloudSource {
                 let items = json.get("collection").and_then(|c| c.as_array())?;
                 let tracks: Vec<LavalinkTrack> = items
                     .iter()
-                    .filter_map(|item| parse_track(item))
+                    .filter_map(parse_track)
                     .take(limit)
                     .collect();
                 Some(tracks)
@@ -212,7 +212,7 @@ impl SoundCloudSource {
                 let tracks_val = json.get("tracks").and_then(|t| t.as_array())?;
                 let tracks: Vec<LavalinkTrack> = tracks_val
                     .iter()
-                    .filter_map(|item| parse_track(item))
+                    .filter_map(parse_track)
                     .collect();
 
                 if tracks.is_empty() {

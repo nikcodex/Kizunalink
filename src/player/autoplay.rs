@@ -23,6 +23,15 @@ impl AutoplayEngine {
             max_played: 50,
         }
     }
+}
+
+impl Default for AutoplayEngine {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl AutoplayEngine {
 
     pub fn enable(&mut self) {
         self.enabled = true;
@@ -124,10 +133,10 @@ impl AutoplayEngine {
         let title_prefix = title_words.join(" ");
 
         vec![
-            format!("{}", main_artist),
+            main_artist.to_string(),
             format!("{} popular", main_artist),
             format!("{} mix", main_artist),
-            format!("{}", title_prefix),
+            title_prefix,
         ]
     }
 
@@ -269,11 +278,11 @@ fn levenshtein_ratio(a: &str, b: &str) -> f64 {
 
     let mut matrix = vec![vec![0usize; b_len + 1]; a_len + 1];
 
-    for i in 0..=a_len {
-        matrix[i][0] = i;
+    for (i, row) in matrix.iter_mut().enumerate() {
+        row[0] = i;
     }
-    for j in 0..=b_len {
-        matrix[0][j] = j;
+    for (j, cell) in matrix[0].iter_mut().enumerate() {
+        *cell = j;
     }
 
     for i in 1..=a_len {

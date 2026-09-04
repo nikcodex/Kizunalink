@@ -273,8 +273,8 @@ impl<R: Read + Send + Sync> AudioSource for PcmSourceWrapper<R> {
 
         let num_samples = total_read / 4;
         let mut samples = Vec::with_capacity(num_samples);
-        for chunk in buf[..total_read].chunks_exact(4) {
-            let f = f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
+        for chunk in buf[..total_read].as_chunks::<4>().0 {
+            let f = f32::from_le_bytes(*chunk);
             // Convert f32 to i16
             let s = (f * i16::MAX as f32).clamp(i16::MIN as f32, i16::MAX as f32) as i16;
             samples.push(s);

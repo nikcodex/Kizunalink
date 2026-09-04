@@ -29,7 +29,7 @@ impl Rotation {
         if self.rotation_hz == 0.0 || self.rotation_hz.abs() < 1e-6 || self.sample_rate <= 0.0 {
             return;
         }
-        for chunk in buffer.chunks_exact_mut(2) {
+        for chunk in buffer.as_chunks_mut::<2>().0 {
             let l = chunk[0] as f64;
             let r = chunk[1] as f64;
 

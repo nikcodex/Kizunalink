@@ -30,7 +30,7 @@ pub fn decode_track_safe(encoded: &str) -> Result<LavalinkTrack, String> {
 pub fn create_http_track(url: &str) -> LavalinkTrack {
     let title = url
         .split('/')
-        .last()
+        .next_back()
         .unwrap_or("Direct Audio Stream")
         .split('?')
         .next()

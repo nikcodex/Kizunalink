@@ -63,7 +63,7 @@ impl Karaoke {
     /// from each channel, scaled by `level`. `mono_level` blends between
     /// the original signal (0.0) and the center-removed signal (1.0).
     pub fn process_buffer(&mut self, buffer: &mut [f32]) {
-        for chunk in buffer.chunks_exact_mut(2) {
+        for chunk in buffer.as_chunks_mut::<2>().0 {
             let l = chunk[0] as f64;
             let r = chunk[1] as f64;
 

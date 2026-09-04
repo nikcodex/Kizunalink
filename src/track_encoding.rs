@@ -50,7 +50,7 @@ pub fn decode_track(encoded: &str) -> Result<LavalinkTrack, TrackDecodeError> {
         1
     };
 
-    if version < 1 || version > 3 {
+    if !(1..=3).contains(&version) {
         return Err(TrackDecodeError::UnsupportedVersion(version));
     }
 
@@ -282,7 +282,7 @@ mod tests {
         assert_eq!(decoded.info.identifier, "dQw4w9WgXcQ");
         assert_eq!(decoded.info.author, "RickAstleyVEVO");
         assert_eq!(decoded.info.length, 212000);
-        assert_eq!(decoded.info.is_stream, false);
+        assert!(!decoded.info.is_stream);
         assert_eq!(decoded.info.position, 0);
         assert_eq!(decoded.info.title, "Rick Astley - Never Gonna Give You Up");
         assert_eq!(
@@ -290,7 +290,7 @@ mod tests {
             Some("https://www.youtube.com/watch?v=dQw4w9WgXcQ")
         );
         assert_eq!(decoded.info.source_name, "youtube");
-        assert_eq!(decoded.info.is_seekable, true);
+        assert!(decoded.info.is_seekable);
     }
 
     #[test]
@@ -355,8 +355,8 @@ mod tests {
         let encoded = encode_track(&original).expect("Failed to encode track");
         let decoded = decode_track(&encoded).expect("Failed to decode track");
 
-        assert_eq!(decoded.info.is_stream, true);
-        assert_eq!(decoded.info.is_seekable, false);
+        assert!(decoded.info.is_stream);
+        assert!(!decoded.info.is_seekable);
         assert_eq!(decoded.info.source_name, "http");
     }
 

@@ -45,7 +45,7 @@ impl TrackQueue {
         }
     }
 
-    pub fn next(&mut self) -> Option<LavalinkTrack> {
+    pub fn next_track(&mut self) -> Option<LavalinkTrack> {
         // Check loop mode BEFORE moving current to history
         match self.loop_mode {
             LoopMode::Track => {

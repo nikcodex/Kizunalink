@@ -106,6 +106,12 @@ pub struct PluginManager {
     native_plugins: Vec<NativePlugin>,
 }
 
+impl Default for PluginManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl PluginManager {
     pub fn new() -> Self {
         let plugin_dir = Path::new("plugins");

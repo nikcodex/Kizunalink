@@ -96,12 +96,14 @@ async fn main() {
 
     let player_manager = Arc::new(PlayerManager::new(
         event_tx.clone(),
-        jiosaavn.clone(),
-        youtube.clone(),
-        spotify.clone(),
-        soundcloud.clone(),
-        deezer.clone(),
-        apple_music.clone(),
+        crate::player::manager::SourceBundle {
+            jiosaavn: jiosaavn.clone(),
+            youtube: youtube.clone(),
+            spotify: spotify.clone(),
+            soundcloud: soundcloud.clone(),
+            deezer: deezer.clone(),
+            apple_music: apple_music.clone(),
+        },
         config.queue_max_history,
     ));
 

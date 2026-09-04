@@ -25,7 +25,7 @@ pub struct Timescale {
     pub pitch: f64,
     pub rate: f64,
 
-    sample_rate: f64,
+    _sample_rate: f64,
 
     // rubato resampler; None when ratio == 1.0
     resampler: Option<SincFixedIn<f32>>,
@@ -44,7 +44,7 @@ impl Timescale {
             speed: 1.0,
             pitch: 1.0,
             rate: 1.0,
-            sample_rate,
+            _sample_rate: sample_rate,
             resampler: None,
             res_in: [Vec::new(), Vec::new()],
             res_out_pending: [Vec::new(), Vec::new()],
@@ -163,19 +163,16 @@ impl Timescale {
         // Flush remaining partial chunk and Sinc delay line
         if let Some(resampler) = self.resampler.as_mut() {
             while !self.res_in[0].is_empty() {
-                let pad = CHUNK_FRAMES.saturating_sub(self.res_in[0].len());
-                self.res_in[0].extend(std::iter::repeat(0.0).take(pad));
-                self.res_in[1].extend(std::iter::repeat(0.0).take(pad));
+                self.res_in[0].resize(CHUNK_FRAMES, 0.0);
+                self.res_in[1].resize(CHUNK_FRAMES, 0.0);
 
                 let wave_in = vec![
                     self.res_in[0].drain(..CHUNK_FRAMES).collect::<Vec<f32>>(),
                     self.res_in[1].drain(..CHUNK_FRAMES).collect::<Vec<f32>>(),
                 ];
                 if let Ok(wave_out) = resampler.process(&wave_in, None) {
-                    for i in 0..wave_out[0].len() {
-                        self.res_out_pending[0].push(wave_out[0][i]);
-                        self.res_out_pending[1].push(wave_out[1][i]);
-                    }
+                    self.res_out_pending[0].extend_from_slice(&wave_out[0]);
+                    self.res_out_pending[1].extend_from_slice(&wave_out[1]);
                 }
             }
 
@@ -183,10 +180,8 @@ impl Timescale {
             let silence = vec![vec![0.0f32; CHUNK_FRAMES], vec![0.0f32; CHUNK_FRAMES]];
             for _ in 0..3 {
                 if let Ok(wave_out) = resampler.process(&silence, None) {
-                    for i in 0..wave_out[0].len() {
-                        self.res_out_pending[0].push(wave_out[0][i]);
-                        self.res_out_pending[1].push(wave_out[1][i]);
-                    }
+                    self.res_out_pending[0].extend_from_slice(&wave_out[0]);
+                    self.res_out_pending[1].extend_from_slice(&wave_out[1]);
                 }
             }
             for i in 0..self.res_out_pending[0].len() {

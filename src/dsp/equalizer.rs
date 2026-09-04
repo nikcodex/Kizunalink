@@ -75,7 +75,7 @@ impl Equalizer {
 
     /// Process a buffer of interleaved stereo samples
     pub fn process_buffer(&mut self, buffer: &mut [f32]) {
-        for chunk in buffer.chunks_exact_mut(2) {
+        for chunk in buffer.as_chunks_mut::<2>().0 {
             let mut left = chunk[0] as f64;
             let mut right = chunk[1] as f64;
             for (bl, br) in self.bands_l.iter_mut().zip(self.bands_r.iter_mut()) {
@@ -116,8 +116,7 @@ mod tests {
         let input_sum = (0..1000)
             .map(|i| {
                 let t = i as f64 / sample_rate;
-                let input = (2.0 * std::f64::consts::PI * 1000.0 * t).sin();
-                input
+                (2.0 * std::f64::consts::PI * 1000.0 * t).sin()
             })
             .sum::<f64>();
 

@@ -12,14 +12,14 @@
 
 #[derive(Debug)]
 pub struct Wsola {
-    sample_rate: f64,
+    _sample_rate: f64,
     frame_len: usize,
     overlap: usize,
     delta: usize,
     // stretch factor: output_len = input_len / alpha (alpha > 1 => faster)
     alpha: f64,
 
-    hann: Vec<f32>,
+    _hann: Vec<f32>,
     // pending input samples per channel (stereo deinterleaved)
     in_buf: [Vec<f32>; 2],
     // next analysis position (absolute index into consumed stream)
@@ -33,25 +33,26 @@ pub struct Wsola {
 
 impl Wsola {
     pub fn new(sample_rate: f64) -> Self {
-        let frame_len = (sample_rate as usize * 30) / 1000; // 30 ms
-        let overlap = frame_len / 2;
-        let delta = (sample_rate as usize * 5) / 1000; // +/-5 ms search
+        // WSOLA parameters optimized for 48 kHz voice/music
+        let frame_len = 1024;
+        let overlap = 256;
+        let delta = 256;
 
         let mut hann = vec![0.0f32; frame_len];
         if frame_len > 1 {
             for (i, h) in hann.iter_mut().enumerate() {
-                let x = i as f32 / (frame_len - 1) as f32;
-                *h = 0.5 - 0.5 * (2.0 * std::f32::consts::PI * x).cos();
+                *h = (0.5 * (1.0 - (2.0 * std::f64::consts::PI * i as f64 / (frame_len - 1) as f64).cos()))
+                    as f32;
             }
         }
 
         Self {
-            sample_rate,
+            _sample_rate: sample_rate,
             frame_len,
             overlap,
             delta,
             alpha: 1.0,
-            hann,
+            _hann: hann,
             in_buf: [Vec::new(), Vec::new()],
             next_analysis_start: 0,
             total_input_consumed: 0,
@@ -75,7 +76,7 @@ impl Wsola {
 
     /// Feed stereo interleaved input.
     pub fn push(&mut self, interleaved: &[f32]) {
-        for chunk in interleaved.chunks_exact(2) {
+        for chunk in interleaved.as_chunks::<2>().0 {
             self.in_buf[0].push(chunk[0]);
             self.in_buf[1].push(chunk[1]);
         }
@@ -156,7 +157,7 @@ impl Wsola {
                 }
             }
 
-            let analysis_start = self.next_analysis_start as usize;
+            let analysis_start = self.next_analysis_start;
 
             // Choose segment offset via cross-correlation against ref_tail
             let seg_start = self.find_best_offset(analysis_start, analysis_hop);
