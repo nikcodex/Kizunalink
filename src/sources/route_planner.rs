@@ -207,7 +207,7 @@ impl RoutePlanner {
             .timeout(Duration::from_secs(5))
             .redirect(crate::security::redirect_policy())
             .build()
-            .unwrap_or_else(|_| reqwest::Client::new());
+            .unwrap_or_else(|_| crate::config::http_client());
 
         info!(
             "⛩️ RoutePlanner initialized: strategy={}, blocks={}, excluded={}",
