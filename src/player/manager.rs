@@ -137,6 +137,7 @@ impl PlayerManager {
             deezer: self.deezer.clone(),
             apple_music: self.apple_music.clone(),
             queue_max_history: self.queue_max_history,
+            sources: self.sources.clone(),
         }
     }
 

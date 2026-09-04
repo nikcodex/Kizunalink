@@ -81,22 +81,21 @@ impl KizunaVoiceAdapter {
             }
         });
 
-        let connect_result =
-            tokio::time::timeout(std::time::Duration::from_secs(15), async {
-                if *rx.borrow() == ConnectionState::Connected {
+        let connect_result = tokio::time::timeout(std::time::Duration::from_secs(15), async {
+            if *rx.borrow() == ConnectionState::Connected {
+                return Ok(());
+            }
+            while rx.changed().await.is_ok() {
+                let current = *rx.borrow();
+                if current == ConnectionState::Connected {
                     return Ok(());
+                } else if current == ConnectionState::Failed {
+                    return Err("Failed to connect to Discord Voice Gateway");
                 }
-                while rx.changed().await.is_ok() {
-                    let current = *rx.borrow();
-                    if current == ConnectionState::Connected {
-                        return Ok(());
-                    } else if current == ConnectionState::Failed {
-                        return Err("Failed to connect to Discord Voice Gateway");
-                    }
-                }
-                Err("state receiver closed")
-            })
-            .await;
+            }
+            Err("state receiver closed")
+        })
+        .await;
 
         match connect_result {
             Ok(Ok(())) => {
