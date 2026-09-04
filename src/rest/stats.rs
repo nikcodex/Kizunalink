@@ -3,7 +3,7 @@ use axum::{extract::State, http::HeaderMap, response::Json};
 use crate::models::protocol::StatsPayload;
 use crate::rest::auth::require_auth;
 use crate::rest::error::LavalinkError;
-use crate::stats::{FrameCounters, SystemStats};
+use crate::stats::SystemStats;
 use crate::AppState;
 
 pub async fn get_stats(

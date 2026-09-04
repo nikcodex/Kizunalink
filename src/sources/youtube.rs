@@ -111,14 +111,8 @@ impl YouTubeSource {
             let mut req = client
                 .post(&url)
                 .header(USER_AGENT, it_client.user_agent)
-                .header(
-                    "X-YouTube-Client-Name",
-                    it_client.client_id.to_string(),
-                )
-                .header(
-                    "X-YouTube-Client-Version",
-                    it_client.client_version,
-                )
+                .header("X-YouTube-Client-Name", it_client.client_id.to_string())
+                .header("X-YouTube-Client-Version", it_client.client_version)
                 .header(ACCEPT, "application/json")
                 .json(payload);
 
@@ -274,7 +268,11 @@ impl YouTubeSource {
                 isrc: None,
                 source_name: "youtube".to_string(),
             },
-            plugin_info: Value::Object(Default::default()),
+            plugin_info: if let Some(stream_url) = audio_url {
+                serde_json::json!({ "streamUrl": stream_url })
+            } else {
+                Value::Object(Default::default())
+            },
             user_data: Value::Object(Default::default()),
         };
 
@@ -334,7 +332,9 @@ impl YouTubeSource {
                     .map(|s| s.to_string())
             });
 
-        audio_url.ok_or_else(|| "No direct audio stream URL found in YouTube player response".to_string())
+        audio_url.ok_or_else(|| {
+            "No direct audio stream URL found in YouTube player response".to_string()
+        })
     }
 
     /// Search YouTube using InnerTube with multi-client fallback

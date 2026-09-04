@@ -30,9 +30,7 @@ impl Rotation {
 
     /// Process stereo interleaved buffer in place.
     pub fn process_buffer(&mut self, buffer: &mut [f32]) {
-        if self.rotation_hz.abs() < 1e-6
-            || !self.sample_rate.is_finite()
-            || self.sample_rate <= 0.0
+        if self.rotation_hz.abs() < 1e-6 || !self.sample_rate.is_finite() || self.sample_rate <= 0.0
         {
             return;
         }
@@ -165,7 +163,7 @@ mod tests {
         rot.set_rotation_hz(-1.0);
         assert_eq!(rot.rotation_hz, -1.0);
 
-        let mut buf = vec![1.0f32, 0.0f32; 48000];
+        let mut buf = vec![1.0f32; 48000];
         rot.process_buffer(&mut buf);
         assert!(rot.phase >= 0.0 && rot.phase < 1.0);
     }

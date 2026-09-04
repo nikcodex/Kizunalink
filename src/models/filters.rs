@@ -220,7 +220,10 @@ mod tests {
         assert_eq!(filters.rotation.as_ref().unwrap().rotation_hz, 2.0);
         assert_eq!(filters.karaoke.as_ref().unwrap().mono_level, 0.8);
         assert_eq!(filters.distortion.as_ref().unwrap().sin_scale, 1.5);
-        assert!(filters.plugin_filters.is_empty(), "Core filter fields absorbed into plugin_filters!");
+        assert!(
+            filters.plugin_filters.is_empty(),
+            "Core filter fields absorbed into plugin_filters!"
+        );
 
         let serialized = serde_json::to_string(&filters).unwrap();
         assert!(serialized.contains("channelMix"));

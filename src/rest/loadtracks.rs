@@ -50,7 +50,10 @@ pub async fn load_tracks(
         ));
     }
 
-    info!("Resolving track query: \"{}\"", security::sanitize_for_log(&identifier));
+    info!(
+        "Resolving track query: \"{}\"",
+        security::sanitize_for_log(&identifier)
+    );
 
     // Local audio file playback (e.g. /media/song.mp3 or file:///media/song.mp3)
     let local_path = if let Some(stripped) = identifier.strip_prefix("file://") {
@@ -122,7 +125,11 @@ pub async fn load_tracks(
     // SSRF protection: validate URL for identifier-based loads
     if identifier.starts_with("http://") || identifier.starts_with("https://") {
         if let Err(e) = security::validate_url(&identifier) {
-            warn!("SSRF blocked for '{}': {}", security::sanitize_for_log(&identifier), e);
+            warn!(
+                "SSRF blocked for '{}': {}",
+                security::sanitize_for_log(&identifier),
+                e
+            );
             return Ok(Json(LoadResult::Error(crate::models::track::ErrorInfo {
                 message: Some(format!("URL rejected: {}", e)),
                 severity: "fault".to_string(),

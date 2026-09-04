@@ -365,6 +365,7 @@ mod tests {
         output.extend_from_slice(&60000u64.to_be_bytes());
         write_utf(&mut output, "v1_id").unwrap();
         output.push(0); // not stream
+
         // In v1, NO uri exists! Immediately writes sourceName:
         write_utf(&mut output, "youtube").unwrap();
         output.extend_from_slice(&0u64.to_be_bytes()); // position

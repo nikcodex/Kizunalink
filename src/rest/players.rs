@@ -80,7 +80,11 @@ pub async fn get_players(
     let all = state.player_manager.get_all_players().await;
     let players: Vec<PlayerResponse> = all
         .into_iter()
-        .filter(|p| state.session_manager.is_guild_subscribed(&session_id, &p.guild_id))
+        .filter(|p| {
+            state
+                .session_manager
+                .is_guild_subscribed(&session_id, &p.guild_id)
+        })
         .collect();
     Ok(Json(players))
 }
@@ -105,7 +109,10 @@ pub async fn get_player(
         return Err(LavalinkError::new(StatusCode::BAD_REQUEST, e, path));
     }
 
-    if !state.session_manager.is_guild_subscribed(&session_id, &guild_id) {
+    if !state
+        .session_manager
+        .is_guild_subscribed(&session_id, &guild_id)
+    {
         return Err(LavalinkError::new(
             StatusCode::NOT_FOUND,
             format!("Player not found for guild: {}", guild_id),
@@ -198,7 +205,10 @@ pub async fn destroy_player(
         return Err(LavalinkError::new(StatusCode::BAD_REQUEST, e, path));
     }
 
-    if !state.session_manager.is_guild_subscribed(&session_id, &guild_id) {
+    if !state
+        .session_manager
+        .is_guild_subscribed(&session_id, &guild_id)
+    {
         return Err(LavalinkError::new(
             StatusCode::NOT_FOUND,
             format!("Player not found for guild: {}", guild_id),

@@ -420,8 +420,10 @@ impl PlayerManager {
             let isrc_query = format!("isrc:{}", isrc);
             if let Ok(yt_tracks) = self.youtube.search(&isrc_query, 1).await {
                 if let Some(yt_track) = yt_tracks.into_iter().next() {
-                    if let Ok(url) =
-                        self.youtube.resolve_stream_url(&yt_track.info.identifier).await
+                    if let Ok(url) = self
+                        .youtube
+                        .resolve_stream_url(&yt_track.info.identifier)
+                        .await
                     {
                         info!(
                             "⚡ Spotify->YouTube via ISRC: '{}' for '{}'",
@@ -436,8 +438,10 @@ impl PlayerManager {
         // 3. Fallback to YouTube title/artist search
         if let Ok(yt_tracks) = self.youtube.search(&query, 1).await {
             if let Some(first_yt) = yt_tracks.into_iter().next() {
-                if let Ok(url) =
-                    self.youtube.resolve_stream_url(&first_yt.info.identifier).await
+                if let Ok(url) = self
+                    .youtube
+                    .resolve_stream_url(&first_yt.info.identifier)
+                    .await
                 {
                     info!("⚡ Spotify->YouTube for '{}'", track.info.title);
                     return Some(url);
@@ -474,8 +478,10 @@ impl PlayerManager {
             let isrc_query = format!("isrc:{}", isrc);
             if let Ok(yt_tracks) = self.youtube.search(&isrc_query, 1).await {
                 if let Some(yt_track) = yt_tracks.into_iter().next() {
-                    if let Ok(url) =
-                        self.youtube.resolve_stream_url(&yt_track.info.identifier).await
+                    if let Ok(url) = self
+                        .youtube
+                        .resolve_stream_url(&yt_track.info.identifier)
+                        .await
                     {
                         info!("⚡ Deezer->YouTube via ISRC for '{}'", track.info.title);
                         return Some(url);
@@ -487,8 +493,10 @@ impl PlayerManager {
         // 3. Fallback to YouTube title/artist search
         if let Ok(yt_tracks) = self.youtube.search(&query, 1).await {
             if let Some(first_yt) = yt_tracks.into_iter().next() {
-                if let Ok(url) =
-                    self.youtube.resolve_stream_url(&first_yt.info.identifier).await
+                if let Ok(url) = self
+                    .youtube
+                    .resolve_stream_url(&first_yt.info.identifier)
+                    .await
                 {
                     info!("⚡ Deezer->YouTube for '{}'", track.info.title);
                     return Some(url);
@@ -536,8 +544,10 @@ impl PlayerManager {
             let isrc_query = format!("isrc:{}", isrc);
             if let Ok(yt_tracks) = self.youtube.search(&isrc_query, 1).await {
                 if let Some(yt_track) = yt_tracks.into_iter().next() {
-                    if let Ok(url) =
-                        self.youtube.resolve_stream_url(&yt_track.info.identifier).await
+                    if let Ok(url) = self
+                        .youtube
+                        .resolve_stream_url(&yt_track.info.identifier)
+                        .await
                     {
                         info!("⚡ AppleMusic->YouTube via ISRC for '{}'", track.info.title);
                         return Some(url);
@@ -549,8 +559,10 @@ impl PlayerManager {
         // 3. Fallback to YouTube title/artist search
         if let Ok(yt_tracks) = self.youtube.search(&query, 1).await {
             if let Some(first_yt) = yt_tracks.into_iter().next() {
-                if let Ok(url) =
-                    self.youtube.resolve_stream_url(&first_yt.info.identifier).await
+                if let Ok(url) = self
+                    .youtube
+                    .resolve_stream_url(&first_yt.info.identifier)
+                    .await
                 {
                     info!("⚡ AppleMusic->YouTube for '{}'", track.info.title);
                     return Some(url);

@@ -73,7 +73,10 @@ pub async fn ws_handler(
     // Rate limit WebSocket connections per IP
     let ip = extract_ip(&headers, "0.0.0.0");
     if !state.rate_limiter.check(&ip) {
-        warn!("WebSocket rate limit exceeded for IP: {}", security::sanitize_for_log(&ip));
+        warn!(
+            "WebSocket rate limit exceeded for IP: {}",
+            security::sanitize_for_log(&ip)
+        );
         let mut retry_headers = HeaderMap::new();
         if let Ok(val) =
             axum::http::HeaderValue::from_str(&state.rate_limiter.window_secs().to_string())
