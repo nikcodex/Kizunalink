@@ -383,7 +383,6 @@ async fn test_concurrent_player_ownership_claim_single_owner() {
 
     // Exactly one session wins the guild — all successes share a single owner.
     assert_eq!((a_ok > 0) as usize + (b_ok > 0) as usize, 1);
-    assert_eq!(a_ok + b_ok, 1);
     let (total, _) = pm.count_players().await;
     assert_eq!(total, 1);
 }

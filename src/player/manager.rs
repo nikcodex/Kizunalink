@@ -9,7 +9,7 @@ use crate::sources::spotify::SpotifySource;
 use crate::sources::youtube::YouTubeSource;
 use dashmap::DashMap;
 use std::sync::Arc;
-use tokio::sync::{broadcast, mpsc, RwLock};
+use tokio::sync::{broadcast, mpsc, Mutex, RwLock};
 use tracing::{info, warn};
 
 /// Maximum number of concurrent players allowed.
@@ -55,7 +55,7 @@ pub struct PlayerManager {
     players: DashMap<String, PlayerEntry>,
     /// Serializes player creation so that the player-limit check and the
     /// ownership claim are atomic (no check-then-act races).
-    creation_lock: Arc<std::sync::Mutex<()>>,
+    creation_lock: Arc<Mutex<()>>,
     max_players: usize,
     pub bot_user_id: Arc<RwLock<String>>,
     event_tx: broadcast::Sender<String>,
@@ -91,7 +91,7 @@ impl PlayerManager {
 
         let manager = Self {
             players: DashMap::new(),
-            creation_lock: Arc::new(std::sync::Mutex::new(())),
+            creation_lock: Arc::new(Mutex::new(())),
             max_players,
             bot_user_id: Arc::new(RwLock::new("0".to_string())),
             event_tx,
@@ -181,7 +181,7 @@ impl PlayerManager {
     ) -> Result<Arc<RwLock<GuildPlayer>>, PlayerManagerError> {
         let user_id = self.bot_user_id.read().await.clone();
 
-        let _guard = self.creation_lock.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = self.creation_lock.lock().await;
 
         if let Some(entry) = self.players.get(guild_id) {
             if entry.value().session_id == session_id {
