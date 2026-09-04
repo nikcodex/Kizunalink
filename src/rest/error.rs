@@ -155,6 +155,15 @@ pub async fn maybe_inject_trace(response: Response, trace_requested: bool) -> Re
 
     axum::response::Response::from_parts(parts, axum::body::Body::from(bytes))
 }
+
+impl std::fmt::Display for LavalinkError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}: {}", self.error, self.message)
+    }
+}
+
+impl std::error::Error for LavalinkError {}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -241,11 +250,3 @@ mod tests {
         assert_eq!(body.get("ok").unwrap().as_bool(), Some(true));
     }
 }
-
-impl std::fmt::Display for LavalinkError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}: {}", self.error, self.message)
-    }
-}
-
-impl std::error::Error for LavalinkError {}

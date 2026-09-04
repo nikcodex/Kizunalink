@@ -31,22 +31,23 @@ pub async fn get_metrics(
     let uptime = state.start_time.elapsed().as_millis() as u64;
     let memory = system_stats.get_memory_stats().await;
     let cpu = system_stats.get_cpu_stats().await;
-
     metrics.update_from_stats(
         total_players,
         playing_players,
         uptime,
         memory.used,
         cpu.lavalink_load,
-        crate::stats::FrameCounters::global()
-            .sent
-            .load(std::sync::atomic::Ordering::Relaxed),
-        crate::stats::FrameCounters::global()
-            .nulled
-            .load(std::sync::atomic::Ordering::Relaxed),
-        crate::stats::FrameCounters::global()
-            .deficit
-            .load(std::sync::atomic::Ordering::Relaxed),
+        crate::models::protocol::FrameStats {
+            sent: crate::stats::FrameCounters::global()
+                .sent
+                .load(std::sync::atomic::Ordering::Relaxed),
+            nulled: crate::stats::FrameCounters::global()
+                .nulled
+                .load(std::sync::atomic::Ordering::Relaxed),
+            deficit: crate::stats::FrameCounters::global()
+                .deficit
+                .load(std::sync::atomic::Ordering::Relaxed),
+        },
     );
 
     let body = metrics.encode_text();

@@ -282,18 +282,16 @@ impl Metrics {
         uptime_ms: u64,
         mem_used: u64,
         cpu: f64,
-        frames_sent: u64,
-        frames_nulled: u64,
-        frames_deficit: u64,
+        frame_stats: crate::models::protocol::FrameStats,
     ) {
         self.players_total.set(players as i64);
         self.players_playing.set(playing as i64);
         self.uptime_seconds.set(uptime_ms as f64 / 1000.0);
         self.memory_used_bytes.set(mem_used as f64);
         self.cpu_usage.set(cpu);
-        self.frames_sent.set(frames_sent as i64);
-        self.frames_nulled.set(frames_nulled as i64);
-        self.frames_deficit.set(frames_deficit as i64);
+        self.frames_sent.set(frame_stats.sent as i64);
+        self.frames_nulled.set(frame_stats.nulled as i64);
+        self.frames_deficit.set(frame_stats.deficit as i64);
     }
 
     /// Increment the counter for a specific source.
