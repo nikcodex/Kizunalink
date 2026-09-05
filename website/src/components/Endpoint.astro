@@ -1,0 +1,23 @@
+---
+/**
+ * Renders an HTTP endpoint header:  [GET] /v4/sessions/{sessionId}/players
+ * Path params wrapped in {braces} are highlighted automatically.
+ */
+interface Props {
+  method: 'GET' | 'POST' | 'PATCH' | 'DELETE' | 'WS';
+  path: string;
+  kizuna?: boolean;
+}
+const { method, path, kizuna = false } = Astro.props;
+
+// Split "{param}" segments so they can be styled.
+const parts = path.split(/(\{[^}]+\}|:[a-zA-Z_]+)/g).filter(Boolean);
+---
+
+<div class="kz-endpoint not-content">
+  <span class:list={['kz-method', method.toLowerCase()]}>{method}</span>
+  <span class="path">
+    {parts.map((p) => (p.startsWith('{') || p.startsWith(':') ? <span class="param">{p}</span> : <span>{p}</span>))}
+  </span>
+  {kizuna && <span class="kz-only" title="KizunaLink-only extension — not part of the Lavalink v4 spec">⛩ Kizuna only</span>}
+</div>

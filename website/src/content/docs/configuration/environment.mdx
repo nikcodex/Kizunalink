@@ -1,0 +1,108 @@
+---
+title: Environment Variables
+description: Every KIZUNA_* override and source credential KizunaLink reads from the environment or a .env file.
+sidebar:
+  order: 2
+---
+
+import { Aside, Tabs, TabItem } from '@astrojs/starlight/components';
+
+Environment variables override the corresponding `config.toml` values. They are read from the process environment and from a `.env` file in the working directory (loaded with `dotenvy`, which never overwrites variables that are already set).
+
+## Server & runtime
+
+| Variable | Overrides | Example |
+|---|---|---|
+| `KIZUNA_HOST` | `server.host` | `0.0.0.0` |
+| `KIZUNA_PORT` | `server.port` | `2333` |
+| `KIZUNA_PASSWORD` | `server.password` | `s3cret` |
+| `KIZUNA_MAX_CONNECTIONS` | `server.max_connections` | `1000` |
+| `KIZUNA_QUEUE_MAX_HISTORY` | `server.queue_max_history` | `50` |
+| `KIZUNA_LOG_LEVEL` | `logging.level` | `debug` |
+| `KIZUNA_LOG_COLORED` | `logging.colored` — any value except the literal `false` enables colour | `false` |
+| `RUST_LOG` | Takes precedence over both `KIZUNA_LOG_LEVEL` and `logging.level`; accepts full `tracing` directives | `info,kizunalink::ws=trace` |
+
+## Rate limiting & route planner
+
+| Variable | Overrides | Example |
+|---|---|---|
+| `KIZUNA_MAX_REQUESTS` | `ratelimit.max_requests` | `120` |
+| `KIZUNA_IP_BLOCKS` | `ratelimit.ip_blocks` — comma-separated CIDRs | `2001:db8::/64,203.0.113.0/28` |
+| `KIZUNA_ROUTEPLANNER_STRATEGY` | `ratelimit.strategy` | `RotatingNanoIpRoutePlanner` |
+
+## Proxy
+
+| Variable | Overrides | Example |
+|---|---|---|
+| `KIZUNA_PROXY_URL` | `proxy.url` | `socks5://10.0.0.5:1080` |
+| `KIZUNA_PROXY_USER` | `proxy.username` | `user` |
+| `KIZUNA_PROXY_PASS` | `proxy.password` | `pass` |
+
+## Source credentials
+
+These have **no `config.toml` equivalent** — they are environment-only by design so they never end up in a committed file.
+
+| Variable | Source | Effect when set |
+|---|---|---|
+| `SPOTIFY_CLIENT_ID` | Spotify | Together with the secret, switches from the anonymous web-player token to the official `client_credentials` OAuth2 flow — far more reliable under load. Get one at [developer.spotify.com](https://developer.spotify.com/dashboard). |
+| `SPOTIFY_CLIENT_SECRET` | Spotify | See above. Both must be set. |
+| `SOUNDCLOUD_CLIENT_ID` | SoundCloud | Pins a specific `client_id` instead of the built-in rotating pool. Useful if the pool is being rate-limited. |
+| `YOUTUBE_PO_TOKEN` | YouTube | Proof-of-Origin token sent with InnerTube requests. Helps avoid "Sign in to confirm you're not a bot" on datacenter IPs. Generate with a [PO-token generator](https://github.com/iv-org/youtube-trusted-session-generator). |
+| `YOUTUBE_OAUTH_TOKEN` | YouTube | OAuth bearer token for InnerTube; used for age-restricted or region-locked content. |
+
+<Aside type="tip" title="Not overridable via env">
+  Individual source toggles (`sources.*`), `request_timeout_secs`, `window_secs`, `burst`, `excluded_ips`, `max_body_size`, `blocked_hosts` and `metrics.enabled` can only be set in `config.toml`. In Docker, mount your own `config.toml` for those.
+</Aside>
+
+## Examples
+
+<Tabs>
+  <TabItem label=".env file">
+    ```bash title="~/kizunalink/.env"
+    KIZUNA_PASSWORD=change-me-please
+    KIZUNA_LOG_LEVEL=info
+    KIZUNA_LOG_COLORED=false
+
+    SPOTIFY_CLIENT_ID=0123456789abcdef0123456789abcdef
+    SPOTIFY_CLIENT_SECRET=fedcba9876543210fedcba9876543210
+    ```
+  </TabItem>
+  <TabItem label="Shell">
+    ```bash title="Terminal"
+    KIZUNA_PORT=2334 KIZUNA_PASSWORD=s3cret RUST_LOG=debug ./kizunalink
+    ```
+  </TabItem>
+  <TabItem label="Docker Compose">
+    ```yaml title="docker-compose.yml"
+    services:
+      kizunalink:
+        build: https://github.com/nikcodex/Kizunalink.git
+        environment:
+          KIZUNA_PASSWORD: ${KIZUNA_PASSWORD}          # from the host's .env
+          SPOTIFY_CLIENT_ID: ${SPOTIFY_CLIENT_ID}
+          SPOTIFY_CLIENT_SECRET: ${SPOTIFY_CLIENT_SECRET}
+          KIZUNA_LOG_COLORED: "false"
+    ```
+  </TabItem>
+  <TabItem label="systemd">
+    ```ini title="/etc/systemd/system/kizunalink.service"
+    [Service]
+    Environment=RUST_LOG=info
+    EnvironmentFile=-/opt/kizunalink/.env
+    ```
+  </TabItem>
+</Tabs>
+
+## Checking what took effect
+
+The first log line reports the resolved host and port:
+
+```
+INFO kizunalink: Loaded config: host=0.0.0.0, port=2334
+```
+
+and `/v4/info` lists the enabled `sourceManagers`. Spotify logs which auth flow it chose at start-up:
+
+```
+INFO kizunalink::sources::spotify: Spotify: Using client_credentials OAuth2 flow
+```

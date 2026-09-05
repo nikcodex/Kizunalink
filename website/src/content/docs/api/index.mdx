@@ -1,0 +1,120 @@
+---
+title: API Overview & Authentication
+description: How KizunaLink's HTTP and WebSocket API is organised — base URL, authentication, versioning, content types, and what differs from Lavalink.
+sidebar:
+  order: 0
+---
+
+import { Tabs, TabItem, Aside, LinkCard, CardGrid } from '@astrojs/starlight/components';
+import Endpoint from '../../../components/Endpoint.astro';
+
+KizunaLink exposes the **Lavalink v4 API** over plain HTTP/WebSocket on a single port (default `2333`), plus a handful of extensions marked <span class="kz-only">⛩ Kizuna only</span> throughout the reference.
+
+## Base URL
+
+```
+http://HOST:2333
+```
+
+All versioned routes live under `/v4/`. There is no `/v3/` compatibility layer.
+
+| Route | Auth | Purpose |
+|---|---|---|
+| `GET /` | none | Returns the version string (`4.2.1`) |
+| `GET /version` | none | Same as `/` |
+| `GET /health` | none | `{"status":"ok","version":"4.2.1","timestamp":…}` — for load balancers / Docker |
+| `GET /v4/websocket` | header | Event stream (WebSocket upgrade) |
+| `GET /v4/info`, `/v4/stats`, … | header | Everything else |
+
+## Authentication
+
+Every `/v4/*` request must carry the server password in the `Authorization` header — **bare**, without a `Bearer` or `Basic` prefix:
+
+<Tabs syncKey="lang">
+  <TabItem label="curl">
+    ```bash
+    curl http://localhost:2333/v4/info -H 'Authorization: youshallnotpass'
+    ```
+  </TabItem>
+  <TabItem label="JavaScript">
+    ```js
+    const res = await fetch('http://localhost:2333/v4/info', {
+      headers: { Authorization: process.env.KIZUNA_PASSWORD },
+    });
+    const info = await res.json();
+    ```
+  </TabItem>
+  <TabItem label="Python">
+    ```python
+    import httpx
+
+    r = httpx.get("http://localhost:2333/v4/info", headers={"Authorization": os.environ["KIZUNA_PASSWORD"]})
+    info = r.json()
+    ```
+  </TabItem>
+</Tabs>
+
+A missing or wrong password gives `401`:
+
+```json
+{
+  "timestamp": 1757000000000,
+  "status": 401,
+  "error": "Unauthorized",
+  "trace": null,
+  "message": "Unauthorized: Invalid authorization header",
+  "path": "/v4/info"
+}
+```
+
+The comparison is constant-time, and every failure increments the `kizunalink_errors_auth_total` metric. The password is set with [`server.password`](/configuration/config-toml/#server) or `KIZUNA_PASSWORD`.
+
+<Aside type="caution">
+  The default password `youshallnotpass` is also Lavalink's default. Change it before exposing port 2333 to anything but localhost.
+</Aside>
+
+## Content types
+
+- Requests with a body must be `Content-Type: application/json`. Bodies larger than [`security.max_body_size`](/configuration/security/) (1 MiB default) are rejected with `413`.
+- Responses are `application/json`, except `/`, `/version` (`text/plain`) and `/v4/metrics` (`text/plain; version=0.0.4`).
+- Empty successes (`DELETE` player, route-planner frees, route-planner status with no planner) return `204 No Content`.
+
+## Errors and `?trace=true`
+
+All errors share one shape, identical to Lavalink's:
+
+```json
+{ "timestamp": 1757000000000, "status": 404, "error": "Not Found", "trace": null, "message": "Session not found: abc", "path": "/v4/sessions/abc" }
+```
+
+Append `?trace=true` to any request and `trace` becomes a short, secret-free diagnostic string instead of `null`. The full status-code catalogue is on the [Errors](/api/errors/) page.
+
+## Rate limiting
+
+REST and WebSocket-upgrade requests are counted per client IP in a token bucket (`ratelimit.max_requests` + `burst` per `window_secs`). Exceeding it yields `429 Too Many Requests` with a `Retry-After` header (seconds). Behind a reverse proxy the client IP is read from `X-Forwarded-For` / `X-Real-IP`. Details: [Rate Limiting](/configuration/rate-limiting/).
+
+## Identifiers
+
+| Thing | Format | Notes |
+|---|---|---|
+| `sessionId` | random hex string | Issued in the WebSocket `ready` message. Validated as hex + `-`, ≤ 128 chars → otherwise `400` |
+| `guildId` | numeric string | Digits only, ≤ 32 chars → otherwise `400 Guild ID must be numeric` |
+| `encoded` track | base64 | Lavalink track format v1–v3 accepted, v3 emitted. See [Track Encoding](/api/track-encoding/) |
+
+## Versioning & compatibility
+
+- `GET /v4/info` reports `version.semver` (`4.2.1`), plus `jvm: "Rust (Tokio)"` and `lavaplayer: "symphonia-0.5"` in the fields Lavalink clients expect.
+- The protocol is a superset of Lavalink v4: standard clients ignore the extra fields (`autoplay`, `loop`, extra endpoints) and work unchanged.
+- `plugins` is always `[]` — there is no plugin system. Lavalink plugin-dependent features (LavaSrc, SponsorBlock, Lyrics.kt endpoints) are either built in with KizunaLink's own routes or absent.
+
+## Reference pages
+
+<CardGrid>
+  <LinkCard title="REST API" description="Every HTTP endpoint with request/response examples in curl, JS and Python." href="/api/rest/" />
+  <LinkCard title="WebSocket" description="Headers, ready/resume, playerUpdate, events, stats and client-to-server ops." href="/api/websocket/" />
+  <LinkCard title="KizunaLink Extensions" description="Lyrics, server-side queue, autoplay, loop, /players/all, /sessions, /metrics." href="/api/extensions/" />
+  <LinkCard title="Filters" description="All ten audio filters, parameters, ranges and presets." href="/api/filters/" />
+  <LinkCard title="Search Prefixes & Load Types" description="jssearch, spsearch, ytsearch… and how loadtracks resolves identifiers." href="/api/search/" />
+  <LinkCard title="Track Encoding" description="The binary track format KizunaLink reads and writes." href="/api/track-encoding/" />
+  <LinkCard title="Errors" description="Status codes, messages and how to handle them." href="/api/errors/" />
+</CardGrid>

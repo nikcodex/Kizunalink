@@ -1,0 +1,116 @@
+---
+title: config.toml Reference
+description: Complete reference for every section and key in KizunaLink's config.toml, with types and defaults.
+sidebar:
+  order: 1
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+All keys are listed with their TOML type and the default that applies when the key is omitted. Keys marked **required** have no default; if any of them is missing, the file fails to parse and KizunaLink falls back to built-in defaults for *everything*.
+
+## `[server]`
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `host` | string | **required** | Interface to bind. `0.0.0.0` for all IPv4, `::` for dual-stack, `127.0.0.1` for local only. |
+| `port` | integer | **required** | TCP port for REST + WebSocket. Lavalink convention is `2333`. |
+| `password` | string | **required** | Shared secret clients send in the `Authorization` header. Compared in constant time. |
+| `max_connections` | integer | `1000` | Maximum simultaneous WebSocket sessions. New connections beyond this are closed with code `1008`. |
+| `request_timeout_secs` | integer | `30` | Timeout for **outbound** HTTP requests to sources (search, stream resolution). Clamped to ≥ 1. |
+| `queue_max_history` | integer | `50` | Tracks remembered per player for `previousTrack` and autoplay seeding. |
+
+```toml
+[server]
+host = "0.0.0.0"
+port = 2333
+password = "youshallnotpass"
+max_connections = 1000
+request_timeout_secs = 30
+queue_max_history = 50
+```
+
+<Aside type="note">
+  `queue_max_history` may also be set at the top level of the file (outside any section) for backwards compatibility. If both are set and differ, the non-default one wins.
+</Aside>
+
+## `[sources]`
+
+Each key enables or disables one source manager. Disabled sources are omitted from `/v4/info` → `sourceManagers`, and any identifier that would route to them returns `{"loadType": "empty"}`.
+
+| Key | Default | Handles | Search prefix |
+|---|---|---|---|
+| `jiosaavn` | `true` **required** | JioSaavn tracks, search, recommendations, lyrics; also the fallback for unprefixed queries | `jssearch:`, `jsrec:` |
+| `youtube` | `true` **required** | `youtube.com/watch`, `youtu.be`, Shorts, playlists, YouTube Music | `ytsearch:`, `ytmsearch:` |
+| `spotify` | `true` **required** | `open.spotify.com/track/…`, `/playlist/…` | `spsearch:` |
+| `soundcloud` | `true` | Tracks and `/sets/` playlists | `scsearch:` |
+| `bandcamp` | `true` | `*.bandcamp.com` tracks, `bcvc.live` | `bcsearch:` |
+| `twitch` | `true` | `twitch.tv/<channel>` live streams | `twsearch:` |
+| `vimeo` | `false` | `vimeo.com/<id>` | `vmsearch:` |
+| `niconico` | `false` | `nicovideo.jp/watch/…`, `nico.ms/…` | `nisearch:` |
+| `http` | `true` | Direct `http(s)://` URLs ending in `.mp3 .wav .ogg .flac .m4a .aac .opus .webm`, and Discord CDN attachments | — |
+| `local` | `false` | Absolute paths (`/media/song.mp3`) and `file://` URIs. Blocks `..`, `/etc`, `/proc`, `/sys`, `/dev` | — |
+| `applemusic` | `true` | `music.apple.com/…` | `amsearch:` |
+| `deezer` | `true` | `deezer.com/…/track/…`, `/playlist/…` | `dzsearch:` |
+
+See [Audio Sources](/configuration/sources/) for per-source setup and credentials.
+
+## `[ratelimit]`
+
+Two unrelated features share this section for Lavalink familiarity: **inbound** rate limiting of your clients, and the **outbound** IP route planner.
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `max_requests` | integer | `60` | Requests allowed per client IP per window (applies to `/v4/loadtracks`, player updates, `/v4/metrics`, and WebSocket upgrades). |
+| `window_secs` | integer | `60` | Length of the sliding window in seconds. Also sent as `Retry-After`. |
+| `burst` | integer | `10` | Extra requests allowed in a short burst above the steady rate. |
+| `ip_blocks` | array of strings | `[]` | CIDR blocks (IPv4 or IPv6) to rotate outbound requests through. Empty = route planner disabled. |
+| `strategy` | string | `"RotatingIpRoutePlanner"` | One of `RotatingIpRoutePlanner`, `NanoIpRoutePlanner`, `RotatingNanoIpRoutePlanner`, `BalancingIpRoutePlanner`. |
+| `excluded_ips` | array of strings | `[]` | Addresses inside `ip_blocks` that must never be used. |
+
+Details: [Rate Limiting](/configuration/rate-limiting/) · [Route Planner](/configuration/route-planner/).
+
+## `[logging]`
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `level` | string | `"info"` | `error`, `warn`, `info`, `debug`, `trace`, or a full [`tracing` filter directive](https://docs.rs/tracing-subscriber/latest/tracing_subscriber/filter/struct.EnvFilter.html#directives) such as `"info,kizunalink::sources=debug"`. `RUST_LOG` overrides this. |
+| `colored` | boolean | `true` | Emit ANSI colour codes. Set `false` for journald / file logging. |
+
+## `[metrics]`
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `enabled` | boolean | `true` | Reserved for disabling the Prometheus registry. The `/v4/metrics` endpoint is currently always mounted; metrics collection has negligible overhead. |
+
+## `[security]`
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `max_body_size` | integer (bytes) | `1048576` (1 MiB) | Maximum request body. Applies to `POST /v4/decodetracks` and `PATCH` player/session bodies. |
+| `blocked_hosts` | array of strings | `[]` | Hostnames that identifiers and redirects may never resolve to, in addition to the built-in private/loopback/metadata ranges. |
+
+More in [Security](/configuration/security/).
+
+## `[proxy]`
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `url` | string | unset | `http://`, `https://` or `socks5://` proxy for **all** outbound HTTP (sources, lyrics, token refresh). Voice UDP is never proxied. |
+| `username` | string | unset | Basic-auth user (only applied when both `username` and `password` are set). |
+| `password` | string | unset | Basic-auth password. |
+
+More in [Proxy](/configuration/proxy/).
+
+## Top-level keys
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `queue_max_history` | integer | `50` | Legacy alias for `server.queue_max_history`. |
+
+## Validation tips
+
+- TOML strings need quotes; integers and booleans don't. `port = "2333"` will fail to parse (and silently fall back to defaults — see the caution on the [overview](/configuration/)).
+- Arrays use square brackets: `ip_blocks = ["2001:db8::/64"]`.
+- Comments start with `#`.
+- Validate quickly with `python3 -c "import tomllib;tomllib.load(open('config.toml','rb'))"` (Python 3.11+).

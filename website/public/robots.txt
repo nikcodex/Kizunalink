@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://nikcodex.github.io/Kizuna-Docs/sitemap-index.xml

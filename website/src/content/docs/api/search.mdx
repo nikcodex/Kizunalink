@@ -1,0 +1,126 @@
+---
+title: Search Prefixes & Load Types
+description: Every identifier KizunaLink's /v4/loadtracks understands — search prefixes per source, URL patterns, direct streams, local files — and the exact order they are tried in.
+sidebar:
+  order: 5
+---
+
+import { Tabs, TabItem, Aside } from '@astrojs/starlight/components';
+
+`GET /v4/loadtracks?identifier=…` accepts three kinds of identifier:
+
+1. **Search prefixes** — `jssearch:kesariya`
+2. **URLs** — tracks, playlists, direct audio files, live streams
+3. **Bare text** — anything else, treated as `jssearch:` with fallbacks
+
+The response is a `loadType` of `track`, `playlist`, `search`, `empty` or `error` (shapes in the [REST reference](/api/rest/#load-tracks)).
+
+## Search prefixes
+
+| Prefix | Source | Results | Notes |
+|---|---|---|---|
+| `jssearch:` | JioSaavn | up to 10 | **Default** for bare text. 320 kbps AAC, no login |
+| `jsrec:<songId>` | JioSaavn | up to 10 | <span class="kz-only">⛩ Kizuna only</span> Recommendations for a JioSaavn song ID (`track.info.identifier`) — great for autoplay UIs |
+| `spsearch:` | Spotify | 10 | Metadata from Spotify; audio is resolved from JioSaavn/YouTube at play time |
+| `ytsearch:` | YouTube | 10 | Falls back to JioSaavn if YouTube fails or is rate-limited |
+| `ytmsearch:` | YouTube (Music) | 10 | Same fallback as `ytsearch:` |
+| `amsearch:` | Apple Music | 10 | Metadata only, audio resolved like Spotify |
+| `dzsearch:` | Deezer | 10 | |
+| `scsearch:` | SoundCloud | 10 | |
+| `bcsearch:` | Bandcamp | 10 | |
+| `twsearch:` | Twitch | 10 | Resolves live channels |
+| `vmsearch:` | Vimeo | 10 | Disabled by default |
+| `nisearch:` | NicoNico | 10 | Disabled by default |
+
+Prefixes for a disabled source (see [`[sources]`](/configuration/sources/)) return `loadType: empty` — never an error.
+
+<Tabs syncKey="lang">
+  <TabItem label="curl">
+    ```bash
+    curl -G $KZ/v4/loadtracks --data-urlencode 'identifier=spsearch:kesariya arijit singh' -H "Authorization: $KZ_PASS"
+    ```
+  </TabItem>
+  <TabItem label="JavaScript">
+    ```js
+    const { loadType, data } = await loadTracks('spsearch:kesariya arijit singh');
+    if (loadType === 'search') console.log(data.map(t => `${t.info.title} — ${t.info.author}`));
+    ```
+  </TabItem>
+  <TabItem label="Python">
+    ```python
+    res = load_tracks("spsearch:kesariya arijit singh")
+    if res["loadType"] == "search":
+        print([f'{t["info"]["title"]} — {t["info"]["author"]}' for t in res["data"]])
+    ```
+  </TabItem>
+</Tabs>
+
+## URL patterns
+
+| URL contains | Source | Load type |
+|---|---|---|
+| `open.spotify.com/track/` | Spotify | `track` |
+| `open.spotify.com/playlist/` | Spotify | `playlist` (album/artist URLs are not supported) |
+| `youtube.com/watch`, `youtu.be/`, `youtube.com/shorts/`, `music.youtube.com/watch` | YouTube | `track` |
+| `youtube.com/playlist` (or a `list=` parameter) | YouTube | `playlist` |
+| `music.apple.com/` | Apple Music | `track` (`?i=` song ID or trailing segment) |
+| `deezer.com/…/track/`, `…/playlist/` | Deezer | `track` / `playlist` |
+| `soundcloud.com/…/sets/…` | SoundCloud | `playlist` |
+| other `soundcloud.com/` track URLs | SoundCloud | resolved through the JioSaavn→YouTube→SoundCloud fallback chain |
+| `bandcamp.com`, `bcvc.live` | Bandcamp | `track` |
+| `twitch.tv/` | Twitch | `track` (`isStream: true`) |
+| `vimeo.com/` | Vimeo | `track` |
+| `nicovideo.jp/`, `nico.ms/` | NicoNico | `track` |
+| `jiosaavn.com/song/…` | JioSaavn | `track` (single match) |
+| Ends with `.mp3 .wav .ogg .flac .m4a .aac .opus .webm`, or `cdn.discordapp.com/attachments/` | HTTP | `track` (`sourceName: "http"`, requires `sources.http = true`) |
+
+Spotify, Apple Music and Deezer tracks carry ISRC and metadata but no audio; when played, KizunaLink resolves a matching stream (JioSaavn first, then YouTube). If nothing matches, the player emits a `TrackExceptionEvent` with `Failed to resolve playable audio stream`.
+
+## Local files
+
+With `sources.local = true`, `file:///path/song.flac` or an absolute path ending in an audio extension loads a local file (`sourceName: "local"`). Paths containing `..` or under `/etc`, `/proc`, `/sys`, `/dev` are rejected with `400`. A missing file → `empty`.
+
+## Resolution order
+
+Identifiers are checked top-to-bottom; the first match wins:
+
+1. Empty / whitespace → `empty`
+2. Longer than 2 048 characters → `400`
+3. `file://` or absolute local audio path → local (or `empty` if disabled)
+4. `http(s)://` URL → [SSRF check](/configuration/security/#ssrf-protection): private/loopback/link-local hosts and `security.blocked_hosts` → `loadType: error`, `cause: "SSRF protection"`
+5. Direct audio URL (extension or Discord CDN) → HTTP source
+6. Bandcamp → Twitch → Vimeo → NicoNico URLs
+7. `jsrec:`
+8. `scsearch:` · SoundCloud set URLs
+9. Spotify track / playlist URLs · `spsearch:`
+10. YouTube URLs · `ytsearch:` · `ytmsearch:` (with JioSaavn fallback)
+11. Apple Music URLs · `amsearch:`
+12. Deezer URLs · `dzsearch:`
+13. `bcsearch:` · `nisearch:` · `twsearch:` · `vmsearch:`
+14. Everything else — `jssearch:` or bare text — **JioSaavn → YouTube → SoundCloud → Bandcamp**, then `empty`
+
+Each source lookup is subject to the per-source rate limit (`429 Rate limit exceeded for source: youtube`) and increments `kizunalink_source_<name>_total`.
+
+<Aside type="tip" title="Which prefix should a bot default to?">
+  `jssearch:` (or no prefix) for the best-quality, most reliable results, especially for Indian catalogues. Use `spsearch:` when you want Spotify's matching/metadata and `ytsearch:` for content that only exists on YouTube. Unlike Lavalink, `ytsearch:` is *not* the implicit default.
+</Aside>
+
+## Result ordering and `selectedTrack`
+
+- `search` results are in source order (relevance as returned by the provider), max 10.
+- `playlist.info.selectedTrack` is `-1` unless the URL pointed at a specific entry (e.g. a YouTube `watch?v=…&list=…` link), matching Lavalink semantics.
+
+## Track identifiers per source
+
+`info.identifier` is what you pass back to source-specific features (e.g. `jsrec:`):
+
+| Source | `identifier` | `uri` |
+|---|---|---|
+| jiosaavn | JioSaavn song ID (`qfKB6vSv`) | `https://www.jiosaavn.com/song/…` |
+| youtube | video ID | `https://www.youtube.com/watch?v=…` |
+| spotify | track ID | `https://open.spotify.com/track/…` |
+| applemusic | song ID | `https://music.apple.com/…` |
+| deezer | track ID | `https://www.deezer.com/track/…` |
+| soundcloud | numeric track ID | permalink |
+| bandcamp / twitch / vimeo / niconico | page URL or channel/video ID | page URL |
+| http / local | the URL / path | the URL / path |

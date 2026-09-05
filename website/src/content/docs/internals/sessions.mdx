@@ -1,0 +1,90 @@
+---
+title: Sessions & Players
+description: The ownership model between WebSocket sessions and guild players, how events are routed, what resuming buffers, and how cleanup works.
+sidebar:
+  order: 4
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+## Two registries
+
+| Registry | Key | Value | Lives in |
+|---|---|---|---|
+| `SessionManager.sessions` | `sessionId` (hex string) | `SessionState { resuming, timeout, guild_ids, event_buffer, connected, user_id, last_active }` | `ws::session` |
+| `PlayerManager.players` | `guildId` | `{ player: Arc<RwLock<GuildPlayer>>, session_id }` | `player::manager` |
+
+Both are `DashMap`s, so REST handlers, the WebSocket task and background tasks touch them concurrently without a global lock. Each `GuildPlayer` has its own `RwLock`; lock hold times are kept short (state mutation only — network I/O like stream resolution happens before taking the lock).
+
+## Ownership rules
+
+A player is created by the first session that PATCHes (or WS `updatePlayer`s / `queueTrack`s) its guild. From then on:
+
+- Only the **owning session** can read, update or destroy it. For any other session the player is `404 Player not found` — indistinguishable from not existing. This stops two bots (or a stale duplicate process of the same bot) fighting over one guild.
+- A PATCH from a non-owning session **never** steals ownership; it fails with `404`.
+- Ownership ends when the player is destroyed (`DELETE`, WS `destroyPlayer`, or session expiry). A new session can then claim the guild.
+- `GET /v4/players/all` is the only view across sessions and is intended for operators.
+
+The guild-per-session table (`SessionState.guild_ids`) is updated after every successful claim (`add_guild`) and removal (`remove_guild`); it is what event routing and resume buffering consult.
+
+## Event routing
+
+All player and server events are published as JSON strings on a single `tokio::sync::broadcast` channel. Consumers:
+
+1. **Each WebSocket connection** subscribes and forwards a message if it has no `guildId` (e.g. `stats`) or if the session's `guild_ids` contains it. A slow client that lags the broadcast buffer gets a `Lagged` warning and skips messages rather than stalling other sessions.
+2. **One global buffering task** (started lazily with the first connection) subscribes and, for every message, offers it to every session that is **disconnected with resuming enabled** and subscribed to that guild (or to everything for global messages). Buffers cap at 100 messages, oldest dropped.
+
+Because routing is by guild subscription rather than by connection, a resumed connection sees exactly what it would have seen — including `TrackEndEvent`s that fired while it was away.
+
+## Session lifecycle
+
+```
+connect ──► ready (new id) ──► [PATCH resuming=true] ──► disconnect
+                                                          │
+                       resuming=false or timeout=0 ───────┼──► destroy players, remove session
+                                                          │
+                       resuming=true ─► buffer events ────┼──► reconnect with Session-Id ──► ready(resumed=true) + replay
+                                                          │
+                                                          └──► timeout elapsed ──► destroy players, remove session
+```
+
+Implementation details:
+
+- `handle_connection(resume_id, user_id)` — if `resume_id` names a session that is `resuming && !connected`, it flips it to connected, refreshes `user_id`, drains the buffer for replay and returns `(id, true, events)`. In every other case (unknown id, already connected, resuming off) a fresh session is created; if the table already holds 10 000 sessions the connection is closed with `1008`.
+- `mark_disconnected(id)` — sets `connected=false`, stamps `last_active`. Returns `Some(timeout)` if the session can be resumed, in which case the handler spawns a task that sleeps `timeout` seconds and then destroys any players still owned by the session. If not resumable, the session and its players are removed immediately.
+- `cleanup_stale()` — runs every 60 s as a backstop; removes disconnected sessions whose `last_active + timeout` has passed (or that can't resume) in case the spawned expiry task was lost, and destroys their players.
+
+Resume timers are per session; a session that reconnects and disconnects again gets a fresh timer.
+
+<Aside type="tip" title="Recommended client settings">
+  `resuming: true`, `timeout: 60` covers bot restarts and short network partitions without keeping abandoned players alive for long. Very large bots sometimes use 120–300 s to survive slow rolling deploys.
+</Aside>
+
+## Player lifecycle
+
+```
+PATCH (create) ─► voice? ─► connect adapter ─► play_track ─► … ─► DELETE / destroyPlayer / session expiry
+```
+
+- **Creation** checks the 10 000-player cap (`503 Player limit reached`) and records the owning session.
+- **Voice connection** happens inside `set_voice` and is bounded by a 15 s timeout; failure emits `WebSocketClosedEvent(4000)` but keeps the player so the client can retry with fresh credentials.
+- **Destroy** stops the audio pipeline, shuts the voice connection manager down (which closes the voice WebSocket and drops the UDP socket) and removes the map entry. It is idempotent.
+- **Node shutdown** iterates all players and destroys them so Discord shows the bot leaving instead of timing out.
+
+## Per-player state
+
+`GuildPlayer` keeps everything the Player object exposes plus the internals needed to compute it:
+
+| Field | Purpose |
+|---|---|
+| `queue: TrackQueue` | current, pending, history, loop mode |
+| `autoplay: AutoplayEngine` | enabled flag + dedupe memory |
+| `voice`, `kizuna_voice_adapter` | credentials and the live connection |
+| `kizuna_track_handle` | control channel for the active stream (pause/seek/volume/stop) |
+| `shared_chain`, `filters`, `filtered_active` | DSP chain and the last filter payload |
+| `play_started_at`, `paused_at`, `paused_position` | wall-clock position tracking (corrected by timescale) |
+| `end_time` | stop marker |
+| `volume` (0–1000) | player volume, mirrored into the DSP chain as ×0.01 |
+| `current_stream_url` | for restart/seek |
+
+`to_response()` snapshots these into the `PlayerResponse` returned by REST and used in `playerUpdate`.

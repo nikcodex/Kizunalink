@@ -1,0 +1,127 @@
+---
+title: Architecture
+description: How KizunaLink is put together — crates, the request path from REST/WebSocket to Opus packets, background tasks, and the main data structures.
+sidebar:
+  order: 0
+---
+
+import { Aside, LinkCard, CardGrid } from '@astrojs/starlight/components';
+
+KizunaLink is a single Rust binary built from two crates in one Cargo workspace:
+
+| Crate | Role |
+|---|---|
+| **`kizunalink`** (`src/`) | The Lavalink-compatible server: axum HTTP/WebSocket API, sessions, players, sources, DSP, metrics |
+| **`kizuna-voice`** (`kizuna-voice/src/`) | A standalone Discord voice stack: voice gateway v8 client, UDP/RTP transport with AES-256-GCM, Opus encoding, DAVE (MLS) end-to-end encryption, reconnect logic |
+
+Everything runs on one Tokio multi-threaded runtime. There is no JVM, no plugin loader, no external process (no `yt-dlp`, no `ffmpeg`).
+
+## The big picture
+
+```
+                     ┌──────────────────────────── kizunalink ────────────────────────────┐
+                     │                                                                     │
+  Bot / client ──REST──►  axum Router ──► rest::*  ──► PlayerManager ──► GuildPlayer ──┐  │
+  Bot / client ──WS────►  ws::handler  ──► SessionManager     ▲              │          │  │
+                     │         ▲                              │              ▼          │  │
+                     │         │ broadcast events             │      dsp::pipeline      │  │
+                     │         └──────────────────────────────┘   (decoder+filters)     │  │
+                     │                                                    │             │  │
+                     │   sources::* (JioSaavn, YouTube, Spotify, …) ◄─────┘ stream URL  │  │
+                     └───────────────────────────────────────────────────────────────────┼──┘
+                                                                                         ▼
+                     ┌──────────────────────────── kizuna-voice ────────────────────────────┐
+                     │  KizunaVoiceAdapter ─► VoiceConnectionManager ─► VoiceGatewayClient  │──WSS──► Discord voice gateway
+                     │        │                        │                                    │
+                     │        │                        └─► VoiceUdp (IP discovery)          │──UDP──► Discord media server
+                     │        └─► FrameScheduler ─► OpusEncoder ─► DaveSession ─► TransportCrypto ─► RTP
+                     └───────────────────────────────────────────────────────────────────────┘
+```
+
+## Life of a `/play`
+
+1. **Load.** The client calls `GET /v4/loadtracks?identifier=…`. `rest::loadtracks` walks the [resolution order](/api/search/#resolution-order), asks the matching `sources::*` module, and returns `Track` objects whose `encoded` field is produced by `track_encoding::encode_track`.
+2. **Player update.** `PATCH /v4/sessions/{s}/players/{g}` lands in `rest::players::update_player` → `PlayerManager::update_player`. The manager atomically creates or fetches the guild's `GuildPlayer` (a `DashMap<guildId, Arc<RwLock<GuildPlayer>>>` keyed by guild, with the owning session recorded), decodes the track, and asks the source for a **stream URL** (`resolve_stream_url`) — this is where a Spotify/Apple/Deezer track is matched to a JioSaavn or YouTube stream.
+3. **Voice.** If the update carried `voice`, `GuildPlayer::set_voice` builds a `KizunaVoiceAdapter` and connects: voice gateway `Identify` (op 0) → `Ready` (op 2) → UDP IP discovery → `Select Protocol` (op 1, `aead_aes256_gcm_rtpsize`) → `Session Description` (op 4) → speaking (op 5). DAVE negotiation (ops 21–26) proceeds in parallel.
+4. **Audio.** `GuildPlayer::play_track` calls `dsp::pipeline::create_kizuna_source`: a Tokio task streams HTTP bytes into a channel; a blocking task runs a symphonia decoder on that channel, resamples to 48 kHz stereo `f32`, and pushes samples through the `FilterChain`. The result is exposed as an `AudioSource` yielding 20 ms PCM frames.
+5. **Send.** kizuna-voice's `FrameScheduler` pulls a frame every 20 ms, encodes it with libopus (`Application::Audio`, 48 kHz stereo, 960 samples), optionally DAVE-encrypts it, wraps it in RTP (sequence +1, timestamp +960), encrypts the packet with AES-256-GCM, and sends it over UDP. `FrameCounters` tally sent/nulled/deficit for `stats`.
+6. **Events.** `GuildPlayer` emits JSON (`TrackStartEvent`, `playerUpdate`, …) on a global `broadcast::Sender<String>`. Each WebSocket connection filters that stream to the guilds its session owns and forwards the rest. Disconnected sessions with resuming enabled buffer up to 100 events.
+7. **End.** When the source is exhausted the track handle emits `Ended`; `PlayerManager::handle_track_end` emits `TrackEndEvent(finished)`, then consults the server-side queue → loop mode → autoplay for what to play next, or stops.
+
+## Module map
+
+```
+src/
+├── main.rs              config load, router, background tasks, graceful shutdown
+├── lib.rs               AppState (shared handles for every request)
+├── config.rs            config.toml + env parsing, defaults
+├── rest/                one file per endpoint group (info, stats, loadtracks, players, session(s), lyrics, routeplanner, metrics, decodetrack) + auth + error
+├── ws/
+│   ├── handler.rs       upgrade, ready/resume, per-connection fan-out, client→server ops
+│   └── session.rs       SessionManager: sessions, guild subscriptions, resume buffers
+├── player/
+│   ├── manager.rs       PlayerManager: player registry, update/queue/skip logic, stream resolution, track-end handling
+│   ├── guild_player.rs  GuildPlayer: per-guild state machine (voice, position, pause, filters, events)
+│   ├── queue.rs         TrackQueue with loop modes and history
+│   ├── autoplay.rs      recommendation engine
+│   └── kizuna_adapter.rs bridge to kizuna-voice (connect, play_source, DAVE + RTP send loop)
+├── sources/             jiosaavn, youtube, spotify, soundcloud, bandcamp, twitch, vimeo, niconico, apple_music, deezer, route_planner
+├── dsp/                 decoder (symphonia + rubato), filters chain, equalizer, karaoke, timescale (WSOLA), tremolo, vibrato, distortion, rotation, channel_mix, lowpass, pipeline
+├── models/              protocol (player/stats/info structs), track, filters (serde shapes)
+├── track_encoding.rs    lavaplayer binary format v1–v3
+├── ratelimit.rs         per-IP and per-source token buckets
+├── security.rs          SSRF checks, ID validation, log sanitising
+├── stats.rs             system stats (sysinfo) + frame counters
+├── metrics.rs           Prometheus registry
+└── util.rs              timestamps, HTTP track helper
+
+kizuna-voice/src/
+├── gateway/             voice WebSocket client (v8), payload structs
+├── connection/          VoiceConnectionManager: handshake, heartbeat, resume, backoff
+├── transport/           UDP socket + IP discovery, RTP header, AES-256-GCM (rtpsize)
+├── audio/               Opus encoder, frame scheduler, track handle, sources
+└── dave/                DAVE protocol: MLS group (OpenMLS), sender ratchets, frame encryption
+```
+
+## Shared state
+
+`AppState` is cloned into every handler and holds `Arc`s to: the `PlayerManager`, every source client, the `SessionManager`, the optional `RoutePlanner`, the `RateLimiter`, the password, the start time, the global event broadcaster and the `[sources]` config. All maps are `DashMap`s; per-player state is behind a Tokio `RwLock`, and the filter chain behind a `std::sync::Mutex` because it's touched from the blocking decoder thread.
+
+## Background tasks
+
+Started once in `main.rs`:
+
+| Task | Interval | Purpose |
+|---|---|---|
+| Stats broadcaster | 60 s | Refresh system stats, build the `stats` message, broadcast to all sessions |
+| Player updater | 5 s | Emit `playerUpdate` for every actively playing player |
+| Cleanup | 60 s | Prune rate-limiter buckets; expire stale sessions and destroy their players |
+| Per-connection ping | 30 s | WebSocket ping frames |
+| Session expiry | on disconnect | Sleep `timeout` s, then destroy the session's players if not resumed |
+
+Shutdown (`SIGINT`/`SIGTERM`) stops the listener, then destroys every player so Discord voice connections close cleanly.
+
+## Limits and constants
+
+| Limit | Value | Where |
+|---|---|---|
+| Players per node | 10 000 | `PlayerManager` |
+| Sessions per node | 10 000 | `SessionManager` |
+| Resume event buffer | 100 messages | `ws::session::MAX_SESSION_BUFFER_SIZE` |
+| Inbound WS message | 64 KiB | `ws::handler::MAX_WS_MESSAGE_SIZE` |
+| Request body | 1 MiB (`security.max_body_size`) | `main.rs` |
+| Identifier length | 2 048 chars | `security::MAX_URL_LENGTH` |
+| Decode batch | 100 tracks | `rest::decodetrack` |
+| Decoded-track cache | 4 096 entries | `track_encoding` |
+| Voice connect timeout | 15 s | `kizuna_adapter` |
+| Voice reconnect | 8 attempts, 500 ms → 30 s backoff | `kizuna-voice::connection` |
+
+## Deeper dives
+
+<CardGrid>
+  <LinkCard title="kizuna-voice" description="The voice gateway, UDP transport, Opus and reconnect stack." href="/internals/kizuna-voice/" />
+  <LinkCard title="DAVE end-to-end encryption" description="MLS groups, sender ratchets and encrypted frames." href="/internals/dave/" />
+  <LinkCard title="DSP pipeline" description="Decoder, resampler, filter chain and how filters apply live." href="/internals/dsp/" />
+  <LinkCard title="Sessions & players" description="Ownership rules, resume buffers, cleanup." href="/internals/sessions/" />
+  <LinkCard title="Autoplay & queue" description="Queue semantics, loop modes and the recommendation scorer." href="/internals/queue/" />
+</CardGrid>

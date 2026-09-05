@@ -1,0 +1,138 @@
+---
+title: systemd Service
+description: Run KizunaLink as a hardened systemd service that starts on boot and restarts on failure.
+sidebar:
+  order: 4
+---
+
+import { Steps, Aside } from '@astrojs/starlight/components';
+
+The repository includes a hardened unit file, [`kizunalink.service`](https://github.com/nikcodex/Kizunalink/blob/main/kizunalink.service). This page walks through installing it.
+
+<Steps>
+1. **Create a dedicated user and directory**
+
+   ```bash title="Terminal"
+   sudo useradd --system --home /opt/kizunalink --shell /usr/sbin/nologin kizuna
+   sudo mkdir -p /opt/kizunalink/plugins
+   ```
+
+2. **Install the binary and config**
+
+   ```bash title="Terminal"
+   sudo cp ~/kizunalink/kizunalink /opt/kizunalink/kizunalink
+   sudo cp ~/kizunalink/config.toml /opt/kizunalink/config.toml
+   sudo chmod 755 /opt/kizunalink/kizunalink
+   ```
+
+   Put secrets in an env file rather than in `config.toml`:
+
+   ```bash title="/opt/kizunalink/.env"
+   KIZUNA_PASSWORD=change-me-please
+   SPOTIFY_CLIENT_ID=…
+   SPOTIFY_CLIENT_SECRET=…
+   ```
+
+   ```bash title="Terminal"
+   sudo chown -R kizuna:kizuna /opt/kizunalink
+   sudo chmod 600 /opt/kizunalink/.env
+   ```
+
+3. **Install the unit**
+
+   ```bash title="Terminal"
+   sudo curl -sL https://raw.githubusercontent.com/nikcodex/Kizunalink/main/kizunalink.service \
+     -o /etc/systemd/system/kizunalink.service
+   ```
+
+   The unit, for reference:
+
+   ```ini title="/etc/systemd/system/kizunalink.service"
+   [Unit]
+   Description=KizunaLink Audio Server
+   After=network.target
+   Wants=network-online.target
+
+   [Service]
+   Type=simple
+   User=kizuna
+   Group=kizuna
+   WorkingDirectory=/opt/kizunalink
+   ExecStart=/opt/kizunalink/kizunalink
+   Restart=always
+   RestartSec=5
+   TimeoutStopSec=30
+
+   # Security hardening
+   NoNewPrivileges=yes
+   ProtectSystem=strict
+   ProtectHome=yes
+   PrivateTmp=yes
+   PrivateDevices=yes
+   ProtectKernelTunables=yes
+   ProtectKernelModules=yes
+   ProtectControlGroups=yes
+   RestrictSUIDSGID=yes
+   RestrictNamespaces=yes
+   RestrictRealtime=yes
+   LockPersonality=yes
+   MemoryDenyWriteExecute=no
+   ReadWritePaths=/opt/kizunalink/plugins
+
+   # Environment
+   Environment=RUST_LOG=info
+   EnvironmentFile=-/opt/kizunalink/.env
+
+   # Resource limits
+   LimitNOFILE=65536
+   LimitNPROC=4096
+
+   [Install]
+   WantedBy=multi-user.target
+   ```
+
+4. **Enable and start**
+
+   ```bash title="Terminal"
+   sudo systemctl daemon-reload
+   sudo systemctl enable --now kizunalink
+   sudo systemctl status kizunalink
+   ```
+</Steps>
+
+## Day-to-day commands
+
+| Task | Command |
+|---|---|
+| Follow logs | `journalctl -u kizunalink -f` |
+| Restart after config change | `sudo systemctl restart kizunalink` |
+| Stop | `sudo systemctl stop kizunalink` |
+| Disable autostart | `sudo systemctl disable kizunalink` |
+| Check version | `curl -s localhost:2333/version` |
+
+<Aside type="tip" title="Colored logs in journald">
+  journald preserves ANSI colours but `journalctl` strips them by default. Either set `KIZUNA_LOG_COLORED=false` in `.env` for clean logs, or view them with `journalctl -u kizunalink -o cat | less -R`.
+</Aside>
+
+## Upgrading
+
+```bash title="Terminal"
+sudo systemctl stop kizunalink
+sudo cp ~/kizunalink/kizunalink /opt/kizunalink/kizunalink   # new binary
+sudo chown kizuna:kizuna /opt/kizunalink/kizunalink
+sudo systemctl start kizunalink
+```
+
+Clients that enabled [session resuming](/api/rest/#update-session) will reconnect and continue where they left off, as long as the restart finishes inside their resume timeout.
+
+## What the hardening does
+
+- `ProtectSystem=strict` + `ProtectHome=yes` make the whole filesystem read-only to the service except the paths in `ReadWritePaths`. KizunaLink itself needs no writable paths; `plugins/` is reserved for the future plugin system.
+- `NoNewPrivileges`, `PrivateDevices`, `RestrictNamespaces`, etc. limit the blast radius if a source resolver is ever exploited.
+- `LimitNOFILE=65536` matters: each voice connection uses a WebSocket + UDP socket, and each track a streaming HTTP connection.
+
+If you enable `sources.local = true`, add your media directory to `ReadOnlyPaths=` (not `ReadWritePaths=`).
+
+## Multiple instances
+
+Copy the unit to `kizunalink@.service`, replace hard-coded paths with `/opt/kizunalink-%i`, and set a different `KIZUNA_PORT` in each instance's `.env`. Then `systemctl enable --now kizunalink@eu kizunalink@asia`.

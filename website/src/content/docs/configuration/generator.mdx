@@ -1,0 +1,21 @@
+---
+title: Config Generator
+description: Build a config.toml, .env and docker-compose.yml for KizunaLink interactively, with the real defaults pre-filled.
+sidebar:
+  order: 9
+tableOfContents: false
+---
+
+import ConfigGenerator from '../../../components/ConfigGenerator.astro';
+
+Fill in the form; the output updates live. Defaults match the engine's built-in values exactly, so you only need to change what matters to you. Nothing leaves your browser.
+
+<ConfigGenerator />
+
+## How to use the output
+
+- **`config.toml`** — save next to the binary (or mount over `/app/config.toml` in Docker). Contains everything except credentials.
+- **`.env`** — save next to the binary. Loaded automatically; overrides the file. Holds the password and any source credentials.
+- **`docker-compose.yml`** — a complete Compose service that builds from the GitHub repo. Pair it with the generated `config.toml` in the same folder.
+
+See the [config.toml reference](/configuration/config-toml/) and [environment variables](/configuration/environment/) for what each key does.

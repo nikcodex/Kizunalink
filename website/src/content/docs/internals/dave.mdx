@@ -1,0 +1,92 @@
+---
+title: DAVE End-to-End Encryption
+description: How KizunaLink implements Discord's DAVE protocol — MLS group setup with OpenMLS, epoch transitions, per-sender key ratchets and the encrypted frame format.
+sidebar:
+  order: 2
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+**DAVE** (Discord Audio & Video End-to-end Encryption) adds a second layer of encryption *inside* the transport encryption described on the [kizuna-voice](/internals/kizuna-voice/#transport-encryption) page. With transport encryption alone, Discord's media servers can read audio; with DAVE, only the members of the voice channel hold the keys. Discord negotiates DAVE with every participant, and clients that don't support it will eventually be excluded from E2EE calls — so KizunaLink supports **protocol version 1** natively.
+
+Nothing needs to be configured. This page documents what happens.
+
+<Aside type="note">
+  KizunaLink only *sends* audio, so the implementation focuses on the sender side: joining the MLS group, tracking epochs and encrypting outgoing frames. A `decrypt_frame` exists for completeness but no inbound audio is processed.
+</Aside>
+
+## Negotiation
+
+The bot advertises support in the voice `Identify` payload (`max_dave_protocol_version: 1`). The voice gateway then drives the MLS handshake with opcodes 21–26, all handled by `kizuna_voice::dave::protocol::DaveSession` (one per guild):
+
+| Op | Direction | Name | What KizunaLink does |
+|---|---|---|---|
+| 25 | ← | `dave_mls_external_sender_package` | Creates the MLS group (`GroupId = guild id`, ratchet-tree extension on) with the gateway as external sender, then generates a **key package** |
+| 26 | → | `dave_mls_key_package` | Sends that key package so the gateway can add the bot to the group |
+| 24 | ← | `dave_protocol_prepare_epoch` | Records the new `epoch_id` (participant list changed) |
+| 21 | ← | `dave_protocol_prepare_transition` | Stages the transition (`transition_id`, `protocol_version`) |
+| 22 | ← | `dave_protocol_execute_transition` | **Exports the MLS secret** and re-derives every sender key; DAVE becomes *active* |
+| 24 (send) | → | MLS commit/welcome data | Any MLS messages OpenMLS produces in response are sent back |
+
+Until the first `execute_transition` completes, `DaveSession::is_active()` is false and frames go out with transport encryption only (which is how non-DAVE calls work). The `DaveSession` is shared between the gateway loop and the RTP send loop behind a mutex; the send loop checks `is_active()` per frame, so the switch to E2EE is seamless mid-track.
+
+### MLS details
+
+- Library: **OpenMLS 0.9** with the Rust-crypto provider and basic credentials.
+- Ciphersuite constant: `MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519`.
+- Exporter: label `"Discord Secure Frames v0"`, context `"Discord Secure Frames v0"`, **16-byte** output. This is the *base secret* for the epoch.
+
+## Sender key ratchet
+
+Each sender (identified by Discord user ID, `u64`) has a ratchet derived from the epoch's base secret with HKDF-SHA256:
+
+```
+salt  = "Discord Secure Frames v0"
+ikm   = exporter secret (16 B)
+info  = generation (u64 LE) ‖ user_id (u64 LE)
+key   = HKDF-Expand(…, 16 B)          → AES-128 key for that generation
+```
+
+The **generation** is the top byte of the frame nonce counter (`(nonce >> 24) & 0xFF`), so keys rotate every 2²⁴ frames. Keys are derived forward on demand and the last 10 generations are retained so slightly out-of-order frames stay decryptable on the receiving side.
+
+The bot registers itself as a sender (`add_sender(bot_user_id)`) when a track starts, and every sender's generation-0 key is re-derived whenever an epoch transition executes.
+
+## Frame format
+
+`DaveSession::encrypt_frame` turns an Opus packet into a DAVE frame:
+
+```
+AES-128-GCM( opus, key = sender key(generation), nonce = 0^8 ‖ counter_le32, aad = ∅ )
+
+┌──────────────────────┬────────────┬───────────────┬──────────┬────────┐
+│ ciphertext (no tag)  │ tag[0..8]  │ nonce ULEB128 │ size u8  │ FA FA  │
+└──────────────────────┴────────────┴───────────────┴──────────┴────────┘
+                        ◄────────────── supplemental data ──────────────►
+```
+
+- Only the first **8 bytes** of the 16-byte GCM tag are transmitted (truncated tag, per the DAVE spec).
+- The nonce counter is written as **ULEB128** to save bytes; `size` is the total length of the supplemental block (8 + len(nonce) + 1 + 2).
+- `0xFAFA` is the magic marker receivers use to detect a DAVE frame.
+- Opus has no unencrypted header ranges, so the AAD is empty.
+
+The resulting frame replaces the raw Opus payload in the RTP packet, which is then transport-encrypted with AES-256-GCM as usual. If encryption fails for any reason, KizunaLink falls back to sending the unencrypted Opus for that frame rather than dropping it.
+
+## Observability
+
+Enable `RUST_LOG=kizuna_voice::dave=debug` to see the negotiation:
+
+```
+INFO  DAVE: Received external sender package for guild 123… (…bytes credential, …bytes sigkey)
+INFO  DAVE: Created MLS group for guild 123…
+INFO  DAVE: Prepare epoch 1 for guild 123…
+INFO  DAVE: Execute transition 1 for guild 123…
+INFO  DAVE: Exported MLS secret (16 bytes) for guild 123… epoch 1
+```
+
+There is no way to *disable* DAVE per player; it's only ever active when Discord asks for it.
+
+## Known limitations (4.2.1)
+
+- Proposals/commits generated by OpenMLS are sent with opcode 24, which the code marks as an assumption; if Discord changes the sender-side opcode mapping this is the first place to look.
+- Protocol version 1 only. A gateway announcing a higher `protocol_version` in `prepare_transition` is logged but not negotiated down.
+- Inbound audio is not decrypted (KizunaLink never listens).

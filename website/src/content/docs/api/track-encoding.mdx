@@ -1,0 +1,156 @@
+---
+title: Track Encoding
+description: The base64 track format KizunaLink reads (v1–v3) and writes (v3), byte by byte, with decoders in JavaScript and Python.
+sidebar:
+  order: 6
+---
+
+import { Tabs, TabItem, Aside } from '@astrojs/starlight/components';
+
+Every track KizunaLink returns carries an `encoded` string — a base64 blob of the track's metadata in **lavaplayer's binary format**. Clients pass it back verbatim to play, queue or decode a track. Because the format is identical to Lavalink's, encoded strings from a Lavalink node (or stored in your database from one) play on KizunaLink and vice versa.
+
+You normally never parse this yourself — use [`GET /v4/decodetrack`](/api/rest/#decode-track). This page exists for client authors and for debugging.
+
+## Layout
+
+All integers are big-endian. Strings are **modified UTF-8 with a 2-byte length prefix** (Java `DataOutput.writeUTF`).
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│ u32  header      bits 30–31: flags (1 = versioned)           │
+│                  bits 0–29:  payload length in bytes         │
+├──────────────────────────────────────────────────────────────┤
+│ u8   version     only present if flags == 1 (else v1)        │
+│ utf  title                                                   │
+│ utf  author                                                  │
+│ u64  length      milliseconds                                │
+│ utf  identifier                                              │
+│ u8   isStream    0 / 1                                       │
+│ u8   hasUri      (v2+)                                       │
+│ utf  uri         (v2+, only if hasUri == 1)                  │
+│ u8   hasArtwork  (v3)                                        │
+│ utf  artworkUrl  (v3, only if hasArtwork == 1)               │
+│ u8   hasIsrc     (v3)                                        │
+│ utf  isrc        (v3, only if hasIsrc == 1)                  │
+│ utf  sourceName                                              │
+│ u8   hasProbe    only for sourceName == "http" | "local"     │
+│ utf  probeInfo   (only if hasProbe == 1)                     │
+│ u64  position    milliseconds                                │
+└──────────────────────────────────────────────────────────────┘
+```
+
+**Reading:** v1, v2 and v3 are all accepted. A missing trailing `position` is tolerated (treated as 0). Unknown versions → `Unsupported track version: N`.
+
+**Writing:** KizunaLink always emits **v3** with `flags = 1`. `probeInfo` for `http`/`local` tracks is written as null (`hasProbe = 0`). `isSeekable` is not stored; it is derived as `!isStream`.
+
+Decoded tracks are cached in memory (up to 4 096 entries) so repeated `PATCH`es with the same string don't re-parse.
+
+## Field mapping
+
+| Binary field | `info.*` in JSON |
+|---|---|
+| title | `title` |
+| author | `author` |
+| length | `length` |
+| identifier | `identifier` |
+| isStream | `isStream`, and `isSeekable = !isStream` |
+| uri | `uri` (null if absent) |
+| artworkUrl | `artworkUrl` (null if absent) |
+| isrc | `isrc` (null if absent); also copied to `pluginInfo.isrc` |
+| sourceName | `sourceName` |
+| position | `position` |
+
+## Decoding in your own code
+
+Handy for showing queue contents from stored strings without a network call.
+
+<Tabs syncKey="lang">
+  <TabItem label="JavaScript">
+    ```js
+    export function decodeTrack(encoded) {
+      const buf = Buffer.from(encoded, 'base64');
+      let off = 0;
+      const u8 = () => buf.readUInt8(off++);
+      const u16 = () => { const v = buf.readUInt16BE(off); off += 2; return v; };
+      const u32 = () => { const v = buf.readUInt32BE(off); off += 4; return v; };
+      const u64 = () => { const v = buf.readBigUInt64BE(off); off += 8; return Number(v); };
+      const utf = () => { const len = u16(); const s = buf.toString('utf8', off, off + len); off += len; return s; };
+      const nullable = () => (u8() ? utf() : null);
+
+      const header = u32();
+      const flags = (header >>> 30) & 1;
+      const version = flags ? u8() : 1;
+      if (version < 1 || version > 3) throw new Error(`Unsupported track version ${version}`);
+
+      const title = utf();
+      const author = utf();
+      const length = u64();
+      const identifier = utf();
+      const isStream = u8() === 1;
+      const uri = version >= 2 ? nullable() : null;
+      const artworkUrl = version >= 3 ? nullable() : null;
+      const isrc = version >= 3 ? nullable() : null;
+      const sourceName = utf();
+      if (sourceName === 'http' || sourceName === 'local') nullable();   // probeInfo
+      const position = off + 8 <= buf.length ? u64() : 0;
+
+      return { identifier, isSeekable: !isStream, author, length, isStream, position, title, uri, artworkUrl, isrc, sourceName };
+    }
+    ```
+  </TabItem>
+  <TabItem label="Python">
+    ```python
+    import base64, struct
+
+    def decode_track(encoded: str) -> dict:
+        buf = base64.b64decode(encoded)
+        pos = 0
+
+        def read(fmt):
+            nonlocal pos
+            size = struct.calcsize(fmt)
+            (val,) = struct.unpack_from(fmt, buf, pos)
+            pos += size
+            return val
+
+        def utf():
+            nonlocal pos
+            n = read(">H")
+            s = buf[pos:pos + n].decode("utf-8")
+            pos += n
+            return s
+
+        def nullable():
+            return utf() if read(">B") else None
+
+        header = read(">I")
+        version = read(">B") if (header >> 30) & 1 else 1
+        if not 1 <= version <= 3:
+            raise ValueError(f"Unsupported track version {version}")
+
+        title, author = utf(), utf()
+        length = read(">Q")
+        identifier = utf()
+        is_stream = read(">B") == 1
+        uri = nullable() if version >= 2 else None
+        artwork = nullable() if version >= 3 else None
+        isrc = nullable() if version >= 3 else None
+        source = utf()
+        if source in ("http", "local"):
+            nullable()  # probeInfo
+        position = read(">Q") if pos + 8 <= len(buf) else 0
+
+        return {"identifier": identifier, "isSeekable": not is_stream, "author": author, "length": length,
+                "isStream": is_stream, "position": position, "title": title, "uri": uri,
+                "artworkUrl": artwork, "isrc": isrc, "sourceName": source}
+    ```
+  </TabItem>
+</Tabs>
+
+<Aside type="note">
+  Java's `writeUTF` encodes `U+0000` and supplementary characters differently from standard UTF-8. KizunaLink writes plain UTF-8 and reads with a lenient UTF-8 decoder, which is fine for real-world titles; extremely exotic strings from a JVM node may decode with replacement characters.
+</Aside>
+
+## Encoding your own tracks
+
+Rarely needed: KizunaLink accepts `track.identifier` (URL or search text) in a player update and resolves it server-side, so you never have to fabricate an `encoded` string. If you must (e.g. to point at a direct HTTP file with custom metadata), mirror the layout above with `version = 3`, `flags = 1`, and `sourceName = "http"` — KizunaLink will resolve the stream from `identifier` when played.

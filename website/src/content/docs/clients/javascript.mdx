@@ -1,0 +1,369 @@
+---
+title: JavaScript / TypeScript
+description: Connect a discord.js bot to KizunaLink with Shoukaku or lavalink-client, including play, queue, filters, lyrics and KizunaLink-specific extensions.
+sidebar:
+  order: 1
+---
+
+import { Tabs, TabItem, Aside, Steps } from '@astrojs/starlight/components';
+
+Two libraries are shown throughout: **Shoukaku** (minimal, close to the protocol) and **lavalink-client** (higher-level, with a built-in queue). Both are Lavalink v4 clients and work with KizunaLink unchanged.
+
+## Install
+
+<Tabs syncKey="jslib">
+  <TabItem label="Shoukaku">
+    ```bash
+    npm i discord.js shoukaku
+    ```
+  </TabItem>
+  <TabItem label="lavalink-client">
+    ```bash
+    npm i discord.js lavalink-client
+    ```
+  </TabItem>
+</Tabs>
+
+## Connect
+
+<Tabs syncKey="jslib">
+  <TabItem label="Shoukaku">
+    ```ts title="src/index.ts"
+    import { Client, GatewayIntentBits } from 'discord.js';
+    import { Shoukaku, Connectors, type NodeOption } from 'shoukaku';
+
+    const client = new Client({
+      intents: [
+        GatewayIntentBits.Guilds,
+        GatewayIntentBits.GuildVoiceStates,   // required for voice handoff
+        GatewayIntentBits.GuildMessages,
+        GatewayIntentBits.MessageContent,
+      ],
+    });
+
+    const nodes: NodeOption[] = [
+      {
+        name: 'kizuna-in',
+        url: process.env.KIZUNA_URL ?? 'localhost:2333',   // host:port, no scheme
+        auth: process.env.KIZUNA_PASSWORD ?? 'youshallnotpass',
+        secure: false,                                     // true behind TLS
+      },
+    ];
+
+    export const shoukaku = new Shoukaku(new Connectors.DiscordJS(client), nodes, {
+      resume: true,            // enable session resuming
+      resumeTimeout: 60,       // seconds KizunaLink keeps players after a disconnect
+      resumeByLibrary: true,
+      reconnectTries: 10,
+      reconnectInterval: 5,
+      restTimeout: 15_000,
+      userAgent: 'my-bot/1.0.0',
+    });
+
+    shoukaku.on('ready', (name, reconnected) => console.log(`⛩️ ${name} ready (reconnected=${reconnected})`));
+    shoukaku.on('error', (name, err) => console.error(`[${name}]`, err));
+    shoukaku.on('close', (name, code, reason) => console.warn(`[${name}] closed ${code} ${reason}`));
+
+    client.login(process.env.DISCORD_TOKEN);
+    ```
+  </TabItem>
+  <TabItem label="lavalink-client">
+    ```ts title="src/index.ts"
+    import { Client, GatewayIntentBits } from 'discord.js';
+    import { LavalinkManager } from 'lavalink-client';
+
+    const client = new Client({
+      intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildVoiceStates, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent],
+    });
+
+    export const lavalink = new LavalinkManager({
+      nodes: [
+        {
+          id: 'kizuna-in',
+          host: process.env.KIZUNA_HOST ?? 'localhost',
+          port: Number(process.env.KIZUNA_PORT ?? 2333),
+          authorization: process.env.KIZUNA_PASSWORD ?? 'youshallnotpass',
+          secure: false,
+        },
+      ],
+      sendToShard: (guildId, payload) => client.guilds.cache.get(guildId)?.shard?.send(payload),
+      client: { id: process.env.CLIENT_ID!, username: 'my-bot' },
+      autoSkip: true,
+      playerOptions: {
+        defaultSearchPlatform: 'jssearch',   // KizunaLink's JioSaavn prefix
+        onDisconnect: { autoReconnect: true, destroyPlayer: false },
+      },
+    });
+
+    client.on('raw', (d) => lavalink.sendRawData(d));
+    client.once('ready', () => lavalink.init({ id: client.user!.id, username: client.user!.username }));
+
+    lavalink.nodeManager.on('connect', (node) => console.log(`⛩️ ${node.id} connected`));
+    lavalink.nodeManager.on('error', (node, err) => console.error(`[${node.id}]`, err));
+
+    client.login(process.env.DISCORD_TOKEN);
+    ```
+
+    <Aside type="note">
+      lavalink-client validates `defaultSearchPlatform` against a known list in some versions. If `jssearch` is rejected, use `'youtube'` there and pass the prefix explicitly in `player.search({ query: 'jssearch:…' })`.
+    </Aside>
+  </TabItem>
+</Tabs>
+
+## Play a track
+
+<Tabs syncKey="jslib">
+  <TabItem label="Shoukaku">
+    ```ts title="src/commands/play.ts"
+    import type { Message } from 'discord.js';
+    import { shoukaku } from '../index.js';
+
+    export async function play(msg: Message, query: string) {
+      const channel = msg.member?.voice.channel;
+      if (!channel) return msg.reply('Join a voice channel first.');
+
+      // Reuse an existing player or create one (this joins the channel)
+      const player =
+        shoukaku.players.get(msg.guildId!) ??
+        (await shoukaku.joinVoiceChannel({
+          guildId: msg.guildId!,
+          channelId: channel.id,
+          shardId: msg.guild!.shardId,
+          deaf: true,
+        }));
+
+      // URL or search prefix — KizunaLink searches JioSaavn for bare text
+      const identifier = /^https?:\/\//.test(query) ? query : `jssearch:${query}`;
+      const result = await player.node.rest.resolve(identifier);
+
+      if (!result || result.loadType === 'empty') return msg.reply('Nothing found.');
+      if (result.loadType === 'error') return msg.reply(`Load failed: ${result.data.message}`);
+
+      const track =
+        result.loadType === 'playlist' ? result.data.tracks[0]
+        : result.loadType === 'search' ? result.data[0]
+        : result.data;
+
+      await player.playTrack({ track: { encoded: track.encoded }, volume: 100 });
+      return msg.reply(`▶️ **${track.info.title}** — ${track.info.author} (${track.info.sourceName})`);
+    }
+    ```
+  </TabItem>
+  <TabItem label="lavalink-client">
+    ```ts title="src/commands/play.ts"
+    import type { Message } from 'discord.js';
+    import { lavalink } from '../index.js';
+
+    export async function play(msg: Message, query: string) {
+      const channel = msg.member?.voice.channel;
+      if (!channel) return msg.reply('Join a voice channel first.');
+
+      const player =
+        lavalink.getPlayer(msg.guildId!) ??
+        lavalink.createPlayer({
+          guildId: msg.guildId!,
+          voiceChannelId: channel.id,
+          textChannelId: msg.channelId,
+          selfDeaf: true,
+          volume: 100,
+        });
+      if (!player.connected) await player.connect();
+
+      const res = await player.search({ query, source: 'jssearch' }, msg.author);
+      if (!res.tracks.length) return msg.reply('Nothing found.');
+
+      if (res.loadType === 'playlist') player.queue.add(res.tracks);
+      else player.queue.add(res.tracks[0]);
+
+      if (!player.playing) await player.play();
+      return msg.reply(`➕ Queued **${res.tracks[0].info.title}**`);
+    }
+    ```
+  </TabItem>
+</Tabs>
+
+## Handle events
+
+<Tabs syncKey="jslib">
+  <TabItem label="Shoukaku">
+    ```ts
+    player.on('start', ({ track }) => console.log('now playing', track.info.title));
+    player.on('end', ({ reason }) => {
+      // reasons: finished | loadFailed | stopped | replaced | cleanup
+      if (reason === 'finished') playNext();
+    });
+    player.on('exception', ({ exception }) => console.error(exception.message));
+    player.on('stuck', ({ thresholdMs }) => console.warn('stuck for', thresholdMs));
+    player.on('closed', ({ code, reason, byRemote }) => console.warn('voice closed', code, reason, byRemote));
+    player.on('update', ({ state }) => { /* position, connected, ping every ~5 s */ });
+    ```
+  </TabItem>
+  <TabItem label="lavalink-client">
+    ```ts
+    lavalink.on('trackStart', (player, track) => console.log('now playing', track?.info.title));
+    lavalink.on('trackEnd', (player, track, payload) => { /* queue handles next automatically */ });
+    lavalink.on('trackError', (player, track, payload) => console.error(payload.exception?.message));
+    lavalink.on('queueEnd', (player) => player.destroy());
+    ```
+  </TabItem>
+</Tabs>
+
+## Filters
+
+Filters are a normal player update — the same payload shape as Lavalink:
+
+<Tabs syncKey="jslib">
+  <TabItem label="Shoukaku">
+    ```ts
+    // Nightcore
+    await player.setFilters({ timescale: { speed: 1.2, pitch: 1.2, rate: 1.0 } });
+
+    // Bass boost via equalizer (bands 0-2 are the lows)
+    await player.setFilters({
+      equalizer: [
+        { band: 0, gain: 0.25 }, { band: 1, gain: 0.2 }, { band: 2, gain: 0.1 },
+      ],
+    });
+
+    // 8D
+    await player.setFilters({ rotation: { rotationHz: 0.2 } });
+
+    // Clear everything
+    await player.clearFilters();
+    ```
+  </TabItem>
+  <TabItem label="lavalink-client">
+    ```ts
+    await player.filterManager.toggleNightcore();
+    await player.filterManager.setEQ([{ band: 0, gain: 0.25 }, { band: 1, gain: 0.2 }]);
+    await player.filterManager.toggleRotation(0.2);
+    await player.filterManager.resetFilters();
+    ```
+  </TabItem>
+</Tabs>
+
+All ten filters and their parameters are documented in the [Filters reference](/api/filters/).
+
+## KizunaLink extensions
+
+These go beyond the Lavalink spec. Client libraries don't have helpers for them, but every library exposes the raw REST client and node WebSocket, so they're one call away.
+
+### Lyrics
+
+```ts
+// Shoukaku: node.rest has a generic fetch helper in v4
+const lyrics = await player.node.rest.fetch(`/v4/sessions/${player.node.sessionId}/players/${player.guildId}/track/lyrics`);
+// { name, artist, source: "lrclib", synced: true, text: "...", lines: [{ timestamp: 12340, line: "..." }, …] }
+
+// Or by search, without a player:
+const l2 = await player.node.rest.fetch(`/v4/lyrics?query=${encodeURIComponent('kesariya arijit singh')}`);
+```
+
+### Server-side queue, loop & autoplay over WebSocket
+
+KizunaLink can manage a queue for you so your bot doesn't have to. Send these on the node's WebSocket:
+
+```ts
+// Shoukaku keeps the socket on node.ws (internal) — a tiny helper:
+function send(node, payload) { (node as any).ws?.send(JSON.stringify(payload)); }
+
+send(player.node, { op: 'queueTrack',  guildId, encoded: track.encoded });
+send(player.node, { op: 'skipTrack',   guildId });
+send(player.node, { op: 'previousTrack', guildId });
+send(player.node, { op: 'loop',        guildId, mode: 'queue' });   // none | track | queue
+send(player.node, { op: 'autoplay',    guildId });                  // toggles
+send(player.node, { op: 'shuffleQueue', guildId });
+send(player.node, { op: 'clearQueue',  guildId });
+```
+
+Or set loop/autoplay through the standard player PATCH, which KizunaLink extends:
+
+```ts
+await player.update({ autoplay: true, loop: 'track' } as any);
+```
+
+Full details in [KizunaLink Extensions](/api/extensions/).
+
+### List every player on the node
+
+```ts
+const { players, count } = await player.node.rest.fetch('/v4/players/all?playing=true');
+```
+
+## Slash-command bot skeleton
+
+A complete, minimal bot with `/play`, `/skip`, `/stop`, `/queue` (server-side) and `/lyrics` using Shoukaku:
+
+```ts title="src/bot.ts" collapse={1-12}
+import { Client, GatewayIntentBits, SlashCommandBuilder, REST, Routes, type ChatInputCommandInteraction } from 'discord.js';
+import { Shoukaku, Connectors } from 'shoukaku';
+
+const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildVoiceStates] });
+const shoukaku = new Shoukaku(new Connectors.DiscordJS(client), [
+  { name: 'kizuna', url: process.env.KIZUNA_URL!, auth: process.env.KIZUNA_PASSWORD! },
+], { resume: true, resumeTimeout: 60 });
+shoukaku.on('error', (_, e) => console.error(e));
+
+const commands = [
+  new SlashCommandBuilder().setName('play').setDescription('Play a song').addStringOption(o => o.setName('query').setDescription('Song or URL').setRequired(true)),
+  new SlashCommandBuilder().setName('skip').setDescription('Skip'),
+  new SlashCommandBuilder().setName('stop').setDescription('Stop and leave'),
+  new SlashCommandBuilder().setName('lyrics').setDescription('Lyrics for the current track'),
+].map(c => c.toJSON());
+
+const wsSend = (payload: object) => (shoukaku.nodes.get('kizuna') as any)?.ws?.send(JSON.stringify(payload));
+
+async function handle(i: ChatInputCommandInteraction) {
+  const guildId = i.guildId!;
+  const member = await i.guild!.members.fetch(i.user.id);
+  const vc = member.voice.channel;
+
+  if (i.commandName === 'play') {
+    if (!vc) return i.reply({ content: 'Join a voice channel first.', ephemeral: true });
+    await i.deferReply();
+    const player = shoukaku.players.get(guildId) ?? await shoukaku.joinVoiceChannel({ guildId, channelId: vc.id, shardId: i.guild!.shardId, deaf: true });
+    const q = i.options.getString('query', true);
+    const res = await player.node.rest.resolve(/^https?:/.test(q) ? q : `jssearch:${q}`);
+    if (!res || res.loadType === 'empty' || res.loadType === 'error') return i.editReply('Nothing found.');
+    const track = res.loadType === 'playlist' ? res.data.tracks[0] : res.loadType === 'search' ? res.data[0] : res.data;
+
+    if (player.track) {
+      wsSend({ op: 'queueTrack', guildId, encoded: track.encoded });   // KizunaLink server-side queue
+      return i.editReply(`➕ Queued **${track.info.title}**`);
+    }
+    await player.playTrack({ track: { encoded: track.encoded } });
+    return i.editReply(`▶️ **${track.info.title}** — ${track.info.author}`);
+  }
+
+  if (i.commandName === 'skip') { wsSend({ op: 'skipTrack', guildId }); return i.reply('⏭️ Skipped'); }
+  if (i.commandName === 'stop') { await shoukaku.leaveVoiceChannel(guildId); return i.reply('⏹️ Stopped'); }
+
+  if (i.commandName === 'lyrics') {
+    const player = shoukaku.players.get(guildId);
+    if (!player?.track) return i.reply({ content: 'Nothing is playing.', ephemeral: true });
+    await i.deferReply();
+    try {
+      const l: any = await player.node.rest.fetch(`/v4/sessions/${player.node.sessionId}/players/${guildId}/track/lyrics`);
+      return i.editReply(`**${l.name}** — ${l.artist} _(via ${l.source})_\n\n${l.text.slice(0, 1800)}`);
+    } catch { return i.editReply('No lyrics found.'); }
+  }
+}
+
+client.on('interactionCreate', (i) => { if (i.isChatInputCommand()) handle(i).catch(console.error); });
+client.once('ready', async () => {
+  await new REST().setToken(process.env.DISCORD_TOKEN!).put(Routes.applicationCommands(client.user!.id), { body: commands });
+  console.log(`Logged in as ${client.user!.tag}`);
+});
+client.login(process.env.DISCORD_TOKEN);
+```
+
+<Aside type="tip" title="Env vars used above">
+  `DISCORD_TOKEN`, `KIZUNA_URL` (e.g. `localhost:2333`), `KIZUNA_PASSWORD`.
+</Aside>
+
+## Tips specific to KizunaLink
+
+- **Default to `jssearch:`** for Indian/Bollywood catalogues and for the 320 kbps path; use `ytsearch:`/`spsearch:` where you'd normally expect them. Bare text also searches JioSaavn.
+- **Check `info.sourceName`** if you display a source icon — fallbacks can serve a YouTube search from JioSaavn.
+- **`pluginInfo` is always `{}`.** Code that reads LavaSrc fields like `pluginInfo.albumName` should guard for undefined.
+- **`secure: true` behind a TLS proxy only.** KizunaLink itself is plain HTTP; the client's `secure` flag switches to `wss://` + `https://`.

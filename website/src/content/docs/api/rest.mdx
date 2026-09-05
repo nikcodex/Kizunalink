@@ -1,0 +1,569 @@
+---
+title: REST API
+description: Complete reference for every KizunaLink HTTP endpoint — info, stats, loadtracks, decode, sessions, players, lyrics, route planner and metrics — with curl, JavaScript and Python examples.
+sidebar:
+  order: 1
+tableOfContents:
+  maxHeadingLevel: 3
+---
+
+import { Tabs, TabItem, Aside, Badge } from '@astrojs/starlight/components';
+import Endpoint from '../../../components/Endpoint.astro';
+
+All endpoints require the `Authorization` header (see [Authentication](/api/#authentication)) unless noted. Examples assume:
+
+```bash
+export KZ=http://localhost:2333
+export KZ_PASS=youshallnotpass
+export SESSION=a1b2c3d4e5f6     # from the WebSocket "ready" message
+export GUILD=123456789012345678
+```
+
+## Server
+
+### Get info
+
+<Endpoint method="GET" path="/v4/info" />
+
+Static information about the server, mirroring Lavalink's `Info` object.
+
+<Tabs syncKey="lang">
+  <TabItem label="curl">
+    ```bash
+    curl $KZ/v4/info -H "Authorization: $KZ_PASS"
+    ```
+  </TabItem>
+  <TabItem label="JavaScript">
+    ```js
+    const info = await fetch(`${KZ}/v4/info`, { headers: { Authorization: KZ_PASS } }).then(r => r.json());
+    console.log(info.version.semver, info.sourceManagers);
+    ```
+  </TabItem>
+  <TabItem label="Python">
+    ```python
+    info = httpx.get(f"{KZ}/v4/info", headers=H).json()
+    print(info["version"]["semver"], info["sourceManagers"])
+    ```
+  </TabItem>
+</Tabs>
+
+```json title="200 OK"
+{
+  "version": { "semver": "4.2.1", "major": 4, "minor": 2, "patch": 1, "preRelease": null },
+  "buildTime": 1757000000000,
+  "git": { "branch": "main", "commit": "8263599", "commitTime": 1757000000000 },
+  "jvm": "Rust (Tokio)",
+  "lavaplayer": "symphonia-0.5",
+  "sourceManagers": ["jiosaavn", "youtube", "spotify", "soundcloud", "bandcamp", "twitch", "http", "applemusic", "deezer"],
+  "filters": ["volume", "equalizer", "karaoke", "timescale", "tremolo", "vibrato", "distortion", "rotation", "channelMix", "lowPass"],
+  "plugins": []
+}
+```
+
+`sourceManagers` lists only the sources **enabled** in `[sources]`, in the fixed order jiosaavn, youtube, spotify, soundcloud, bandcamp, twitch, vimeo, niconico, http, local, applemusic, deezer. `git.*` comes from the build environment (`GIT_BRANCH`, `GIT_COMMIT`, `GIT_COMMIT_TIME`); a local `cargo build` without them reports `main` / `unknown`.
+
+### Get stats
+
+<Endpoint method="GET" path="/v4/stats" />
+
+Same object that is broadcast on the WebSocket every 60 s, computed on demand.
+
+```json title="200 OK"
+{
+  "players": 12,
+  "playingPlayers": 9,
+  "uptime": 86400000,
+  "memory": { "free": 6442450944, "used": 68157440, "allocated": 68157440, "reservable": 8589934592 },
+  "cpu": { "cores": 4, "systemLoad": 0.18, "lavalinkLoad": 0.03 },
+  "frameStats": { "sent": 3000, "nulled": 0, "deficit": 0 }
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `uptime` | Milliseconds since start |
+| `memory.used` / `allocated` | Resident memory of the KizunaLink process (bytes) |
+| `memory.free` / `reservable` | Free and total system memory |
+| `cpu.systemLoad` | Whole-machine CPU load, 0–1 |
+| `cpu.lavalinkLoad` | KizunaLink's own CPU share, 0–1 (Lavalink field name kept for client compatibility) |
+| `frameStats` | Opus frames sent / nulled / deficit over the last minute across all players |
+
+### Get version
+
+<Endpoint method="GET" path="/version" /> <Endpoint method="GET" path="/" />
+
+No auth. Returns `4.2.1` as `text/plain`.
+
+### Health check
+
+<Endpoint method="GET" path="/health" kizuna />
+
+No auth. For Docker `HEALTHCHECK`, Kubernetes probes and uptime monitors.
+
+```json title="200 OK"
+{ "status": "ok", "version": "4.2.1", "timestamp": 1757000000000 }
+```
+
+## Tracks
+
+### Load tracks
+
+<Endpoint method="GET" path="/v4/loadtracks?identifier={identifier}" />
+
+Resolve a URL, a prefixed search (`jssearch:`, `spsearch:`, `ytsearch:` …) or bare text into playable tracks. The resolution order and every prefix are documented in [Search Prefixes & Load Types](/api/search/).
+
+<Tabs syncKey="lang">
+  <TabItem label="curl">
+    ```bash
+    curl -G $KZ/v4/loadtracks --data-urlencode 'identifier=jssearch:kesariya' -H "Authorization: $KZ_PASS"
+    curl -G $KZ/v4/loadtracks --data-urlencode 'identifier=https://open.spotify.com/track/4cOdK2wGLETKBW3PvgPWqT' -H "Authorization: $KZ_PASS"
+    ```
+  </TabItem>
+  <TabItem label="JavaScript">
+    ```js
+    async function loadTracks(identifier) {
+      const url = `${KZ}/v4/loadtracks?identifier=${encodeURIComponent(identifier)}`;
+      return fetch(url, { headers: { Authorization: KZ_PASS } }).then(r => r.json());
+    }
+
+    const res = await loadTracks('jssearch:kesariya');
+    switch (res.loadType) {
+      case 'track':    play(res.data); break;
+      case 'playlist': play(res.data.tracks[res.data.info.selectedTrack] ?? res.data.tracks[0]); break;
+      case 'search':   play(res.data[0]); break;
+      case 'empty':    console.log('no results'); break;
+      case 'error':    console.error(res.data.message, res.data.severity); break;
+    }
+    ```
+  </TabItem>
+  <TabItem label="Python">
+    ```python
+    def load_tracks(identifier: str) -> dict:
+        return httpx.get(f"{KZ}/v4/loadtracks", params={"identifier": identifier}, headers=H).json()
+
+    res = load_tracks("jssearch:kesariya")
+    match res["loadType"]:
+        case "track":    play(res["data"])
+        case "playlist": play(res["data"]["tracks"][0])
+        case "search":   play(res["data"][0])
+        case "empty":    print("no results")
+        case "error":    print(res["data"]["message"], res["data"]["severity"])
+    ```
+  </TabItem>
+</Tabs>
+
+Response shape depends on `loadType`:
+
+```json title="loadType: track"
+{ "loadType": "track", "data": { "encoded": "QAAA…", "info": { … }, "pluginInfo": {}, "userData": {} } }
+```
+
+```json title="loadType: playlist"
+{ "loadType": "playlist", "data": { "info": { "name": "Top 50 - India", "selectedTrack": -1 }, "pluginInfo": {}, "tracks": [ … ] } }
+```
+
+```json title="loadType: search"
+{ "loadType": "search", "data": [ { "encoded": "…", "info": { … } }, … ] }
+```
+
+```json title="loadType: empty"
+{ "loadType": "empty", "data": null }
+```
+
+```json title="loadType: error"
+{ "loadType": "error", "data": { "message": "Blocked URL", "severity": "fault", "cause": "SSRF protection", "causeStackTrace": "" } }
+```
+
+The **Track** object:
+
+```json
+{
+  "encoded": "QAAAjQMACUtlc2FyaXlhAAxBcmlqaXQgU2luZ2gAAAAAAAPQgAAIcWZLQjZ2U3YAAQAoaHR0cHM6Ly93d3cuamlvc2Fhdm4uY29tL3NvbmcvLi4uAQAmaHR0cHM6Ly9jLnNhYXZuY2RuLmNvbS8uLi4vNTAweDUwMC5qcGcBAAxJTkgxMDIyMDA2NDcACGppb3NhYXZuAAAAAAAAAAA=",
+  "info": {
+    "identifier": "qfKB6vSv",
+    "isSeekable": true,
+    "author": "Arijit Singh",
+    "length": 250000,
+    "isStream": false,
+    "position": 0,
+    "title": "Kesariya",
+    "uri": "https://www.jiosaavn.com/song/kesariya/…",
+    "artworkUrl": "https://c.saavncdn.com/…/500x500.jpg",
+    "isrc": "INH102200647",
+    "sourceName": "jiosaavn"
+  },
+  "pluginInfo": {},
+  "userData": {}
+}
+```
+
+Errors: empty identifier → `loadType: empty` (not a 4xx); identifier longer than 2048 chars → `400`; local paths containing `..`, `/etc`, `/proc`, `/sys`, `/dev` → `400`.
+
+### Decode track
+
+<Endpoint method="GET" path="/v4/decodetrack?encodedTrack={encoded}" />
+
+Turn a base64 track back into its `Track` object without touching the network.
+
+<Tabs syncKey="lang">
+  <TabItem label="curl">
+    ```bash
+    curl -G $KZ/v4/decodetrack --data-urlencode "encodedTrack=$ENCODED" -H "Authorization: $KZ_PASS"
+    ```
+  </TabItem>
+  <TabItem label="JavaScript">
+    ```js
+    const track = await fetch(`${KZ}/v4/decodetrack?encodedTrack=${encodeURIComponent(encoded)}`, { headers: { Authorization: KZ_PASS } }).then(r => r.json());
+    ```
+  </TabItem>
+  <TabItem label="Python">
+    ```python
+    track = httpx.get(f"{KZ}/v4/decodetrack", params={"encodedTrack": encoded}, headers=H).json()
+    ```
+  </TabItem>
+</Tabs>
+
+`400` when the parameter is missing or the payload isn't a valid v1–v3 track (`Failed to decode track: …`).
+
+### Decode tracks
+
+<Endpoint method="POST" path="/v4/decodetracks" />
+
+Body: a JSON array of encoded strings (max **100**). Returns an array of `Track` objects in the same order.
+
+<Tabs syncKey="lang">
+  <TabItem label="curl">
+    ```bash
+    curl -X POST $KZ/v4/decodetracks -H "Authorization: $KZ_PASS" -H 'Content-Type: application/json' \
+      -d '["QAAA…", "QAAB…"]'
+    ```
+  </TabItem>
+  <TabItem label="JavaScript">
+    ```js
+    const tracks = await fetch(`${KZ}/v4/decodetracks`, {
+      method: 'POST', headers: { Authorization: KZ_PASS, 'Content-Type': 'application/json' },
+      body: JSON.stringify(encodedList),
+    }).then(r => r.json());
+    ```
+  </TabItem>
+  <TabItem label="Python">
+    ```python
+    tracks = httpx.post(f"{KZ}/v4/decodetracks", json=encoded_list, headers=H).json()
+    ```
+  </TabItem>
+</Tabs>
+
+## Sessions
+
+A session is created when a WebSocket connects; its ID arrives in the `ready` message. Sessions cannot be created over REST — PATCHing an unknown ID returns `404`.
+
+### Update session
+
+<Endpoint method="PATCH" path="/v4/sessions/{sessionId}" />
+
+Enable resuming so players survive a client disconnect.
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `resuming` | bool | `false` | Keep players alive after the WebSocket drops |
+| `timeout` | int (s) | `60` | How long to wait for a reconnect before destroying the session |
+
+<Tabs syncKey="lang">
+  <TabItem label="curl">
+    ```bash
+    curl -X PATCH $KZ/v4/sessions/$SESSION -H "Authorization: $KZ_PASS" -H 'Content-Type: application/json' \
+      -d '{"resuming": true, "timeout": 120}'
+    ```
+  </TabItem>
+  <TabItem label="JavaScript">
+    ```js
+    await fetch(`${KZ}/v4/sessions/${sessionId}`, {
+      method: 'PATCH', headers: { Authorization: KZ_PASS, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ resuming: true, timeout: 120 }),
+    });
+    ```
+  </TabItem>
+  <TabItem label="Python">
+    ```python
+    httpx.patch(f"{KZ}/v4/sessions/{session_id}", json={"resuming": True, "timeout": 120}, headers=H)
+    ```
+  </TabItem>
+</Tabs>
+
+```json title="200 OK"
+{ "resuming": true, "timeout": 120 }
+```
+
+### List sessions
+
+<Endpoint method="GET" path="/v4/sessions" kizuna />
+
+```json title="200 OK"
+{ "sessions": ["a1b2c3d4e5f6", "0f9e8d7c6b5a"], "count": 2 }
+```
+
+## Players
+
+Players are scoped to the session that created them. A player belonging to another session is reported as `404` — one bot can't drive another bot's guilds.
+
+### Get players
+
+<Endpoint method="GET" path="/v4/sessions/{sessionId}/players" />
+
+Returns an array of [Player](#player-object) objects owned by this session.
+
+### Get player
+
+<Endpoint method="GET" path="/v4/sessions/{sessionId}/players/{guildId}" />
+
+### Update player
+
+<Endpoint method="PATCH" path="/v4/sessions/{sessionId}/players/{guildId}?noReplace={bool}" />
+
+Creates the player if it doesn't exist. Every field is optional; only present fields are applied, in this order: **voice → track → position → volume → paused → endTime → filters → autoplay → loop**.
+
+| Field | Type | Description |
+|---|---|---|
+| `track` | object | `{ "encoded": string \| null, "identifier": string, "userData": object }`. Provide `encoded` **or** `identifier` (a URL or search text resolved server-side). `encoded: null`/`""` **stops** the current track. |
+| `encodedTrack` | string \| null | Legacy alias for `track.encoded` |
+| `identifier` | string | Legacy alias for `track.identifier` |
+| `position` | int (ms) | Seek. Applied after the track starts, so `{"track":…, "position": 60000}` starts at 1:00 |
+| `endTime` | int (ms) | Stop playback at this position. **Omitting it clears a previous value** |
+| `volume` | int | `0`–`1000` (percent; values above 1000 are clamped). Default `100` |
+| `paused` | bool | Pause/resume |
+| `filters` | object | Replaces the whole filter set — see [Filters](/api/filters/) |
+| `voice` | object | `{ "token", "endpoint", "sessionId", "channelId"? }` from Discord's `VOICE_SERVER_UPDATE` / `VOICE_STATE_UPDATE` |
+| `autoplay` | bool | <span class="kz-only">⛩ Kizuna only</span> Keep playing recommendations after the queue empties |
+| `loop` | string | <span class="kz-only">⛩ Kizuna only</span> `"none"` \| `"track"` \| `"queue"` |
+
+`?noReplace=true` makes the track part a no-op if something is already loaded, so you can safely "play if idle" without racing the current track.
+
+<Tabs syncKey="lang">
+  <TabItem label="curl">
+    ```bash
+    # Play with volume and start position
+    curl -X PATCH "$KZ/v4/sessions/$SESSION/players/$GUILD?noReplace=false" \
+      -H "Authorization: $KZ_PASS" -H 'Content-Type: application/json' \
+      -d '{"track":{"encoded":"QAAA…","userData":{"requester":"1234"}},"volume":80,"position":30000}'
+
+    # Pause
+    curl -X PATCH $KZ/v4/sessions/$SESSION/players/$GUILD -H "Authorization: $KZ_PASS" -H 'Content-Type: application/json' -d '{"paused":true}'
+
+    # Stop (keep the player and voice connection)
+    curl -X PATCH $KZ/v4/sessions/$SESSION/players/$GUILD -H "Authorization: $KZ_PASS" -H 'Content-Type: application/json' -d '{"track":{"encoded":null}}'
+
+    # Play by identifier without a separate loadtracks call
+    curl -X PATCH $KZ/v4/sessions/$SESSION/players/$GUILD -H "Authorization: $KZ_PASS" -H 'Content-Type: application/json' -d '{"track":{"identifier":"https://youtu.be/dQw4w9WgXcQ"}}'
+    ```
+  </TabItem>
+  <TabItem label="JavaScript">
+    ```js
+    async function updatePlayer(guildId, body, noReplace = false) {
+      const r = await fetch(`${KZ}/v4/sessions/${sessionId}/players/${guildId}?noReplace=${noReplace}`, {
+        method: 'PATCH', headers: { Authorization: KZ_PASS, 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (!r.ok) throw new Error((await r.json()).message);
+      return r.json();
+    }
+
+    await updatePlayer(guildId, { track: { encoded, userData: { requester: userId } }, volume: 80, position: 30_000 });
+    await updatePlayer(guildId, { paused: true });
+    await updatePlayer(guildId, { track: { encoded: null } });                 // stop
+    await updatePlayer(guildId, { filters: { timescale: { speed: 1.2, pitch: 1.2 } } });
+    await updatePlayer(guildId, { loop: 'queue', autoplay: true });            // KizunaLink extensions
+    ```
+  </TabItem>
+  <TabItem label="Python">
+    ```python
+    def update_player(guild_id: str, body: dict, no_replace: bool = False) -> dict:
+        r = httpx.patch(f"{KZ}/v4/sessions/{session_id}/players/{guild_id}",
+                        params={"noReplace": str(no_replace).lower()}, json=body, headers=H)
+        r.raise_for_status()
+        return r.json()
+
+    update_player(guild_id, {"track": {"encoded": encoded, "userData": {"requester": user_id}}, "volume": 80, "position": 30_000})
+    update_player(guild_id, {"paused": True})
+    update_player(guild_id, {"track": {"encoded": None}})                       # stop
+    update_player(guild_id, {"filters": {"timescale": {"speed": 1.2, "pitch": 1.2}}})
+    update_player(guild_id, {"loop": "queue", "autoplay": True})               # KizunaLink extensions
+    ```
+  </TabItem>
+</Tabs>
+
+Responses always return the full [Player](#player-object). If the track was accepted but its audio stream could not be resolved (dead link, region lock, source outage), the PATCH still succeeds and a `TrackExceptionEvent` with `"Failed to resolve playable audio stream"` is emitted on the WebSocket.
+
+Status codes: `400` invalid guild ID · `404` unknown session or player owned by another session · `503` player limit (10 000) reached.
+
+### Destroy player
+
+<Endpoint method="DELETE" path="/v4/sessions/{sessionId}/players/{guildId}" />
+
+Stops playback, disconnects from voice and removes the player. Returns `204`. Remember to also send Discord a voice-state update with `channel_id: null` from your bot.
+
+### All players
+
+<Endpoint method="GET" path="/v4/players/all?playing={bool}&connected={bool}" kizuna />
+
+Every player on the node **across all sessions** — for dashboards and admin tooling.
+
+| Query | Effect |
+|---|---|
+| `playing=true` | Only players with a track loaded and not paused |
+| `connected=true` | Only players connected to a voice channel |
+
+```json title="200 OK"
+{ "players": [ { "guildId": "…", "track": { … }, … } ], "count": 1 }
+```
+
+### Player object
+
+```json
+{
+  "guildId": "123456789012345678",
+  "track": { "encoded": "…", "info": { … }, "pluginInfo": {}, "userData": {} },
+  "volume": 80,
+  "paused": false,
+  "state": { "time": 1757000000000, "position": 30512, "connected": true, "ping": 42 },
+  "voice": { "token": "…", "endpoint": "india1234.discord.media:443", "sessionId": "…", "channelId": null },
+  "filters": { "volume": 1.0, "timescale": { "speed": 1.2, "pitch": 1.2, "rate": 1.0 } },
+  "autoplay": false,
+  "loop": "none"
+}
+```
+
+`state.ping` is the voice gateway round-trip in ms, `-1` while disconnected. `autoplay` and `loop` are KizunaLink additions; standard clients ignore them.
+
+## Lyrics <Badge text="Kizuna" variant="danger" />
+
+All three endpoints return the same object. Sources are tried in order: LRCLIB exact match (title + artist) → LRCLIB search → JioSaavn lyrics (plain text, `synced: false`). `404 No lyrics found for '…'` when everything misses.
+
+```json title="LyricsResponse"
+{
+  "name": "Kesariya",
+  "artist": "Arijit Singh",
+  "source": "lrclib",
+  "synced": true,
+  "text": "Kesariya tera ishq hai piya\n…",
+  "lines": [ { "timestamp": 12340, "line": "Kesariya tera ishq hai piya" }, … ]
+}
+```
+
+`timestamp` is milliseconds from track start. For unsynced JioSaavn lyrics, lines are spaced 3 s apart as a rough guide.
+
+### Lyrics for the current track
+
+<Endpoint method="GET" path="/v4/sessions/{sessionId}/players/{guildId}/track/lyrics" kizuna />
+
+`404` if the session/player is unknown or the player has no track (`Player has no track currently playing`).
+
+### Search lyrics
+
+<Endpoint method="GET" path="/v4/lyrics?query=…" kizuna />
+
+One of three parameter sets, checked in this order:
+
+| Parameters | Behaviour |
+|---|---|
+| `track=<encoded>` | Decodes the track and searches by its title, artist and identifier |
+| `trackName=…&artistName=…` | Exact LRCLIB lookup first |
+| `query=…` | Free-text search |
+
+Missing all of them → `400`.
+
+<Tabs syncKey="lang">
+  <TabItem label="curl">
+    ```bash
+    curl -G $KZ/v4/lyrics --data-urlencode 'trackName=Kesariya' --data-urlencode 'artistName=Arijit Singh' -H "Authorization: $KZ_PASS"
+    curl $KZ/v4/sessions/$SESSION/players/$GUILD/track/lyrics -H "Authorization: $KZ_PASS"
+    ```
+  </TabItem>
+  <TabItem label="JavaScript">
+    ```js
+    const lyrics = await fetch(`${KZ}/v4/lyrics?${new URLSearchParams({ trackName: 'Kesariya', artistName: 'Arijit Singh' })}`, { headers: { Authorization: KZ_PASS } }).then(r => r.json());
+    const current = await fetch(`${KZ}/v4/sessions/${sessionId}/players/${guildId}/track/lyrics`, { headers: { Authorization: KZ_PASS } }).then(r => r.json());
+    ```
+  </TabItem>
+  <TabItem label="Python">
+    ```python
+    lyrics = httpx.get(f"{KZ}/v4/lyrics", params={"trackName": "Kesariya", "artistName": "Arijit Singh"}, headers=H).json()
+    current = httpx.get(f"{KZ}/v4/sessions/{session_id}/players/{guild_id}/track/lyrics", headers=H).json()
+    ```
+  </TabItem>
+</Tabs>
+
+### Lyrics by JioSaavn ID
+
+<Endpoint method="GET" path="/v4/lyrics/{songId}" kizuna />
+
+Legacy form: the path segment is used as both the search text and the JioSaavn song identifier.
+
+## Route planner
+
+Only meaningful when [`ratelimit.ip_blocks`](/configuration/route-planner/) is configured; the planner is used for YouTube requests.
+
+### Get status
+
+<Endpoint method="GET" path="/v4/routeplanner/status" />
+
+`204 No Content` when no planner is configured. Otherwise:
+
+```json title="200 OK"
+{
+  "class": "RotatingIpRoutePlanner",
+  "details": {
+    "ipBlock": { "type": "Inet6Address", "size": "18446744073709551616" },
+    "failingAddresses": [ { "failingAddress": "2001:db8::1", "failingTimestamp": 1757000000000, "failingTime": "…" } ],
+    "rotateIndex": "3",
+    "ipIndex": "3",
+    "currentAddress": "2001:db8::4",
+    "currentAddressIndex": "3"
+  }
+}
+```
+
+`class` is one of `RotatingIpRoutePlanner`, `NanoIpRoutePlanner`, `RotatingNanoIpRoutePlanner`, `BalancingIpRoutePlanner`.
+
+### Free an address
+
+<Endpoint method="POST" path="/v4/routeplanner/free/address" />
+
+Body `{ "address": "2001:db8::1" }`. Returns `204`.
+
+### Free all addresses
+
+<Endpoint method="POST" path="/v4/routeplanner/free/all" />
+
+Returns `204`.
+
+## Metrics
+
+### Prometheus metrics
+
+<Endpoint method="GET" path="/v4/metrics" kizuna />
+
+Prometheus text exposition (`text/plain; version=0.0.4`) — see [Prometheus Metrics](/monitoring/prometheus/) for the metric list and a scrape config. Requires the `Authorization` header like every other `/v4` route; use `authorization.credentials` in Prometheus.
+
+## Quick index
+
+| Method | Path | Auth | Notes |
+|---|---|---|---|
+| GET | `/`, `/version` | – | version string |
+| GET | `/health` | – | ⛩ liveness JSON |
+| GET | `/v4/info` | ✓ | server info |
+| GET | `/v4/stats` | ✓ | stats snapshot |
+| GET | `/v4/loadtracks` | ✓ | `identifier` |
+| GET | `/v4/decodetrack` | ✓ | `encodedTrack` |
+| POST | `/v4/decodetracks` | ✓ | ≤ 100 |
+| PATCH | `/v4/sessions/{id}` | ✓ | resuming |
+| GET | `/v4/sessions` | ✓ | ⛩ list |
+| GET | `/v4/sessions/{id}/players` | ✓ | |
+| GET/PATCH/DELETE | `/v4/sessions/{id}/players/{guild}` | ✓ | `noReplace` |
+| GET | `/v4/players/all` | ✓ | ⛩ `playing`, `connected` |
+| GET | `/v4/lyrics` | ✓ | ⛩ `query` / `track` / `trackName`+`artistName` |
+| GET | `/v4/lyrics/{songId}` | ✓ | ⛩ |
+| GET | `/v4/sessions/{id}/players/{guild}/track/lyrics` | ✓ | ⛩ |
+| GET | `/v4/routeplanner/status` | ✓ | 204 if none |
+| POST | `/v4/routeplanner/free/address`, `…/free/all` | ✓ | 204 |
+| GET | `/v4/metrics` | ✓ | ⛩ Prometheus |
+| GET | `/v4/websocket` | ✓ | upgrade |
