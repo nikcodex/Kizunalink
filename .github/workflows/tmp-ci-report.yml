@@ -12,6 +12,9 @@ on:
 permissions:
   contents: write
 
+env:
+  CARGO_TERM_COLOR: never
+
 jobs:
   report:
     name: Toolchain report

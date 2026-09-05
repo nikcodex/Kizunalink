@@ -159,8 +159,8 @@ impl VoiceGatewayClient {
         session_id: &str,
         token: &str,
     ) -> Result<()> {
-        let payload = identify_payload(server_id, user_id, session_id, token)
-            .map_err(gateway_err)?;
+        let payload =
+            identify_payload(server_id, user_id, session_id, token).map_err(gateway_err)?;
         self.send_payload(&payload).await
     }
 

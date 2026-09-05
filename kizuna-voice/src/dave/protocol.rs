@@ -276,7 +276,8 @@ impl DaveSession {
         if !self.handshake_supported {
             warn!(
                 "DAVE: ignoring {} for guild {}: DAVE v1 handshake is not implemented",
-                msg.kind(), self.guild_id
+                msg.kind(),
+                self.guild_id
             );
             return Vec::new();
         }

@@ -174,7 +174,11 @@ pub enum StreamRequest {
     /// http(s) URL whose host is an IP literal — already range-checked.
     IpLiteral { url: String, pin: SocketAddr },
     /// http(s) URL whose host is a name that still has to be resolved.
-    Hostname { url: String, host: String, port: u16 },
+    Hostname {
+        url: String,
+        host: String,
+        port: u16,
+    },
 }
 
 /// Classify a playback URL without touching the network.
@@ -456,9 +460,13 @@ mod tests {
         assert!(!redirect_allowed("http://127.0.0.1:8080/admin"));
         assert!(!redirect_allowed("http://[::1]/admin"));
         assert!(!redirect_allowed("http://10.0.0.1/admin"));
-        assert!(!redirect_allowed("http://169.254.169.254/latest/meta-data/"));
+        assert!(!redirect_allowed(
+            "http://169.254.169.254/latest/meta-data/"
+        ));
         assert!(!redirect_allowed("http://localhost/admin"));
-        assert!(!redirect_allowed("http://metadata.google.internal/computeMetadata"));
+        assert!(!redirect_allowed(
+            "http://metadata.google.internal/computeMetadata"
+        ));
         assert!(!redirect_allowed("file:///etc/passwd"));
         // The constructed policy exists and is usable by reqwest.
         let _ = redirect_policy();
@@ -544,6 +552,8 @@ mod tests {
 
         let localhost = "http://localhost/a.mp3";
         assert!(resolve_stream_target(localhost, false).await.is_err());
-        assert!(resolve_stream_target("file:///etc/passwd", false).await.is_err());
+        assert!(resolve_stream_target("file:///etc/passwd", false)
+            .await
+            .is_err());
     }
 }

@@ -226,8 +226,7 @@ pub async fn create_kizuna_source(
     skip_frames: u64,
 ) -> Result<KizunaFilteredSource, String> {
     let local_sources = crate::config::local_sources_enabled();
-    let target = crate::security::resolve_stream_target(&stream_url, local_sources)
-        .await?;
+    let target = crate::security::resolve_stream_target(&stream_url, local_sources).await?;
 
     let (tx, rx) = tokio::sync::mpsc::channel::<Vec<u8>>(128);
     match target {
@@ -368,7 +367,11 @@ mod tests {
         let chain = new_shared_chain(48_000.0);
         let path = "/etc/hostname".to_string();
         let result = create_kizuna_source(path, None, chain, 0).await;
-        let err = result.unwrap_err();
+        // KizunaFilteredSource has no Debug impl, so match instead of unwrap_err.
+        let err = match result {
+            Ok(_) => panic!("playback of a blocked address must be refused"),
+            Err(err) => err,
+        };
         assert!(err.contains("sources.local"), "unexpected error: {}", err);
     }
 
