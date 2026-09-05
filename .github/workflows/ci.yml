@@ -2,13 +2,11 @@ name: CI
 
 on:
   push:
-    # TEMPORARY: arena/01a06f22-kizunalink added so the diagnostic below can run
-    # on this branch (workflow_dispatch is not permitted for this token, and no
-    # PR may be opened). Revert to [main] once the Test hang is diagnosed.
+    # TEMPORARY: lets this branch run CI for verification (no PR, and
+    # workflow_dispatch is not permitted for this token). Revert to [main].
     branches: [main, arena/01a06f22-kizunalink]
   pull_request:
     branches: [main]
-  workflow_dispatch:
 
 env:
   CARGO_TERM_COLOR: always
@@ -52,64 +50,13 @@ jobs:
   test:
     name: Test
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: sudo apt-get update && sudo apt-get install -y cmake
-
-      # TEMPORARY DIAGNOSTIC (do not merge): the Test job has been timing out at
-      # 10m. A previous diagnostic attempt reported nothing because it ran under
-      # GitHub's default `bash -e` shell with `set -o pipefail`, so the failing
-      # pipeline aborted the script before any annotation was emitted. This step
-      # runs each test binary individually under a watchdog and surfaces the
-      # offending binary + last-started test as workflow annotations, which are
-      # readable via the REST API.
-      - name: Build all test binaries (no run)
-        run: cargo test --workspace --all-targets --all-features --no-run
-
-      - name: Run each test binary under a watchdog
-        shell: bash
-        run: |
-          set +e
-          overall=0
-          mapfile -t bins < <(
-            cargo test --workspace --all-targets --all-features --no-run --message-format=json 2>/dev/null \
-              | jq -r 'select(.reason == "compiler-artifact" and .executable != null and .profile.test == true) | .executable' \
-              | sort -u
-          )
-          echo "Discovered ${#bins[@]} test binaries:"
-          printf '  %s\n' "${bins[@]}"
-          echo "::notice::Discovered ${#bins[@]} test binaries"
-
-          i=0
-          for bin in "${bins[@]}"; do
-            i=$((i + 1))
-            name=$(basename "$bin")
-            log="/tmp/bin_${i}.log"
-            echo "::group::RUN $name"
-            timeout 180 "$bin" --test-threads=1 --nocapture 2>&1 | tee "$log"
-            code=${PIPESTATUS[0]}
-            echo "::endgroup::"
-            echo "RESULT $name exit=$code"
-
-            if [ "$code" != "0" ]; then
-              overall=1
-              last=$(grep -oE '^test [A-Za-z0-9_:]+' "$log" | tail -n 1 | cut -d' ' -f2)
-              echo "::error::HANG/FAIL binary=$name exit=$code last_started_test=${last:-none}"
-              n=0
-              while IFS= read -r line; do
-                n=$((n + 1))
-                enc=${line//%/%25}
-                enc=${enc//$'\r'/}
-                echo "::error::[$name tail#$n] $enc"
-              done < <(tail -n 40 "$log")
-            fi
-          done
-
-          echo "OVERALL exit=$overall"
-          exit "$overall"
+      - run: cargo test --workspace --all-targets --all-features
 
   build-release:
     name: Build Release
