@@ -1,0 +1,4 @@
+fmt-all exit lines: 71
+clippy warnings/errors: 0
+--- test totals ---
+--- failures ---
