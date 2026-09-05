@@ -45,7 +45,7 @@ fn parse_bytes(val: Option<&serde_json::Value>) -> Vec<u8> {
             let bytes = s.as_bytes();
             if bytes.len() % 2 == 0 {
                 let mut decoded = Vec::with_capacity(bytes.len() / 2);
-                for chunk in bytes.chunks_exact(2) {
+                for chunk in bytes.as_chunks::<2>().0 {
                     let Ok(hex) = std::str::from_utf8(chunk) else {
                         break;
                     };

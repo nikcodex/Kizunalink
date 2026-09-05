@@ -451,7 +451,10 @@ mod tests {
     #[test]
     fn test_are_artists_related() {
         assert!(are_artists_related("Artist", "artist"));
-        assert!(are_artists_related("Artist feat Someone", "Artist ft Other"));
+        assert!(are_artists_related(
+            "Artist feat Someone",
+            "Artist ft Other"
+        ));
         assert!(are_artists_related("Artist", "Artists"));
         assert!(!are_artists_related("Artist", "Completely Different"));
     }

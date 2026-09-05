@@ -170,7 +170,10 @@ impl FilteredAudioReader {
 
         match join.await {
             Ok(result) => result,
-            Err(e) => Err(std::io::Error::other(format!("audio decode task failed: {}", e))),
+            Err(e) => {
+                let msg = format!("audio decode task failed: {}", e);
+                Err(std::io::Error::other(msg))
+            }
         }
     }
 
