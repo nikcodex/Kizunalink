@@ -29,7 +29,7 @@ impl JioSaavnSource {
         let client = crate::config::global_proxy()
             .apply_to_builder(reqwest::Client::builder())
             .default_headers(headers)
-            .timeout(std::time::Duration::from_secs(5))
+            .timeout(crate::config::source_timeout_secs(5))
             .build()
             .expect("Failed to build Reqwest client for JioSaavn");
 

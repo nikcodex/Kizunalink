@@ -13,7 +13,7 @@ use reqwest::header::{HeaderMap, HeaderValue, ACCEPT, USER_AGENT};
 use std::collections::HashSet;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{SystemTime, UNIX_EPOCH};
 use tracing::{info, warn};
 
 /// How long an IP stays marked as failing before it is retried (default: 120s).
@@ -204,7 +204,7 @@ impl RoutePlanner {
 
         let default_client = reqwest::Client::builder()
             .default_headers(default_headers)
-            .timeout(Duration::from_secs(5))
+            .timeout(crate::config::source_timeout_secs(5))
             .redirect(crate::security::redirect_policy())
             .build()
             .unwrap_or_else(|_| crate::config::http_client());
@@ -307,7 +307,7 @@ impl RoutePlanner {
 
         match reqwest::Client::builder()
             .default_headers(headers)
-            .timeout(Duration::from_secs(5))
+            .timeout(crate::config::source_timeout_secs(5))
             .redirect(crate::security::redirect_policy())
             .local_address(Some(ip))
             .build()

@@ -38,6 +38,22 @@ impl FrameCounters {
         self.deficit.fetch_add(frames, Ordering::Relaxed);
     }
 
+    /// `frameStats` for the per-minute WebSocket broadcast.
+    ///
+    /// Lavalink v4 sends `null` here when the node has no players, so the
+    /// counters are only reported while there is something to report.
+    pub fn ws_frame_stats(players: usize) -> serde_json::Value {
+        if players == 0 {
+            return serde_json::Value::Null;
+        }
+        let snapshot = Self::global().snapshot();
+        serde_json::json!({
+            "sent": snapshot.sent,
+            "nulled": snapshot.nulled,
+            "deficit": snapshot.deficit
+        })
+    }
+
     pub fn snapshot(&self) -> FrameStats {
         FrameStats {
             sent: self.sent.load(Ordering::Relaxed),
@@ -64,7 +80,24 @@ impl SystemStats {
     /// Refresh CPU and memory stats. Should be called every ~5s.
     pub async fn refresh(&self) {
         let mut sys = self.system.write().await;
-        sys.refresh_all();
+        // `refresh_all` walks /proc for every process on the host and can block
+        // for tens of milliseconds. Running it inline stalls the async worker —
+        // the same pool that paces audio frames — so hand it to the blocking
+        // pool. The write guard is held throughout, so readers still see a
+        // consistent snapshot.
+        let mut taken = std::mem::replace(&mut *sys, System::new());
+        let join = tokio::task::spawn_blocking(move || {
+            taken.refresh_all();
+            taken
+        });
+        match join.await {
+            Ok(refreshed) => *sys = refreshed,
+            Err(e) => {
+                // The task panicked or the runtime is shutting down. `sys` keeps
+                // the empty placeholder, which the next refresh repopulates.
+                tracing::warn!("system stats refresh failed: {}", e);
+            }
+        }
     }
 
     pub async fn get_memory_stats(&self) -> MemoryStats {
@@ -102,5 +135,52 @@ impl SystemStats {
             system_load,
             lavalink_load,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::protocol::StatsPayload;
+
+    #[test]
+    fn ws_frame_stats_is_null_without_players() {
+        // Lavalink v4: `frameStats` is null when the node has no players.
+        assert!(FrameCounters::ws_frame_stats(0).is_null());
+    }
+
+    #[test]
+    fn ws_frame_stats_reports_counters_with_players() {
+        let stats = FrameCounters::ws_frame_stats(2);
+        let obj = stats.as_object().expect("frame stats object");
+        assert!(obj.contains_key("sent"));
+        assert!(obj.contains_key("nulled"));
+        assert!(obj.contains_key("deficit"));
+    }
+
+    #[test]
+    fn rest_stats_payload_carries_frame_stats_as_null() {
+        let payload = StatsPayload {
+            players: 0,
+            playing_players: 0,
+            uptime: 1,
+            memory: MemoryStats {
+                free: 0,
+                used: 0,
+                allocated: 0,
+                reservable: 0,
+            },
+            cpu: CpuStats {
+                cores: 1,
+                system_load: 0.0,
+                lavalink_load: 0.0,
+            },
+            frame_stats: None,
+        };
+        let value = serde_json::to_value(&payload).expect("stats serialise");
+        let obj = value.as_object().expect("stats object");
+        // The key is always present on /v4/stats, and always null there.
+        assert!(obj.contains_key("frameStats"));
+        assert!(obj["frameStats"].is_null());
     }
 }

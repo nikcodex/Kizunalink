@@ -14,7 +14,7 @@ impl AppleMusicSource {
         let client = crate::config::global_proxy()
             .apply_to_builder(reqwest::Client::builder())
             .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
-            .timeout(std::time::Duration::from_secs(10))
+            .timeout(crate::config::source_timeout_secs(10))
             .build()
             .expect("Failed to build Reqwest client for Apple Music");
 

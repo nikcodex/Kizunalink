@@ -1,30 +1,44 @@
-/// Discord Audio/Video End-to-end Encryption (DAVE) protocol implementation.
-///
-/// This module implements the complete DAVE protocol:
-/// - MLS group management via OpenMLS (key exchange, proposals, commits)
-/// - Per-sender key ratcheting from MLS exporter secrets
-/// - AES-128-GCM frame encryption/decryption
-/// - Voice gateway message handling (opcodes 21-26)
-///
-/// # DAVE Protocol Flow
-///
-/// 1. Voice gateway sends `dave_mls_external_sender_package` (opcode 25)
-///    → Contains gateway's MLS credential and signature public key
-/// 2. Client creates MLS group with gateway as external sender
-/// 3. Client generates MLS key package, sends via `dave_mls_key_package` (opcode 26)
-/// 4. Gateway sends proposals/commits via `dave_protocol_prepare_epoch` (opcode 24)
-/// 5. Gateway announces transition via `dave_protocol_prepare_transition` (opcode 21)
-/// 6. Gateway executes transition via `dave_protocol_execute_transition` (opcode 22)
-///    → Client exports MLS secret and derives per-sender encryption keys
-/// 7. Audio frames are encrypted with AES-128-GCM before sending
-///
-///
-/// - Integration requires either:
-///   b) Using the `cacophony` crate (AGPL) which has native DAVE support
-///   c) Running a parallel voice WS connection (not recommended — Discord expects one connection)
-///
-/// This module provides the complete DAVE crypto stack. The caller is responsible
-/// for wiring it to the voice gateway.
+//! Discord Audio/Video End-to-End Encryption (DAVE) — **unsupported, inactive**.
+//!
+//! DAVE protocol v1 requires an MLS 1.0 group negotiated with the voice gateway
+//! acting as MLS delivery service. Concretely (see the DAVE whitepaper):
+//!
+//! - MLS ciphersuite 2, `DHKEMP256_AES128GCM_SHA256_P256` (P-256 ECDH + ECDSA);
+//! - a key package whose leaf node carries a *basic* credential equal to the
+//!   big-endian 64-bit snowflake **user ID** of the session, with lifetime
+//!   `not_before = 0` / `not_after = 2^64 - 1`;
+//! - the `external_senders` group extension containing exactly the credential and
+//!   signature key received in `dave_mls_external_sender_package` (opcode 25);
+//! - handling of `dave_mls_proposals` (27), `dave_mls_announce_commit_transition`
+//!   (29) and `dave_mls_welcome` (30), replying with `dave_mls_commit_welcome`
+//!   (28) and `dave_protocol_ready_for_transition` (23);
+//! - binary fields encoded as base64 strings inside the voice gateway JSON.
+//!
+//! This module implements **none** of that: it builds a local-only group with
+//! ciphersuite 1 (X25519/Ed25519), credentials the group with the guild ID, never
+//! adds the external sender extension, never processes proposals/commits/welcomes
+//! and never reports readiness. A gateway would reject the resulting key package
+//! and commit as an invalid group.
+//!
+//! Because of that, the session is permanently inert:
+//!
+//! - [`crate::gateway::connection::identify_payload`] does not advertise a DAVE
+//!   protocol version, so the gateway keeps the media session on transport-only
+//!   encryption (`aead_aes256_gcm_rtpsize`, implemented in
+//!   [`crate::transport::crypto`]);
+//! - [`DaveSession::handle_gateway_message`] ignores gateway messages and never
+//!   returns anything to send, so no protocol-invalid payload can leave us;
+//! - [`DaveSession::is_active`] is always `false`, which matters because the audio
+//!   send path replaces the Opus payload with an encrypted frame whenever it
+//!   returns `true`. Activating it from a group that was never established with
+//!   the gateway would derive keys nobody else has, making the bot inaudible
+//!   while it still reports that it is playing.
+//!
+//! What *is* implemented and unit-tested below is the local symmetric layer the
+//! spec describes (HKDF sender ratchets + AES-128-GCM frames with the
+//! `Discord Secure Frames v0` label); it is kept for reference and is not wired
+//! into playback. Implementing DAVE v1 for real means P-256/MLS work that is out
+//! of scope here — this module must not be advertised until it exists.
 use aes_gcm::{aead::Aead, Aes128Gcm, KeyInit, Nonce};
 use hkdf::Hkdf;
 use openmls::prelude::*;
@@ -34,12 +48,15 @@ use sha2::Sha256;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 
-/// DAVE protocol version we support
-pub const DAVE_PROTOCOL_VERSION: u32 = 1;
-
-/// MLS ciphersuite per DAVE protocol v1: DHKEMP256_AES128GCM_SHA256_P256
+/// MLS ciphersuite used by the local group below.
+///
+/// **Not** the DAVE v1 ciphersuite: the protocol mandates suite 2
+/// (`MLS_128_DHKEMP256_AES128GCM_SHA256_P256`), whereas this is suite 1
+/// (X25519/Ed25519). A gateway validates the ciphersuite of every key package
+/// and commit and rejects mismatched groups, which is one of the reasons the
+/// session is never activated — see the module documentation.
 const CIPHERSUITE: Ciphersuite = Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519;
 
 /// Label for sender key derivation per the DAVE protocol spec
@@ -57,7 +74,12 @@ const FRAME_NONCE_SIZE: usize = 12;
 // Voice gateway DAVE opcodes
 // ---------------------------------------------------------------------------
 
-/// Opcodes received from the voice gateway for DAVE coordination
+/// Opcodes received from the voice gateway for DAVE coordination.
+///
+/// Incomplete by design: `dave_mls_proposals` (27),
+/// `dave_mls_announce_commit_transition` (29) and `dave_mls_welcome` (30) are not
+/// modelled at all, and `dave_mls_key_package` (26) is a client→server message
+/// that the gateway never sends us. See the module documentation.
 #[derive(Debug, Clone)]
 pub enum DaveGatewayMessage {
     /// Opcode 21: Prepare a transition to a new epoch
@@ -85,6 +107,22 @@ pub enum DaveClientMessage {
     KeyPackage(Vec<u8>),
     /// Client's MLS commit/proposal (opcode 24/25)
     MlsMessage(Vec<u8>),
+}
+
+impl DaveGatewayMessage {
+    /// Short name for diagnostics. The payloads carry binary MLS blobs that must
+    /// not be dumped into logs, so only the opcode is reported.
+    fn kind(&self) -> &'static str {
+        match self {
+            DaveGatewayMessage::PrepareTransition { .. } => "prepare_transition (op 21)",
+            DaveGatewayMessage::ExecuteTransition { .. } => "execute_transition (op 22)",
+            DaveGatewayMessage::PrepareEpoch { .. } => "prepare_epoch (op 24)",
+            DaveGatewayMessage::MlsExternalSenderPackage { .. } => {
+                "mls_external_sender_package (op 25)"
+            }
+            DaveGatewayMessage::MlsKeyPackage { .. } => "mls_key_package (op 26)",
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -185,6 +223,13 @@ pub struct DaveSession {
     active: bool,
     /// Queued messages to send to the voice gateway
     pending_messages: Vec<DaveClientMessage>,
+    /// Whether this session may take part in a DAVE handshake at all.
+    ///
+    /// Always `false`: DAVE v1 is not implemented (see the module documentation),
+    /// so gateway messages are ignored, nothing is ever queued for sending, and
+    /// [`DaveSession::is_active`] stays `false` — which is what keeps the audio
+    /// send path from replacing Opus payloads with frames nobody can decrypt.
+    handshake_supported: bool,
 }
 
 impl DaveSession {
@@ -215,12 +260,28 @@ impl DaveSession {
             epoch_id: 0,
             active: false,
             pending_messages: Vec::new(),
+            handshake_supported: false,
         }
     }
 
     /// Process a DAVE message from the voice gateway.
     /// Returns any messages that should be sent back to the gateway.
+    ///
+    /// While DAVE v1 is unsupported this always returns an empty `Vec`: replying
+    /// would send a key package built with the wrong ciphersuite and the wrong
+    /// credential (the gateway rejects both), and following through to
+    /// `execute_transition` would activate frame encryption with keys derived from
+    /// a group that was never established with anyone.
     pub fn handle_gateway_message(&mut self, msg: DaveGatewayMessage) -> Vec<DaveClientMessage> {
+        if !self.handshake_supported {
+            warn!(
+                "DAVE: ignoring {} for guild {}: DAVE v1 handshake is not implemented",
+                msg.kind(),
+                self.guild_id
+            );
+            return Vec::new();
+        }
+
         match msg {
             DaveGatewayMessage::MlsExternalSenderPackage {
                 credential,
@@ -577,8 +638,14 @@ impl DaveSession {
         Ok(plaintext)
     }
 
+    /// Whether outgoing audio frames must be DAVE-encrypted.
+    ///
+    /// Gated on [`Self::handshake_supported`] as well as the internal `active`
+    /// flag: the audio send path replaces the Opus payload whenever this returns
+    /// `true`, so a transition that never involved the gateway must not be able
+    /// to switch it on.
     pub fn is_active(&self) -> bool {
-        self.active
+        self.handshake_supported && self.active
     }
 
     pub fn epoch(&self) -> u64 {
@@ -700,19 +767,52 @@ mod tests {
         assert_eq!(session.decrypt_frame("200", &f1).unwrap(), data);
     }
 
+    /// The session must stay inert for a whole gateway-driven transition:
+    /// no outgoing payloads, no local MLS group and no activation. Creating the
+    /// group used to be the intended behaviour, but its key package is invalid
+    /// for DAVE v1 (wrong ciphersuite, guild-id credential, no external sender
+    /// extension) and the resulting `active` flag silently broke audio.
     #[test]
-    fn mls_group_creation() {
+    fn gateway_messages_are_ignored_while_dave_is_unsupported() {
         let mut session = DaveSession::new("guild_42".to_string());
         assert!(session.group.is_none());
 
-        // Simulate receiving external sender package
         let msg = DaveGatewayMessage::MlsExternalSenderPackage {
             credential: vec![1, 2, 3, 4],
             signature_key: vec![5, 6, 7, 8],
         };
-        session.handle_gateway_message(msg);
+        assert!(session.handle_gateway_message(msg).is_empty());
+        assert!(session.group.is_none());
 
-        // Group should now be created
-        assert!(session.group.is_some());
+        // Downgrades and upgrades both end with execute_transition (op 22), which
+        // used to export a secret from the local-only group and flip `active`.
+        let msg = DaveGatewayMessage::PrepareTransition {
+            transition_id: 0,
+            protocol_version: 1,
+        };
+        assert!(session.handle_gateway_message(msg).is_empty());
+
+        let msg = DaveGatewayMessage::ExecuteTransition { transition_id: 0 };
+        assert!(session.handle_gateway_message(msg).is_empty());
+
+        let msg = DaveGatewayMessage::PrepareEpoch { epoch_id: 1 };
+        assert!(session.handle_gateway_message(msg).is_empty());
+
+        assert!(!session.is_active());
+        assert!(session.pending_messages.is_empty());
+    }
+
+    /// Defence in depth for the audio send path: even when the internal state says
+    /// a transition ran, `is_active()` must stay false while DAVE is unsupported,
+    /// because that flag decides whether Opus payloads are replaced by encrypted
+    /// frames that no other participant can open.
+    #[test]
+    fn is_active_stays_false_even_with_internal_active_flag() {
+        let mut session = DaveSession::new("guild_7".to_string());
+        session.exporter_secret = vec![3u8; 32];
+        session.active = true;
+        session.add_sender("111");
+
+        assert!(!session.is_active());
     }
 }

@@ -43,7 +43,9 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
-      - run: cargo fmt --check
+      # --all covers every workspace member (kizunalink + kizuna-voice);
+      # without it only the root package is checked.
+      - run: cargo fmt --all --check
 
   test:
     name: Test
