@@ -32,6 +32,9 @@ jobs:
       - uses: actions/configure-pages@v5
         with:
           enablement: true
+        # If the token can't flip the setting, don't block the build — the
+        # deploy job then fails with GitHub's "enable Pages" hint instead.
+        continue-on-error: true
       - uses: actions/setup-node@v4
         with:
           node-version: 22
