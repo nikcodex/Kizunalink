@@ -64,7 +64,24 @@ impl SystemStats {
     /// Refresh CPU and memory stats. Should be called every ~5s.
     pub async fn refresh(&self) {
         let mut sys = self.system.write().await;
-        sys.refresh_all();
+        // `refresh_all` walks /proc for every process on the host and can block
+        // for tens of milliseconds. Running it inline stalls the async worker —
+        // the same pool that paces audio frames — so hand it to the blocking
+        // pool. The write guard is held throughout, so readers still see a
+        // consistent snapshot.
+        let mut taken = std::mem::replace(&mut *sys, System::new());
+        let join = tokio::task::spawn_blocking(move || {
+            taken.refresh_all();
+            taken
+        });
+        match join.await {
+            Ok(refreshed) => *sys = refreshed,
+            Err(e) => {
+                // The task panicked or the runtime is shutting down. `sys` keeps
+                // the empty placeholder, which the next refresh repopulates.
+                tracing::warn!("system stats refresh failed: {}", e);
+            }
+        }
     }
 
     pub async fn get_memory_stats(&self) -> MemoryStats {

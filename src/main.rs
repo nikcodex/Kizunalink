@@ -195,7 +195,6 @@ async fn main() {
             get(rest::lyrics::get_player_current_lyrics),
         )
         .route("/v4/sessions", get(rest::sessions::list_sessions))
-        .route("/v4/metrics", get(rest::metrics::get_metrics))
         .route(
             "/v4/routeplanner/status",
             get(rest::routeplanner::get_routeplanner_status),
@@ -209,7 +208,18 @@ async fn main() {
             post(rest::routeplanner::free_routeplanner_all),
         )
         .route("/", get(|| async { VERSION }))
-        .route("/v4/websocket", get(ws::handler::ws_handler))
+        .route("/v4/websocket", get(ws::handler::ws_handler));
+
+    // `[metrics] enabled` was parsed but never consulted: the Prometheus
+    // endpoint was served even when metrics were disabled.
+    let app = if config.metrics.enabled {
+        app.route("/v4/metrics", get(rest::metrics::get_metrics))
+    } else {
+        info!("Metrics disabled by configuration; /v4/metrics is not served");
+        app
+    };
+
+    let app = app
         .layer(tower_http::limit::RequestBodyLimitLayer::new(
             config.security.max_body_size,
         ))

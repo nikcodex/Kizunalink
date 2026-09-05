@@ -2,6 +2,7 @@ use crate::connection::state::ConnectionState;
 use crate::dave::protocol::DaveSession;
 use crate::gateway::connection::{GatewayEvent, VoiceGatewayClient};
 use crate::transport::crypto::TransportCrypto;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{watch, Mutex, Notify};
@@ -62,6 +63,11 @@ pub struct VoiceConnectionManager {
     /// Whether we have successfully completed a full handshake at least once.
     /// If true, we can attempt Resume (Op 7) instead of fresh Identify (Op 0).
     has_established_session: Arc<Mutex<bool>>,
+    /// Set while a connection cycle reaches `Connected`. `run_gateway_loop` uses
+    /// it to reset the retry budget after a connection that actually worked, so
+    /// a long-lived session does not permanently exhaust `max_retries` over many
+    /// transient drops.
+    cycle_connected: Arc<AtomicBool>,
     #[allow(clippy::type_complexity)]
     on_fresh_identify:
         Arc<Mutex<Option<Box<dyn FnMut(u32, Arc<crate::transport::VoiceUdp>) + Send + Sync>>>>,
@@ -85,8 +91,15 @@ impl VoiceConnectionManager {
             shutdown: Arc::new(Notify::new()),
             is_shutdown: Arc::new(Mutex::new(false)),
             has_established_session: Arc::new(Mutex::new(false)),
+            cycle_connected: Arc::new(AtomicBool::new(false)),
             on_fresh_identify: Arc::new(Mutex::new(None)),
         }
+    }
+
+    /// Mark the current connection cycle as having reached `Connected`.
+    async fn mark_cycle_connected(&self) {
+        self.cycle_connected.store(true, Ordering::SeqCst);
+        self.set_state(ConnectionState::Connected).await;
     }
 
     pub async fn set_has_session(&self, value: bool) {
@@ -174,6 +187,14 @@ impl VoiceConnectionManager {
                 }
             }
 
+            // A cycle that actually reached Connected earns a fresh retry budget.
+            // Without this, eight transient drops spread over the lifetime of a
+            // player permanently disabled voice reconnects for it.
+            if self.cycle_connected.swap(false, Ordering::SeqCst) {
+                attempt = 0;
+                delay = self.config.base_delay;
+            }
+
             // Check shutdown before sleeping
             {
                 let shut = self.is_shutdown.lock().await;
@@ -223,6 +244,8 @@ impl VoiceConnectionManager {
     /// Attempt a single connection + event loop cycle.
     /// If `is_reconnect` is true and we have a previous session, attempt Resume first.
     async fn try_connect_and_run(&self, is_reconnect: bool) -> Result<(), String> {
+        self.cycle_connected.store(false, Ordering::SeqCst);
+
         let mut gw = VoiceGatewayClient::connect(&self.credentials.endpoint)
             .await
             .map_err(|e| format!("Gateway connect failed: {}", e))?;
@@ -236,6 +259,15 @@ impl VoiceConnectionManager {
         let heartbeat_interval = match hello {
             GatewayEvent::Hello(interval) => interval,
             _ => return Err("Expected Hello event".into()),
+        };
+        // `tokio::time::interval` panics on a zero duration, and a panic aborts
+        // the whole process under the release profile. Discord normally sends
+        // ~41250 ms; clamp anything unusable (0, negative, NaN, infinite) into a
+        // safe range before it reaches a timer.
+        let heartbeat_interval = if heartbeat_interval.is_finite() {
+            heartbeat_interval.clamp(1000.0, 300_000.0)
+        } else {
+            41_250.0
         };
 
         tracing::info!(
@@ -266,7 +298,7 @@ impl VoiceConnectionManager {
                 match tokio::time::timeout(Duration::from_millis(1500), gw.receive_event()).await {
                     Ok(Ok(GatewayEvent::Resumed)) => {
                         tracing::info!("VoiceConnectionManager: Resume successful");
-                        self.set_state(ConnectionState::Connected).await;
+                        self.mark_cycle_connected().await;
                         resume_success = true;
                         break;
                     }
@@ -383,7 +415,7 @@ impl VoiceConnectionManager {
             cb_fn(ready.ssrc, udp_arc);
         }
 
-        self.set_state(ConnectionState::Connected).await;
+        self.mark_cycle_connected().await;
         {
             let mut hs = self.has_established_session.lock().await;
             *hs = true;

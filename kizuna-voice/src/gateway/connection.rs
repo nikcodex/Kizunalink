@@ -25,6 +25,11 @@ pub struct VoiceGatewayClient {
     ws_stream: WebSocketStream<MaybeTlsStream<TcpStream>>,
 }
 
+/// Map any displayable serialisation/transport error onto [`Error::Gateway`].
+fn gateway_err<E: std::fmt::Display>(e: E) -> Error {
+    Error::Gateway(e.to_string())
+}
+
 fn parse_bytes(val: Option<&serde_json::Value>) -> Vec<u8> {
     if let Some(v) = val {
         if let Some(s) = v.as_str() {
@@ -33,17 +38,23 @@ fn parse_bytes(val: Option<&serde_json::Value>) -> Vec<u8> {
             if let Ok(b) = STANDARD.decode(s) {
                 return b;
             }
-            // Then try hex
-            if s.len() % 2 == 0 {
-                let mut decoded = Vec::new();
-                for i in (0..s.len()).step_by(2) {
-                    if let Ok(byte) = u8::from_str_radix(&s[i..i + 2], 16) {
-                        decoded.push(byte);
-                    } else {
+            // Then try hex. Index the byte slice rather than the `str`: slicing
+            // a `str` at a non-char boundary panics, and an even-length payload
+            // containing multi-byte UTF-8 reaches exactly that path (which would
+            // abort the process under the release profile).
+            let bytes = s.as_bytes();
+            if bytes.len() % 2 == 0 {
+                let mut decoded = Vec::with_capacity(bytes.len() / 2);
+                for chunk in bytes.chunks_exact(2) {
+                    let Ok(hex) = std::str::from_utf8(chunk) else {
                         break;
-                    }
+                    };
+                    let Ok(byte) = u8::from_str_radix(hex, 16) else {
+                        break;
+                    };
+                    decoded.push(byte);
                 }
-                if decoded.len() == s.len() / 2 {
+                if decoded.len() == bytes.len() / 2 {
                     return decoded;
                 }
             }
@@ -103,7 +114,7 @@ impl VoiceGatewayClient {
 
         let payload = VoicePayload {
             op: 0,
-            d: serde_json::to_value(identify).unwrap(),
+            d: serde_json::to_value(identify).map_err(gateway_err)?,
         };
 
         self.send_payload(&payload).await
@@ -123,7 +134,7 @@ impl VoiceGatewayClient {
 
         let payload = VoicePayload {
             op: 7,
-            d: serde_json::to_value(resume).unwrap(),
+            d: serde_json::to_value(resume).map_err(gateway_err)?,
         };
 
         self.send_payload(&payload).await
@@ -186,7 +197,9 @@ impl VoiceGatewayClient {
     }
 
     pub async fn send_payload(&mut self, payload: &VoicePayload) -> Result<()> {
-        let msg = serde_json::to_string(payload).unwrap();
+        // Serialisation failure must surface as an error: a panic on this task
+        // aborts the whole process under the release profile (panic = "abort").
+        let msg = serde_json::to_string(payload).map_err(gateway_err)?;
         debug!("Sending payload: {}", msg);
         self.ws_stream
             .send(Message::Text(msg))
@@ -289,5 +302,50 @@ impl VoiceGatewayClient {
             }
         }
         Err(Error::Gateway("Connection terminated unexpectedly".into()))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_bytes;
+    use serde_json::json;
+
+    #[test]
+    fn test_parse_bytes_decodes_base64_first() {
+        // "hello" in base64
+        let value = json!("aGVsbG8=");
+        assert_eq!(parse_bytes(Some(&value)), b"hello".to_vec());
+    }
+
+    #[test]
+    fn test_parse_bytes_decodes_hex_when_base64_fails() {
+        // "0f" is not valid base64 but is valid hex.
+        let value = json!("0f10ff");
+        assert_eq!(parse_bytes(Some(&value)), vec![0x0f, 0x10, 0xff]);
+    }
+
+    #[test]
+    fn test_parse_bytes_multibyte_hex_candidate_does_not_panic() {
+        // Two 3-byte characters: the `str` length is even (2), so the hex path is
+        // entered, but byte index 2 is not a char boundary. Indexing the `str`
+        // directly used to panic here with "byte index 2 is not a char boundary".
+        let value = json!("\u{20ac}\u{20ac}");
+        let decoded = parse_bytes(Some(&value));
+        assert_eq!(decoded, "\u{20ac}\u{20ac}".as_bytes().to_vec());
+    }
+
+    #[test]
+    fn test_parse_bytes_falls_back_to_string_bytes() {
+        let value = json!("\u{1f600}");
+        let expected = "\u{1f600}".as_bytes().to_vec();
+        assert_eq!(parse_bytes(Some(&value)), expected);
+    }
+
+    #[test]
+    fn test_parse_bytes_handles_arrays_and_null() {
+        let value = json!([1, 2, 255]);
+        assert_eq!(parse_bytes(Some(&value)), vec![1, 2, 255]);
+        assert!(parse_bytes(None).is_empty());
+        assert!(parse_bytes(Some(&json!(null))).is_empty());
     }
 }

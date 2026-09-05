@@ -60,6 +60,11 @@ pub struct GuildPlayer {
     pub queue: TrackQueue,
     pub autoplay: AutoplayEngine,
     pub end_time: Option<u64>,
+    /// Bumped every time `end_time` changes (including being cleared). The
+    /// end-time watchdog task captures the value it was scheduled for and only
+    /// fires when the generation still matches, so re-scheduling the same end
+    /// time can never leave two watchdogs racing to end the same track.
+    pub end_time_generation: u64,
     pub play_started_at: Option<Instant>,
     pub paused_at: Option<Instant>,
     pub paused_position: u64,
@@ -93,6 +98,7 @@ impl GuildPlayer {
             queue: TrackQueue::new(queue_max_history),
             autoplay: AutoplayEngine::new(),
             end_time: None,
+            end_time_generation: 0,
             play_started_at: None,
             paused_at: None,
             paused_position: 0,
@@ -436,6 +442,10 @@ impl GuildPlayer {
         self.play_started_at = Some(Instant::now());
         self.paused_at = None;
         self.paused_position = 0;
+        // An end time belongs to the track it was requested with. Starting a new
+        // track clears it; a `track` + `endTime` PATCH re-applies it afterwards.
+        self.end_time = None;
+        self.end_time_generation += 1;
         self.last_update = util::current_timestamp();
 
         self.autoplay.record_track(&track);
@@ -463,6 +473,7 @@ impl GuildPlayer {
         self.paused_at = None;
         self.paused_position = 0;
         self.end_time = None;
+        self.end_time_generation += 1;
         self.last_update = util::current_timestamp();
 
         if let Some(track) = &old_track {
@@ -620,7 +631,12 @@ impl GuildPlayer {
     }
 
     pub fn skip_to_next(&mut self) -> Option<LavalinkTrack> {
-        self.stop();
+        // `stop()` takes the current track; without re-recording it here the
+        // skipped track never reaches the played-history stack, so
+        // `previousTrack` could not return to it afterwards.
+        if let Some(skipped) = self.stop() {
+            self.queue.push_history(skipped);
+        }
         self.queue.next_track()
     }
 
@@ -634,6 +650,7 @@ impl GuildPlayer {
             let position = self.get_position();
             if position >= end_time {
                 self.end_time = None;
+                self.end_time_generation += 1;
             }
         }
 
@@ -670,3 +687,105 @@ impl GuildPlayer {
 // ---------------------------------------------------------------------------
 // Tests: disconnect event emission without any Discord connection
 // ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::track::TrackInfo;
+
+    fn make_test_track(id: &str) -> LavalinkTrack {
+        LavalinkTrack {
+            encoded: format!("enc-{}", id),
+            info: TrackInfo {
+                identifier: id.to_string(),
+                is_seekable: true,
+                author: "Test Author".to_string(),
+                length: 1000,
+                is_stream: false,
+                position: 0,
+                title: format!("Title {}", id),
+                uri: Some(format!("https://example.com/{}", id)),
+                artwork_url: None,
+                isrc: None,
+                source_name: "test".to_string(),
+            },
+            plugin_info: serde_json::json!({}),
+            user_data: serde_json::json!({}),
+        }
+    }
+
+    fn make_player() -> GuildPlayer {
+        let (event_tx, _event_rx) = broadcast::channel(16);
+        let (track_end_tx, _track_end_rx) = mpsc::unbounded_channel();
+        GuildPlayer::new(
+            "111222333444555".to_string(),
+            "999888777666555".to_string(),
+            event_tx,
+            track_end_tx,
+            10,
+        )
+    }
+
+    #[test]
+    fn test_skip_to_next_records_skipped_track_in_history() {
+        let mut player = make_player();
+        player.queue.current = Some(make_test_track("a"));
+        player.queue.add(make_test_track("b"));
+
+        let next = player.skip_to_next().expect("queued track becomes current");
+        assert_eq!(next.info.identifier, "b");
+
+        // The skipped track has to stay reachable through previousTrack. It used
+        // to be dropped on the floor by `stop()`, leaving the history empty.
+        player.queue.current = Some(next);
+        let previous = player
+            .skip_to_previous()
+            .expect("skipped track is still in history");
+        assert_eq!(previous.info.identifier, "a");
+    }
+
+    #[test]
+    fn test_skip_to_previous_does_not_requeue_current_track() {
+        let mut player = make_player();
+        player.queue.current = Some(make_test_track("a"));
+        player.queue.add(make_test_track("b"));
+
+        let next = player.skip_to_next().expect("next track");
+        player.queue.current = Some(next);
+
+        let previous = player.skip_to_previous().expect("previous track");
+        assert_eq!(previous.info.identifier, "a");
+        // "b" must not be pushed onto the history stack: the client just asked
+        // to leave it, so popping it back would undo the request.
+        assert!(player.queue.previous_track().is_none());
+    }
+
+    #[test]
+    fn test_stop_clears_end_time_and_invalidates_watchdog() {
+        let mut player = make_player();
+        player.queue.current = Some(make_test_track("a"));
+        player.is_playing = true;
+        player.end_time = Some(5_000);
+        let generation = player.end_time_generation;
+
+        let stopped = player.stop().expect("current track is returned");
+        assert_eq!(stopped.info.identifier, "a");
+        assert_eq!(player.end_time, None);
+        // Stopping must invalidate any armed endTime watchdog.
+        assert_ne!(player.end_time_generation, generation);
+        assert!(player.queue.current.is_none());
+        assert!(!player.is_playing);
+    }
+
+    #[test]
+    fn test_position_is_frozen_while_paused() {
+        let mut player = make_player();
+        player.paused = true;
+        player.paused_position = 1_234;
+        assert_eq!(player.get_position(), 1_234);
+
+        player.paused = false;
+        player.play_started_at = None;
+        assert_eq!(player.get_position(), 0);
+    }
+}

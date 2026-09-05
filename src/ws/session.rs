@@ -1,5 +1,6 @@
 use dashmap::DashMap;
 use std::collections::{HashSet, VecDeque};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Instant;
 use tracing::info;
 
@@ -33,6 +34,11 @@ impl Default for SessionState {
 
 pub struct SessionManager {
     sessions: DashMap<String, SessionState>,
+    /// Number of live entries in `sessions`. `DashMap::len()` is a sum over all
+    /// shards and gives no ordering guarantee against a concurrent `insert`, so
+    /// the connection limit is enforced through this counter instead of a
+    /// check-then-insert sequence.
+    session_count: AtomicUsize,
     max_sessions: usize,
     max_buffer_size: usize,
 }
@@ -47,6 +53,7 @@ impl SessionManager {
     pub fn new(max_sessions: usize, max_buffer_size: usize) -> Self {
         Self {
             sessions: DashMap::new(),
+            session_count: AtomicUsize::new(0),
             max_sessions,
             max_buffer_size,
         }
@@ -76,8 +83,12 @@ impl SessionManager {
             }
         }
 
-        // Create new session
-        if self.sessions.len() >= self.max_sessions {
+        // Reserve the slot atomically. `len() >= max_sessions` followed by
+        // `insert()` is a check-then-act race that lets concurrent connections
+        // overshoot the configured cap.
+        let reserved = self.session_count.fetch_add(1, Ordering::SeqCst);
+        if reserved >= self.max_sessions {
+            self.session_count.fetch_sub(1, Ordering::SeqCst);
             return Err(format!(
                 "Session limit reached: maximum {} active sessions allowed",
                 self.max_sessions
@@ -205,6 +216,7 @@ impl SessionManager {
     /// Remove a session completely and decrement metrics. Returns the removed session state if found.
     pub fn remove_session(&self, session_id: &str) -> Option<SessionState> {
         if let Some((_, state)) = self.sessions.remove(session_id) {
+            self.session_count.fetch_sub(1, Ordering::SeqCst);
             crate::metrics::Metrics::global().active_sessions.dec();
             info!("Session {} cleaned up", session_id);
             Some(state)
@@ -215,11 +227,17 @@ impl SessionManager {
 
     /// Check if a disconnected session has expired, and remove it if so.
     /// Returns the session's subscribed guild IDs if expired.
+    ///
+    /// The removal is gated on [`SessionManager::is_session_expired`] so that a
+    /// stale resume timer from an *earlier* disconnect cannot tear down a
+    /// session that has since resumed and disconnected again with a fresh
+    /// resume window.
     pub fn expire_if_disconnected(&self, session_id: &str) -> Option<HashSet<String>> {
+        let now = Instant::now();
         let should_remove = self
             .sessions
             .get(session_id)
-            .map(|s| !s.connected)
+            .map(|s| !s.connected && Self::is_session_expired(&s, now))
             .unwrap_or(false);
 
         if should_remove {

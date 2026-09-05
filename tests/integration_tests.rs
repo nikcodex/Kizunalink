@@ -704,3 +704,254 @@ fn test_encoded_track_uri_stays_canonical() {
     );
     assert_eq!(decoded.info.source_name, "youtube");
 }
+
+// ---------------------------------------------------------------------------
+// Player lifecycle regressions
+// ---------------------------------------------------------------------------
+
+fn dummy_track(id: &str) -> LavalinkTrack {
+    LavalinkTrack {
+        encoded: format!("enc-{}", id),
+        info: TrackInfo {
+            identifier: id.to_string(),
+            is_seekable: true,
+            author: "Test Author".to_string(),
+            length: 60_000,
+            is_stream: false,
+            position: 0,
+            title: format!("Title {}", id),
+            uri: Some(format!("https://example.com/{}", id)),
+            artwork_url: None,
+            isrc: None,
+            source_name: "test".to_string(),
+        },
+        plugin_info: serde_json::json!({}),
+        user_data: serde_json::json!({}),
+    }
+}
+
+fn manager_with_events() -> (PlayerManager, broadcast::Receiver<String>) {
+    let (event_tx, event_rx) = broadcast::channel(64);
+    let manager = PlayerManager::new(
+        event_tx,
+        SourceBundle {
+            jiosaavn: JioSaavnSource::new(),
+            youtube: YouTubeSource::new(None),
+            spotify: SpotifySource::new(),
+            soundcloud: SoundCloudSource::new(),
+            deezer: DeezerSource::new(),
+            apple_music: AppleMusicSource::new(),
+        },
+        50,
+        MAX_PLAYERS,
+        kizunalink::config::SourcesConfig::default(),
+    );
+    (manager, event_rx)
+}
+
+/// Wait for the next event whose JSON contains `needle`.
+async fn next_event(rx: &mut broadcast::Receiver<String>, needle: &str) -> String {
+    loop {
+        match rx.recv().await {
+            Ok(msg) if msg.contains(needle) => return msg,
+            Ok(_) => continue,
+            Err(broadcast::error::RecvError::Lagged(_)) => continue,
+            Err(broadcast::error::RecvError::Closed) => panic!("event bus closed"),
+        }
+    }
+}
+
+/// `next_event` with a hard deadline so a regression fails instead of hanging.
+async fn expect_event(rx: &mut broadcast::Receiver<String>, needle: &str) -> String {
+    let wait = next_event(rx, needle);
+    let limit = std::time::Duration::from_secs(10);
+    match tokio::time::timeout(limit, wait).await {
+        Ok(event) => event,
+        Err(_) => panic!("timed out waiting for event containing {:?}", needle),
+    }
+}
+
+/// `PlayerManager::new` spawns a background task that owns a *clone* of the
+/// manager. That clone used to receive a deep copy of the `players` map, so the
+/// task saw a permanently empty map: track-end notifications were dropped, no
+/// `TrackEndEvent` was emitted and the queue never advanced.
+#[tokio::test]
+async fn test_track_end_notification_reaches_background_task() {
+    let (manager, mut event_rx) = manager_with_events();
+    let guild_id = "111222333444555";
+
+    let player = manager
+        .get_or_create_player_for_session(guild_id, "session-a")
+        .await
+        .expect("player created");
+    {
+        let mut p = player.write().await;
+        p.queue.current = Some(dummy_track("t1"));
+    }
+
+    // endTime == 0 is already reached, so the update notifies the background
+    // task immediately.
+    let payload = PlayerUpdatePayload {
+        end_time: Some(0),
+        ..Default::default()
+    };
+    manager
+        .update_player(guild_id, payload, false, "session-a")
+        .await
+        .expect("update accepted");
+
+    let event = expect_event(&mut event_rx, "TrackEndEvent").await;
+
+    assert!(event.contains(guild_id), "event: {}", event);
+    let finished = event.contains("\"reason\":\"finished\"");
+    assert!(finished, "event: {}", event);
+}
+
+/// `endTime` has to actually end the track once playback reaches it.
+#[tokio::test]
+async fn test_end_time_watchdog_ends_track_at_requested_position() {
+    let (manager, mut event_rx) = manager_with_events();
+    let guild_id = "222333444555666";
+
+    let player = manager
+        .get_or_create_player_for_session(guild_id, "session-b")
+        .await
+        .expect("player created");
+    {
+        let mut p = player.write().await;
+        p.queue.current = Some(dummy_track("t1"));
+        // Playback position is derived from `play_started_at`, so the watchdog has
+        // a short, deterministic delay left before `endTime` is reached.
+        p.play_started_at = Some(std::time::Instant::now());
+    }
+
+    let payload = PlayerUpdatePayload {
+        end_time: Some(50),
+        ..Default::default()
+    };
+    manager
+        .update_player(guild_id, payload, false, "session-b")
+        .await
+        .expect("update accepted");
+
+    let event = expect_event(&mut event_rx, "TrackEndEvent").await;
+    let finished = event.contains("\"reason\":\"finished\"");
+    assert!(finished, "event: {}", event);
+}
+
+/// An `endTime` belongs to the track it was requested with: a later PATCH that
+/// omits the field must not silently drop it.
+#[tokio::test]
+async fn test_end_time_survives_unrelated_patch() {
+    let manager = mock_player_manager();
+    let guild_id = "333444555666777";
+
+    let player = manager
+        .get_or_create_player_for_session(guild_id, "session-c")
+        .await
+        .expect("player created");
+    {
+        let mut p = player.write().await;
+        p.queue.current = Some(dummy_track("t1"));
+    }
+
+    let with_end_time = PlayerUpdatePayload {
+        end_time: Some(120_000),
+        ..Default::default()
+    };
+    manager
+        .update_player(guild_id, with_end_time, false, "session-c")
+        .await
+        .expect("endTime accepted");
+    assert_eq!(player.read().await.end_time, Some(120_000));
+
+    let volume_only = PlayerUpdatePayload {
+        volume: Some(80),
+        ..Default::default()
+    };
+    manager
+        .update_player(guild_id, volume_only, false, "session-c")
+        .await
+        .expect("volume accepted");
+
+    let p = player.read().await;
+    assert_eq!(p.volume, 80);
+    // An omitted endTime must not clear the stored value.
+    assert_eq!(p.end_time, Some(120_000));
+}
+
+// ---------------------------------------------------------------------------
+// Session manager regressions
+// ---------------------------------------------------------------------------
+
+/// A resume timer armed by an earlier disconnect must not destroy a session that
+/// is still inside its (fresh) resume window.
+#[tokio::test]
+async fn test_stale_resume_timer_respects_resume_window() {
+    let sm = SessionManager::new(100, 50);
+    let (session_id, _, _) = sm
+        .handle_connection(None, "12345".to_string())
+        .expect("connection accepted");
+    sm.update_session(&session_id, Some(true), Some(60));
+    sm.add_guild(&session_id, "111222333444555");
+
+    assert_eq!(sm.mark_disconnected(&session_id), Some(60));
+
+    // Still resumable and far from the timeout: nothing may be destroyed.
+    assert!(sm.expire_if_disconnected(&session_id).is_none());
+    assert_eq!(sm.count_sessions(), 1);
+
+    // Once the resume window has actually elapsed the session is cleaned up.
+    sm.update_session(&session_id, Some(true), Some(1));
+    assert_eq!(sm.mark_disconnected(&session_id), Some(1));
+    let pause = std::time::Duration::from_millis(1_100);
+    tokio::time::sleep(pause).await;
+    let guild_ids = sm
+        .expire_if_disconnected(&session_id)
+        .expect("expired session is removed");
+    assert!(guild_ids.contains("111222333444555"));
+    assert_eq!(sm.count_sessions(), 0);
+}
+
+/// The session cap must hold when connections arrive concurrently: the previous
+/// `len() >= max` check followed by `insert()` was a check-then-act race.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn test_session_limit_holds_under_concurrent_connections() {
+    let sm = Arc::new(SessionManager::new(5, 50));
+    let mut handles = Vec::new();
+    for i in 0..40 {
+        let sm = sm.clone();
+        handles.push(tokio::spawn(async move {
+            sm.handle_connection(None, format!("{}", 1_000 + i)).ok()
+        }));
+    }
+
+    let mut created = 0usize;
+    for handle in handles {
+        if handle.await.expect("task join").is_some() {
+            created += 1;
+        }
+    }
+
+    assert_eq!(created, 5, "max_sessions connections may be created");
+    assert_eq!(sm.count_sessions(), 5);
+}
+
+/// `/v4/info` must always emit the `build` key, matching Lavalink v4's
+/// `VersionInfo` (`null` when there is no build metadata).
+#[test]
+fn test_version_info_always_includes_build_field() {
+    let version = kizunalink::models::protocol::VersionInfo {
+        semver: "4.2.1".to_string(),
+        major: 4,
+        minor: 2,
+        patch: 1,
+        pre_release: None,
+        build: None,
+    };
+    let json = serde_json::to_value(&version).expect("serialisable");
+    let obj = json.as_object().expect("object");
+    assert!(obj.contains_key("build"), "info: {}", json);
+    assert!(obj["build"].is_null());
+    assert!(obj.contains_key("preRelease"));
+}

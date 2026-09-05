@@ -26,9 +26,12 @@ impl TransportCrypto {
         rtp_header: &[u8],
         payload: &[u8],
     ) -> Result<Vec<u8>, String> {
-        // Build 12-byte nonce: first 8 bytes zero, last 4 bytes = nonce_counter BE
+        // Discord's `aead_aes256_gcm_rtpsize` transport mode: the 4-byte
+        // incremental nonce is *left aligned* in the 12-byte AES-GCM nonce and
+        // the remaining 8 bytes are zero. The very same 4 bytes are then
+        // appended to the packet so the SFU can rebuild the nonce.
         let mut nonce_bytes = [0u8; 12];
-        nonce_bytes[8..12].copy_from_slice(&self.nonce_counter.to_be_bytes());
+        nonce_bytes[0..4].copy_from_slice(&self.nonce_counter.to_be_bytes());
         let nonce = Nonce::from_slice(&nonce_bytes);
 
         // AAD is the rtp_header
@@ -67,7 +70,7 @@ impl TransportCrypto {
         let nonce_suffix = &packet[len - 4..];
 
         let mut nonce_bytes = [0u8; 12];
-        nonce_bytes[8..12].copy_from_slice(nonce_suffix);
+        nonce_bytes[0..4].copy_from_slice(nonce_suffix);
         let nonce = Nonce::from_slice(&nonce_bytes);
 
         let aead_payload = Payload {
@@ -164,5 +167,74 @@ mod tests {
         // Nonce is the last 4 bytes
         assert_eq!(&enc1[enc1.len() - 4..], &[0, 0, 0, 0]);
         assert_eq!(&enc2[enc2.len() - 4..], &[0, 0, 0, 1]);
+    }
+
+    /// Wire-format check against Discord's documented `aead_aes256_gcm_rtpsize`
+    /// layout: a receiver only knows the RTP header, the ciphertext and the
+    /// 4-byte nonce suffix appended to the packet. It rebuilds the 12-byte
+    /// AES-GCM nonce by left-aligning those 4 bytes in a zeroed buffer and uses
+    /// the RTP header as AAD. If our packet cannot be opened that way, Discord
+    /// cannot decrypt it either.
+    #[test]
+    fn test_encrypted_packet_matches_discord_rtpsize_wire_format() {
+        let key = [7u8; 32];
+        let mut crypto = TransportCrypto::new(&key).unwrap();
+
+        let mut header = [0u8; 12];
+        header[0] = 0x80; // version 2, no padding/extension/csrc
+        header[1] = 0x78; // Opus payload type
+        header[2..4].copy_from_slice(&1u16.to_be_bytes()); // sequence
+        header[4..8].copy_from_slice(&960u32.to_be_bytes()); // timestamp
+        header[8..12].copy_from_slice(&12345u32.to_be_bytes()); // ssrc
+        let payload = b"opus-frame-bytes".to_vec();
+
+        let packet = crypto.encrypt_rtp_packet(&header, &payload).unwrap();
+
+        // Structure: [12-byte RTP header][ciphertext || 16-byte tag][4-byte nonce]
+        assert_eq!(&packet[..12], &header[..]);
+        assert!(packet.len() > 12 + 16 + 4);
+
+        let len = packet.len();
+        let nonce_suffix = &packet[len - 4..];
+        let ciphertext_with_tag = &packet[12..len - 4];
+
+        let mut nonce_bytes = [0u8; 12];
+        nonce_bytes[..4].copy_from_slice(nonce_suffix);
+
+        // Decrypt exactly the way Discord's SFU does: rebuild the nonce from the
+        // 4-byte suffix, use the RTP header as AAD.
+        let cipher = Aes256Gcm::new_from_slice(&key).expect("valid key");
+        let nonce = Nonce::from_slice(&nonce_bytes);
+        let aead = Payload {
+            msg: ciphertext_with_tag,
+            aad: &header[..],
+        };
+        let decrypted = cipher.decrypt(nonce, aead).expect("packet opens");
+
+        assert_eq!(decrypted, payload);
+    }
+
+    /// The 4-byte nonce suffix on the wire must be byte-identical to the first
+    /// 4 bytes of the AES-GCM nonce we used, otherwise the SFU derives a
+    /// different nonce and every packet fails authentication.
+    #[test]
+    fn test_nonce_suffix_is_left_aligned_in_gcm_nonce() {
+        let key = [9u8; 32];
+        let mut crypto = TransportCrypto::new(&key).unwrap();
+        let header = [0x80u8; 12];
+
+        for expected in [0u32, 1, 255, 0x01020304, u32::MAX - 1] {
+            crypto.nonce_counter = expected;
+            let packet = crypto.encrypt_rtp_packet(&header, b"abc").unwrap();
+            let len = packet.len();
+            assert_eq!(&packet[len - 4..], &expected.to_be_bytes());
+        }
+    }
+
+    #[test]
+    fn test_rejects_short_secret_key() {
+        assert!(TransportCrypto::new(&[1u8; 31]).is_err());
+        assert!(TransportCrypto::new(&[1u8; 33]).is_err());
+        assert!(TransportCrypto::new(&[1u8; 32]).is_ok());
     }
 }

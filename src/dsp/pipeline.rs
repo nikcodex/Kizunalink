@@ -87,6 +87,40 @@ pub struct FilteredAudioReader {
     pub is_opus_source: bool,
 }
 
+/// Fill `buf` from the shared pipeline core.
+///
+/// Shared between the synchronous [`std::io::Read`] impl and the blocking-pool
+/// wrapper so both paths behave identically.
+fn read_pcm_core(core: &Arc<Mutex<PipelineCore>>, buf: &mut [u8]) -> std::io::Result<usize> {
+    const BYTES_PER_FRAME: usize = std::mem::size_of::<f32>() * 2;
+
+    loop {
+        {
+            let mut core = core.lock().unwrap();
+            let available_bytes = core.out_fifo.len() * std::mem::size_of::<f32>();
+            if available_bytes >= buf.len().min(BYTES_PER_FRAME) || core.eof {
+                let take_samples =
+                    (buf.len() / std::mem::size_of::<f32>()).min(core.out_fifo.len());
+                let take_bytes = take_samples * std::mem::size_of::<f32>();
+                for (i, s) in core.out_fifo.drain(..take_samples).enumerate() {
+                    buf[i * 4..i * 4 + 4].copy_from_slice(&s.to_le_bytes());
+                }
+                return Ok(take_bytes);
+            }
+        }
+
+        // Need more data; produce it. This may block on the network-backed
+        // decoder, so it must never run on an async worker thread.
+        {
+            let mut core = core.lock().unwrap();
+            if !core.eof {
+                core.fill();
+                continue;
+            }
+        }
+    }
+}
+
 impl FilteredAudioReader {
     pub fn new(shared_chain: SharedChain, decoder: AudioDecoder) -> Self {
         let is_opus_source = decoder.is_opus;
@@ -102,6 +136,44 @@ impl FilteredAudioReader {
         }
     }
 
+    /// Fill `buf` with filtered f32 PCM.
+    ///
+    /// This can block on the network-backed decoder (`ChannelByteSource` parks
+    /// the thread until the HTTP feeder task delivers more bytes), so it must
+    /// only ever run on a thread that is allowed to block. Async callers must go
+    /// through [`FilteredAudioReader::read_pcm_blocking`] instead.
+    fn read_pcm(&self, buf: &mut [u8]) -> std::io::Result<usize> {
+        read_pcm_core(&self.core, buf)
+    }
+
+    /// Read up to `len` bytes of filtered PCM, running the (potentially
+    /// blocking) decoder on the runtime's blocking thread pool.
+    ///
+    /// Returns fewer bytes only at end of stream, and an empty `Vec` once the
+    /// source is exhausted.
+    pub async fn read_pcm_blocking(&self, len: usize) -> std::io::Result<Vec<u8>> {
+        let core = self.core.clone();
+        let join = tokio::task::spawn_blocking(move || {
+            let mut buf = vec![0u8; len];
+            let mut total_read = 0;
+            while total_read < buf.len() {
+                match read_pcm_core(&core, &mut buf[total_read..]) {
+                    Ok(0) => break,
+                    Ok(n) => total_read += n,
+                    Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => continue,
+                    Err(e) => return Err(e),
+                }
+            }
+            buf.truncate(total_read);
+            Ok(buf)
+        });
+
+        match join.await {
+            Ok(result) => result,
+            Err(e) => Err(std::io::Error::other(format!("audio decode task failed: {}", e))),
+        }
+    }
+
     #[cfg(test)]
     pub fn total_frames_out(&self) -> u64 {
         self.core.lock().unwrap().total_frames_out
@@ -110,32 +182,7 @@ impl FilteredAudioReader {
 
 impl Read for FilteredAudioReader {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        const BYTES_PER_FRAME: usize = std::mem::size_of::<f32>() * 2;
-
-        loop {
-            {
-                let mut core = self.core.lock().unwrap();
-                let available_bytes = core.out_fifo.len() * std::mem::size_of::<f32>();
-                if available_bytes >= buf.len().min(BYTES_PER_FRAME) || core.eof {
-                    let take_samples =
-                        (buf.len() / std::mem::size_of::<f32>()).min(core.out_fifo.len());
-                    let take_bytes = take_samples * std::mem::size_of::<f32>();
-                    for (i, s) in core.out_fifo.drain(..take_samples).enumerate() {
-                        buf[i * 4..i * 4 + 4].copy_from_slice(&s.to_le_bytes());
-                    }
-                    return Ok(take_bytes);
-                }
-            }
-
-            // Need more data; produce it (decode+filter is fast, no I/O wait here)
-            {
-                let mut core = self.core.lock().unwrap();
-                if !core.eof {
-                    core.fill();
-                    continue;
-                }
-            }
-        }
+        self.read_pcm(buf)
     }
 }
 
@@ -244,25 +291,24 @@ impl KizunaFilteredSource {
 #[async_trait]
 impl AudioSource for KizunaFilteredSource {
     async fn next_frame(&mut self) -> kizuna_voice::error::Result<Option<AudioFrame>> {
-        let mut buf = [0u8; 7680];
-        let mut total_read = 0;
+        // The decode + filter chain blocks on the network-backed byte source
+        // (`ChannelByteSource` uses `blocking_recv`), so it has to run on the
+        // runtime's blocking pool. Calling it inline would panic the async
+        // worker thread, which aborts the whole process in release builds.
+        let read = self.reader.read_pcm_blocking(7680).await;
+        let buf = match read {
+            Ok(buf) => buf,
+            Err(e) => return Err(kizuna_voice::error::Error::Connection(e.to_string())),
+        };
 
-        while total_read < buf.len() {
-            match self.reader.read(&mut buf[total_read..]) {
-                Ok(0) => break,
-                Ok(n) => total_read += n,
-                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => continue,
-                Err(e) => return Err(kizuna_voice::error::Error::Connection(e.to_string())),
-            }
-        }
-
-        if total_read == 0 {
+        if buf.is_empty() {
             return Ok(None);
         }
 
-        let num_samples = total_read / 4;
+        let usable = buf.len() - (buf.len() % 4);
+        let num_samples = usable / 4;
         let mut samples = Vec::with_capacity(num_samples);
-        for chunk in buf[..total_read].as_chunks::<4>().0 {
+        for chunk in buf[..usable].as_chunks::<4>().0 {
             let f = f32::from_le_bytes(*chunk);
             let s = (f * i16::MAX as f32).clamp(i16::MIN as f32, i16::MAX as f32) as i16;
             samples.push(s);

@@ -113,6 +113,9 @@ pub struct VersionInfo {
     pub patch: u32,
     #[serde(rename = "preRelease")]
     pub pre_release: Option<String>,
+    /// Semver build metadata. Lavalink v4's `/v4/info` always emits this key
+    /// (`"build": null` when there is none), so it must be present on the wire.
+    pub build: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

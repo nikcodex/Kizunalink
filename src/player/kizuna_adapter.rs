@@ -135,7 +135,19 @@ impl KizunaVoiceAdapter {
                 dave_guard.add_sender(&sender_id);
             }
 
-            let encoder = std::sync::Arc::new(tokio::sync::Mutex::new(OpusEncoder::new().unwrap()));
+            // Encoder init can fail (Opus allocation / invalid parameters). An
+            // `unwrap` here would panic a task, which aborts the whole process
+            // under the release profile — report the failure as a track error
+            // instead so only this player is affected.
+            let encoder = match OpusEncoder::new() {
+                Ok(enc) => std::sync::Arc::new(tokio::sync::Mutex::new(enc)),
+                Err(e) => {
+                    let msg = format!("Opus encoder initialisation failed: {}", e);
+                    error!("{}", msg);
+                    let _ = event_tx.send(kizuna_voice::audio::TrackEvent::Error(msg));
+                    return;
+                }
+            };
             scheduler
                 .run(cmd_rx, event_tx, |frame| {
                     let udp_ref = udp_ref.clone();
