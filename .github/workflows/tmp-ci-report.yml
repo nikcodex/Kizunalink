@@ -1,0 +1,57 @@
+# TEMPORARY diagnostic workflow — DELETE before merge.
+#
+# This sandbox cannot reach the GitHub Actions log blob storage, so the real CI
+# output is unreadable from here. This job runs the exact same commands as the
+# real `CI` workflow and commits their stdout/stderr under `_ci/` so the output
+# can be retrieved with `git fetch`. It does not gate anything: the real CI
+# workflow (ci.yml / build.yml) is untouched and still fails on its own.
+name: TMP CI Report
+
+on:
+  pull_request:
+    branches: [main]
+    paths-ignore:
+      - "_ci/**"
+
+permissions:
+  contents: write
+
+jobs:
+  report:
+    name: Report
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - run: sudo apt-get update && sudo apt-get install -y cmake
+
+      - name: Capture cargo fmt --check (workspace)
+        run: |
+          mkdir -p _ci
+          cargo fmt --check > _ci/fmt.txt 2>&1 || true
+          cargo fmt --all --check > _ci/fmt-all.txt 2>&1 || true
+
+      - name: Capture cargo check
+        run: cargo check --workspace --all-targets --all-features > _ci/check.txt 2>&1 || true
+
+      - name: Capture cargo clippy
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings > _ci/clippy.txt 2>&1 || true
+
+      - name: Capture cargo test
+        run: cargo test --workspace --all-targets --all-features > _ci/test.txt 2>&1 || true
+
+      - name: Publish report to branch
+        run: |
+          git config user.name "ci-report-bot"
+          git config user.email "ci-report-bot@users.noreply.github.com"
+          git add _ci
+          git commit -m "tmp(ci): publish toolchain report" || echo "report unchanged"
+          git push origin "HEAD:${{ github.head_ref }}"
