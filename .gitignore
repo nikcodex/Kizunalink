@@ -5,3 +5,16 @@ Cargo.lock
 .env
 .env.*
 .DS_Store
+
+# Build/test logs and CI scratch output (never commit runner output)
+*.log
+*_log.txt
+*_log[0-9].txt
+test_output.txt
+_ci/
+
+# Extracted tool tarballs / vendored CLI distributions
+/gh_*/
+*.tar.gz
+*.tgz
+*.zip
