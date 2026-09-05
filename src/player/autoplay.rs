@@ -357,7 +357,9 @@ mod tests {
                 source_name: "youtube".to_string(),
             },
             plugin_info: serde_json::json!({}),
-            user_data: serde_json::Value::Null,
+            // Lavalink v4 types both fields as objects, so fixtures must not use
+            // null: the server never emits `"userData": null`.
+            user_data: serde_json::json!({}),
         }
     }
 

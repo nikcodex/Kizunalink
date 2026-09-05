@@ -208,59 +208,92 @@ impl symphonia::core::io::MediaSource for FilteredAudioReader {
     }
 }
 
+/// Build the playback source for `stream_url`.
+///
+/// Every playback fetch goes through this function, which makes it the chokepoint
+/// for the stream policy. `/v4/loadtracks` validates identifiers, but the stream
+/// URL of a playing track can also come straight from an *encoded track* — and
+/// Lavalink's encoding is unsigned base64 + big-endian binary, so any client that
+/// knows the password can forge one. The URL is therefore re-validated here
+/// (scheme, private/loopback/link-local/metadata ranges, blocked hosts,
+/// `sources.local`), and remote hosts are resolved and **pinned** to a verified
+/// public address so a hostname cannot be re-resolved to an internal address
+/// between validation and connect.
 pub async fn create_kizuna_source(
-    http: reqwest::Client,
     stream_url: String,
     extension_hint: Option<String>,
     shared_chain: SharedChain,
     skip_frames: u64,
 ) -> Result<KizunaFilteredSource, String> {
-    let (tx, rx) = tokio::sync::mpsc::channel::<Vec<u8>>(128);
-    let url = stream_url.clone();
-    tokio::spawn(async move {
-        if let Some(file_path) = url.strip_prefix("file://").or_else(|| {
-            if url.starts_with('/') {
-                Some(url.as_str())
-            } else {
-                None
-            }
-        }) {
-            // Local file streaming
-            use tokio::io::AsyncReadExt;
-            if let Ok(mut file) = tokio::fs::File::open(file_path).await {
-                let mut buf = [0u8; 8192];
-                while let Ok(n) = file.read(&mut buf).await {
-                    if n == 0 {
-                        break;
-                    }
-                    if tx.send(buf[..n].to_vec()).await.is_err() {
-                        break;
-                    }
-                }
-            }
-            return;
-        }
+    let local_sources = crate::config::local_sources_enabled();
+    let target = crate::security::resolve_stream_target(&stream_url, local_sources)
+        .await?;
 
-        let resp = match http.get(&url).send().await {
-            Ok(r) => r,
-            Err(_) => return,
-        };
-        if !resp.status().is_success() {
-            return;
-        }
-        let mut stream = resp.bytes_stream();
-        use futures_util::StreamExt;
-        while let Some(chunk) = stream.next().await {
-            match chunk {
-                Ok(bytes) => {
-                    if tx.send(bytes.to_vec()).await.is_err() {
-                        break;
+    let (tx, rx) = tokio::sync::mpsc::channel::<Vec<u8>>(128);
+    match target {
+        crate::security::StreamTarget::LocalFile(path) => {
+            tokio::spawn(async move {
+                use tokio::io::AsyncReadExt;
+                match tokio::fs::File::open(&path).await {
+                    Ok(mut file) => {
+                        let mut buf = [0u8; 8192];
+                        while let Ok(n) = file.read(&mut buf).await {
+                            if n == 0 {
+                                break;
+                            }
+                            if tx.send(buf[..n].to_vec()).await.is_err() {
+                                break;
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        let safe_path = crate::security::sanitize_for_log(&path);
+                        tracing::warn!("Cannot open local audio file '{}': {}", safe_path, e);
                     }
                 }
-                Err(_) => break,
-            }
+            });
         }
-    });
+        crate::security::StreamTarget::Remote { url, host, pin } => {
+            // `resolve` pins the validated IP for this host; the port in the
+            // address is ignored by reqwest (the URL's port is used) and TLS SNI
+            // plus certificate validation still run against the hostname.
+            let pinned = std::net::SocketAddr::new(pin.ip(), pin.port());
+            let client = crate::config::global_proxy()
+                .apply_to_builder(reqwest::Client::builder())
+                .timeout(crate::config::global_request_timeout())
+                .resolve(&host, pinned)
+                .build()
+                .map_err(|e| format!("Failed to build HTTP client: {}", e))?;
+
+            tokio::spawn(async move {
+                // Stream URLs carry signed query parameters for some sources, so
+                // only the host is logged.
+                let resp = match client.get(&url).send().await {
+                    Ok(r) => r,
+                    Err(e) => {
+                        tracing::warn!("Stream request to '{}' failed: {}", host, e);
+                        return;
+                    }
+                };
+                if !resp.status().is_success() {
+                    tracing::warn!("Stream '{}' returned HTTP {}", host, resp.status());
+                    return;
+                }
+                let mut stream = resp.bytes_stream();
+                use futures_util::StreamExt;
+                while let Some(chunk) = stream.next().await {
+                    match chunk {
+                        Ok(bytes) => {
+                            if tx.send(bytes.to_vec()).await.is_err() {
+                                break;
+                            }
+                        }
+                        Err(_) => break,
+                    }
+                }
+            });
+        }
+    }
 
     let byte_source = ChannelByteSource::new(rx);
     let decoder = tokio::task::spawn_blocking(move || {
@@ -318,5 +351,40 @@ impl AudioSource for KizunaFilteredSource {
         }
 
         Ok(Some(AudioFrame::Pcm(samples)))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{create_kizuna_source, new_shared_chain};
+
+    /// A playing track's stream URL can come from a forged encoded track, so the
+    /// playback path has to enforce `sources.local` itself — the shipped
+    /// configuration disables it.
+    #[tokio::test]
+    async fn test_local_stream_rejected_when_local_source_disabled() {
+        crate::config::init_local_sources(false);
+
+        let chain = new_shared_chain(48_000.0);
+        let path = "/etc/hostname".to_string();
+        let result = create_kizuna_source(path, None, chain, 0).await;
+        let err = result.unwrap_err();
+        assert!(err.contains("sources.local"), "unexpected error: {}", err);
+    }
+
+    /// Loopback and cloud-metadata targets must never be fetched for playback,
+    /// even when the URL arrives through a track rather than an identifier.
+    #[tokio::test]
+    async fn test_private_stream_url_rejected() {
+        let chain = new_shared_chain(48_000.0);
+
+        let metadata = "http://169.254.169.254/latest/meta-data/".to_string();
+        let first = chain.clone();
+        let result = create_kizuna_source(metadata, None, first, 0).await;
+        assert!(result.is_err());
+
+        let localhost = "http://localhost:8080/stream".to_string();
+        let result = create_kizuna_source(localhost, None, chain, 0).await;
+        assert!(result.is_err());
     }
 }

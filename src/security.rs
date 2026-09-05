@@ -1,4 +1,4 @@
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use url::Url;
 
 /// Maximum allowed request body size (1 MB).
@@ -122,6 +122,14 @@ pub fn validate_url(url: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// Whether a redirect hop may be followed: the same SSRF policy as a direct load.
+///
+/// Split out of [`redirect_policy`] because `reqwest::redirect::Attempt` cannot be
+/// constructed outside reqwest, which made the policy itself untestable.
+pub fn redirect_allowed(url: &str) -> bool {
+    validate_url(url).is_ok()
+}
+
 /// Reqwest redirect policy that revalidates every redirect hop against the same
 /// SSRF policy as direct URL loads. Redirects to private/loopback/link-local
 /// ranges, metadata endpoints, or blocked hostnames are never followed.
@@ -137,6 +145,136 @@ pub fn redirect_policy() -> reqwest::redirect::Policy {
             attempt.stop()
         }
     })
+}
+
+// ---------------------------------------------------------------------------
+// Playback stream targets
+// ---------------------------------------------------------------------------
+
+/// Where a track's audio should be read from, after validation.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum StreamTarget {
+    /// A local file. Only produced when the operator enabled `sources.local`.
+    LocalFile(String),
+    /// A remote http(s) URL. `pin` is a resolved **public** address that the
+    /// request must be pinned to, so the host cannot be re-resolved to a private
+    /// address between validation and connect (DNS rebinding).
+    Remote {
+        url: String,
+        host: String,
+        pin: SocketAddr,
+    },
+}
+
+/// A playback URL split into the shapes that need different handling.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum StreamRequest {
+    /// Local file path (requires `sources.local`).
+    LocalFile(String),
+    /// http(s) URL whose host is an IP literal — already range-checked.
+    IpLiteral { url: String, pin: SocketAddr },
+    /// http(s) URL whose host is a name that still has to be resolved.
+    Hostname { url: String, host: String, port: u16 },
+}
+
+/// Classify a playback URL without touching the network.
+///
+/// Local paths (`file://` URLs and absolute paths) require `local_sources_enabled`;
+/// everything else must pass [`validate_url`], which restricts the scheme to
+/// http/https and rejects private, loopback, link-local, metadata and configured
+/// blocked hosts.
+pub fn classify_stream_url(
+    url: &str,
+    local_sources_enabled: bool,
+) -> Result<StreamRequest, String> {
+    let local_path = if let Some(path) = url.strip_prefix("file://") {
+        Some(path.to_string())
+    } else if url.starts_with('/') {
+        Some(url.to_string())
+    } else {
+        None
+    };
+
+    if let Some(path) = local_path {
+        return if local_sources_enabled {
+            Ok(StreamRequest::LocalFile(path))
+        } else {
+            Err(format!(
+                "Blocked local file source '{}': sources.local is disabled",
+                sanitize_for_log(&path)
+            ))
+        };
+    }
+
+    validate_url(url)?;
+
+    let parsed = Url::parse(url).map_err(|e| format!("Invalid URL: {}", e))?;
+    let port = parsed.port_or_known_default().unwrap_or(80);
+
+    match parsed.host() {
+        Some(url::Host::Ipv4(v4)) => Ok(StreamRequest::IpLiteral {
+            url: url.to_string(),
+            pin: SocketAddr::new(IpAddr::V4(v4), port),
+        }),
+        Some(url::Host::Ipv6(v6)) => Ok(StreamRequest::IpLiteral {
+            url: url.to_string(),
+            pin: SocketAddr::new(IpAddr::V6(v6), port),
+        }),
+        Some(url::Host::Domain(domain)) => Ok(StreamRequest::Hostname {
+            url: url.to_string(),
+            host: domain.to_string(),
+            port,
+        }),
+        None => Err("URL has no host".to_string()),
+    }
+}
+
+/// Resolve `host` and reject the request when **any** address it resolves to is
+/// private, loopback, link-local, multicast or otherwise reserved.
+///
+/// Returns the address to pin the request to. `validate_url` can only inspect the
+/// hostname, so without this a public-looking name that resolves to
+/// `169.254.169.254` or `127.0.0.1` (including a rebinding name whose answer
+/// changes between lookups) would slip through.
+pub async fn resolve_public_addr(host: &str, port: u16) -> Result<SocketAddr, String> {
+    let addrs: Vec<SocketAddr> = tokio::net::lookup_host((host, port))
+        .await
+        .map_err(|e| format!("DNS resolution failed for '{}': {}", host, e))?
+        .collect();
+
+    if addrs.is_empty() {
+        return Err(format!("No addresses found for '{}'", host));
+    }
+
+    if let Some(blocked) = addrs.iter().find(|addr| is_private_ip(addr.ip())) {
+        let blocked_ip = blocked.ip();
+        return Err(format!(
+            "Blocked '{}': resolves to private/reserved address {}",
+            host, blocked_ip
+        ));
+    }
+
+    Ok(addrs[0])
+}
+
+/// Validate a playback stream URL end to end: local-source gate, SSRF policy and
+/// DNS-level range check with the resulting address pinned.
+pub async fn resolve_stream_target(
+    url: &str,
+    local_sources_enabled: bool,
+) -> Result<StreamTarget, String> {
+    match classify_stream_url(url, local_sources_enabled)? {
+        StreamRequest::LocalFile(path) => Ok(StreamTarget::LocalFile(path)),
+        StreamRequest::IpLiteral { url, pin } => Ok(StreamTarget::Remote {
+            host: pin.ip().to_string(),
+            url,
+            pin,
+        }),
+        StreamRequest::Hostname { url, host, port } => {
+            let pin = resolve_public_addr(&host, port).await?;
+            Ok(StreamTarget::Remote { url, host, pin })
+        }
+    }
 }
 
 /// Validate a search query.
@@ -307,18 +445,105 @@ mod tests {
         );
     }
 
+    /// The redirect policy must reject exactly the targets `validate_url` rejects,
+    /// because hops are followed from attacker-influenced URLs. Asserted through
+    /// `redirect_allowed`, the decision the policy actually makes: the previous
+    /// version of this test only constructed the policy and dropped it, so it
+    /// passed no matter what the closure did.
     #[test]
     fn test_redirect_policy_revalidates_ssrf() {
-        // The policy function must reject the same dangerous targets as validate_url,
-        // because redirects are followed from attacker-influenced URLs.
-        assert!(validate_url("https://cdn.example.com/audio.mp3").is_ok());
-        assert!(validate_url("http://127.0.0.1:8080/admin").is_err());
-        assert!(validate_url("http://[::1]/admin").is_err());
-        assert!(validate_url("http://10.0.0.1/admin").is_err());
-        assert!(validate_url("http://169.254.169.254/latest/meta-data/").is_err());
-        assert!(validate_url("http://localhost/admin").is_err());
-        assert!(validate_url("http://metadata.google.internal/computeMetadata").is_err());
+        assert!(redirect_allowed("https://cdn.example.com/audio.mp3"));
+        assert!(!redirect_allowed("http://127.0.0.1:8080/admin"));
+        assert!(!redirect_allowed("http://[::1]/admin"));
+        assert!(!redirect_allowed("http://10.0.0.1/admin"));
+        assert!(!redirect_allowed("http://169.254.169.254/latest/meta-data/"));
+        assert!(!redirect_allowed("http://localhost/admin"));
+        assert!(!redirect_allowed("http://metadata.google.internal/computeMetadata"));
+        assert!(!redirect_allowed("file:///etc/passwd"));
         // The constructed policy exists and is usable by reqwest.
         let _ = redirect_policy();
+    }
+
+    /// An encoded track is unsigned client input, so the playback path must refuse
+    /// local files unless the operator enabled the local source.
+    #[test]
+    fn test_classify_stream_url_gates_local_files() {
+        assert!(classify_stream_url("file:///etc/passwd", false).is_err());
+        assert!(classify_stream_url("/srv/music/song.flac", false).is_err());
+
+        let file_url = "file:///srv/music/song.flac";
+        assert_eq!(
+            classify_stream_url(file_url, true).unwrap(),
+            StreamRequest::LocalFile("/srv/music/song.flac".to_string())
+        );
+
+        let abs_path = "/srv/music/song.flac";
+        assert_eq!(
+            classify_stream_url(abs_path, true).unwrap(),
+            StreamRequest::LocalFile("/srv/music/song.flac".to_string())
+        );
+    }
+
+    #[test]
+    fn test_classify_stream_url_applies_ssrf_policy() {
+        let metadata = "http://169.254.169.254/latest/meta-data/";
+        assert!(classify_stream_url(metadata, true).is_err());
+        assert!(classify_stream_url("http://127.0.0.1/admin", true).is_err());
+        assert!(classify_stream_url("http://[::1]/admin", true).is_err());
+        assert!(classify_stream_url("http://localhost/admin", true).is_err());
+        assert!(classify_stream_url("ftp://example.com/a.mp3", true).is_err());
+        assert!(classify_stream_url("http://10.0.0.1/a.mp3", true).is_err());
+    }
+
+    #[test]
+    fn test_classify_stream_url_remote_shapes() {
+        let cdn = "https://cdn.example.com/a.mp3";
+        assert_eq!(
+            classify_stream_url(cdn, false).unwrap(),
+            StreamRequest::Hostname {
+                url: cdn.to_string(),
+                host: "cdn.example.com".to_string(),
+                port: 443,
+            }
+        );
+
+        let direct = "http://93.184.216.34:8080/a.mp3";
+        assert_eq!(
+            classify_stream_url(direct, false).unwrap(),
+            StreamRequest::IpLiteral {
+                url: direct.to_string(),
+                pin: "93.184.216.34:8080".parse().unwrap(),
+            }
+        );
+    }
+
+    /// Names that resolve into private ranges must be rejected even though the
+    /// name itself looks harmless (split-horizon DNS, DNS rebinding, or a host
+    /// record pointing at the metadata endpoint). Numeric hosts never hit the
+    /// network, and `localhost` is resolved from the hosts file, so this is
+    /// deterministic offline.
+    #[tokio::test]
+    async fn test_resolve_public_addr_rejects_private_addresses() {
+        assert!(resolve_public_addr("127.0.0.1", 80).await.is_err());
+        assert!(resolve_public_addr("::1", 80).await.is_err());
+        assert!(resolve_public_addr("localhost", 80).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_resolve_stream_target_pins_validated_address() {
+        let direct = "http://93.184.216.34/a.mp3";
+        let target = resolve_stream_target(direct, false).await.unwrap();
+        match target {
+            StreamTarget::Remote { host, pin, .. } => {
+                assert_eq!(host, "93.184.216.34");
+                assert_eq!(pin.ip().to_string(), "93.184.216.34");
+                assert_eq!(pin.port(), 80);
+            }
+            other => panic!("expected a remote target, got {:?}", other),
+        }
+
+        let localhost = "http://localhost/a.mp3";
+        assert!(resolve_stream_target(localhost, false).await.is_err());
+        assert!(resolve_stream_target("file:///etc/passwd", false).await.is_err());
     }
 }

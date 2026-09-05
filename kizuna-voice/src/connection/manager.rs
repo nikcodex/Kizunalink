@@ -2,7 +2,7 @@ use crate::connection::state::ConnectionState;
 use crate::dave::protocol::DaveSession;
 use crate::gateway::connection::{GatewayEvent, VoiceGatewayClient};
 use crate::transport::crypto::TransportCrypto;
-use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU32, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{watch, Mutex, Notify};
@@ -71,6 +71,10 @@ pub struct VoiceConnectionManager {
     /// Send time of the heartbeat that is currently awaiting an ack. Used to
     /// turn Discord's `HEARTBEAT_ACK` into a real round-trip measurement.
     heartbeat_sent: Arc<std::sync::Mutex<Option<std::time::Instant>>>,
+    /// SSRC the voice gateway assigned in READY. Opcode 5 (SPEAKING) identifies
+    /// the sender by SSRC, so the re-assert sent after SESSION_DESCRIPTION has to
+    /// reuse it — a placeholder such as `0` describes nobody.
+    ssrc: Arc<AtomicU32>,
     /// Last measured voice-gateway RTT in milliseconds, or `-1` while unknown.
     /// Reported as `playerUpdate.state.ping` (Lavalink v4: `-1` if not
     /// connected), which used to be a hardcoded `12`.
@@ -101,8 +105,19 @@ impl VoiceConnectionManager {
             cycle_connected: Arc::new(AtomicBool::new(false)),
             heartbeat_sent: Arc::new(std::sync::Mutex::new(None)),
             ping_ms: Arc::new(AtomicI64::new(-1)),
+            ssrc: Arc::new(AtomicU32::new(0)),
             on_fresh_identify: Arc::new(Mutex::new(None)),
         }
+    }
+
+    /// Record the SSRC assigned by the gateway in READY.
+    fn note_ready_ssrc(&self, ssrc: u32) {
+        self.ssrc.store(ssrc, Ordering::Relaxed);
+    }
+
+    /// SSRC to report in SPEAKING (opcode 5) payloads.
+    fn current_ssrc(&self) -> u32 {
+        self.ssrc.load(Ordering::Relaxed)
     }
 
     /// Mark the current connection cycle as having reached `Connected`.
@@ -449,6 +464,8 @@ impl VoiceConnectionManager {
             }
         };
 
+        self.note_ready_ssrc(ready.ssrc);
+
         let (udp, external_ip, external_port) =
             crate::transport::VoiceUdp::bind_and_discover(&ready.ip, ready.port, ready.ssrc)
                 .await
@@ -536,7 +553,8 @@ impl VoiceConnectionManager {
                                     tracing::error!("Failed to setup transport crypto: {}", e);
                                 }
                             }
-                            let _ = gw.send_speaking(true, 0).await;
+                            let ssrc = self.current_ssrc();
+                            let _ = gw.send_speaking(true, ssrc).await;
                         }
                         Ok(GatewayEvent::HeartbeatAck) => {
                             // Heartbeat acknowledged — connection is healthy,
@@ -574,6 +592,22 @@ mod tests {
         let dave = Arc::new(Mutex::new(DaveSession::new("111222333444555".to_string())));
         let crypto = Arc::new(Mutex::new(None));
         VoiceConnectionManager::new(credentials, dave, crypto)
+    }
+
+    /// Opcode 5 identifies the sender by SSRC, so the value from READY has to be
+    /// reused for the SPEAKING re-assert after SESSION_DESCRIPTION; it used to
+    /// send `0`, which does not describe this session.
+    #[test]
+    fn ssrc_from_ready_is_remembered() {
+        let manager = test_manager();
+        assert_eq!(manager.current_ssrc(), 0);
+
+        manager.note_ready_ssrc(0xC0FFEE);
+        assert_eq!(manager.current_ssrc(), 0xC0FFEE);
+
+        // A reconnect with a new READY replaces the SSRC.
+        manager.note_ready_ssrc(42);
+        assert_eq!(manager.current_ssrc(), 42);
     }
 
     #[test]
