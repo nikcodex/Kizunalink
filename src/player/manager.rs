@@ -838,12 +838,23 @@ impl PlayerManager {
         guild_id: &str,
         session_id: &str,
     ) -> Result<(), PlayerManagerError> {
-        match self.players.get(guild_id) {
-            Some(entry) if entry.value().session_id == session_id => {
+        // Resolve ownership into a plain `bool` so the `Ref` returned by `get` —
+        // and with it the DashMap shard read lock — is released before we touch
+        // the map again. `destroy_player` calls `players.remove`, which needs the
+        // shard *write* lock; taking it while this thread still holds the shard
+        // read guard deadlocks the caller, because parking_lot's `RwLock` is not
+        // reentrant and the pending writer can never outlive its own reader.
+        let owned_by_session = self
+            .players
+            .get(guild_id)
+            .map(|entry| entry.value().session_id == session_id);
+
+        match owned_by_session {
+            Some(true) => {
                 self.destroy_player(guild_id);
                 Ok(())
             }
-            Some(_) | None => Err(PlayerManagerError::NotFound(guild_id.to_string())),
+            Some(false) | None => Err(PlayerManagerError::NotFound(guild_id.to_string())),
         }
     }
 
