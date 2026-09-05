@@ -1,0 +1,15 @@
+[1m[92m   Compiling[0m kizunalink v4.2.1 (/home/runner/work/Kizunalink/Kizunalink)
+[1m[92m    Checking[0m kizuna-voice v0.1.0 (/home/runner/work/Kizunalink/Kizunalink/kizuna-voice)
+[1m[91merror[0m[1m: using `chunks_exact` with a constant chunk size[0m
+  [1m[94m--> [0mkizuna-voice/src/gateway/connection.rs:48:36
+   [1m[94m|[0m
+[1m[94m48[0m [1m[94m|[0m                 for chunk in bytes.chunks_exact(2) {
+   [1m[94m|[0m                                    [1m[91m^^^^^^^^^^^^^^^[0m [1m[91mhelp: consider using `as_chunks` instead: `as_chunks::<2>().0`[0m
+   [1m[94m|[0m
+   [1m[94m= [0m[1mhelp[0m: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.98.0/index.html#chunks_exact_to_as_chunks
+   [1m[94m= [0m[1mnote[0m: `-D clippy::chunks-exact-to-as-chunks` implied by `-D warnings`
+   [1m[94m= [0m[1mhelp[0m: to override `-D warnings` add `#[allow(clippy::chunks_exact_to_as_chunks)]`
+
+[1m[91merror[0m: could not compile `kizuna-voice` (lib) due to 1 previous error
+[1m[33mwarning[0m: build failed, waiting for other jobs to finish...
+[1m[91merror[0m: could not compile `kizuna-voice` (lib test) due to 1 previous error
