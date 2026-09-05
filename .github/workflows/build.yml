@@ -2,8 +2,7 @@ name: Build KizunaLink Engine
 
 on:
   push:
-    # TEMPORARY: verify ARM64/Termux on this branch. Revert to [ "main" ].
-    branches: [ "main", "arena/01a06f22-kizunalink" ]
+    branches: [ "main" ]
   pull_request:
     branches: [ "main" ]
   workflow_dispatch:

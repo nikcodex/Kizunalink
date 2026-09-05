@@ -2,9 +2,7 @@ name: CI
 
 on:
   push:
-    # TEMPORARY: lets this branch run CI for verification (no PR, and
-    # workflow_dispatch is not permitted for this token). Revert to [main].
-    branches: [main, arena/01a06f22-kizunalink]
+    branches: [main]
   pull_request:
     branches: [main]
 
