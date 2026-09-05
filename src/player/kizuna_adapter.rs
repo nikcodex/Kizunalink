@@ -35,6 +35,17 @@ impl KizunaVoiceAdapter {
         }
     }
 
+    /// Shared handle to the voice-gateway RTT measurement, so the synchronous
+    /// player snapshot can read it without locking the adapter.
+    ///
+    /// Lavalink v4 defines `playerUpdate.state.ping` as the node's ping to the
+    /// Discord voice server, `-1` if not connected. `None` until `connect`
+    /// produced a connection manager.
+    pub fn ping_handle(&self) -> Option<Arc<std::sync::atomic::AtomicI64>> {
+        let manager = self.manager.as_ref()?;
+        Some(manager.ping_handle())
+    }
+
     pub async fn connect(&mut self, server_id: String, user_id: String) -> Result<(), String> {
         info!("Connecting using KizunaVoice adapter with reconnect support...");
 

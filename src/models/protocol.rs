@@ -77,7 +77,9 @@ pub struct StatsPayload {
     pub uptime: u64,
     pub memory: MemoryStats,
     pub cpu: CpuStats,
-    #[serde(rename = "frameStats", skip_serializing_if = "Option::is_none")]
+    /// Lavalink v4: `null` when the node has no players, and always `null` on
+    /// `GET /v4/stats`. The key itself is always present on the wire.
+    #[serde(rename = "frameStats")]
     pub frame_stats: Option<FrameStats>,
 }
 

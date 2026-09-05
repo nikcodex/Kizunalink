@@ -258,11 +258,7 @@ async fn main() {
                     "systemLoad": cpu.system_load,
                     "lavalinkLoad": cpu.lavalink_load
                 },
-                "frameStats": {
-                    "sent": crate::stats::FrameCounters::global().sent.load(std::sync::atomic::Ordering::Relaxed),
-                    "nulled": crate::stats::FrameCounters::global().nulled.load(std::sync::atomic::Ordering::Relaxed),
-                    "deficit": crate::stats::FrameCounters::global().deficit.load(std::sync::atomic::Ordering::Relaxed)
-                }
+                "frameStats": crate::stats::FrameCounters::ws_frame_stats(total_players)
             });
 
             let _ = stats_state.event_tx.send(stats.to_string());

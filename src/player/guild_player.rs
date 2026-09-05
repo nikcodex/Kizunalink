@@ -55,6 +55,9 @@ pub struct GuildPlayer {
     pub filters: Filters,
     pub last_update: u64,
     pub kizuna_voice_adapter: Option<Arc<Mutex<crate::player::kizuna_adapter::KizunaVoiceAdapter>>>,
+    /// Live voice-gateway RTT shared with the connection manager. `to_response`
+    /// is synchronous, so it reads this atomic instead of locking the adapter.
+    pub voice_ping: Option<Arc<std::sync::atomic::AtomicI64>>,
     pub kizuna_track_handle: Option<kizuna_voice::audio::KizunaTrackHandle>,
     pub is_playing: bool,
     pub queue: TrackQueue,
@@ -93,6 +96,7 @@ impl GuildPlayer {
             filters: Filters::default(),
             last_update: util::current_timestamp(),
             kizuna_voice_adapter: None,
+            voice_ping: None,
             kizuna_track_handle: None,
             is_playing: false,
             queue: TrackQueue::new(queue_max_history),
@@ -222,6 +226,7 @@ impl GuildPlayer {
             .await
         {
             Ok(()) => {
+                self.voice_ping = adapter.ping_handle();
                 self.kizuna_voice_adapter =
                     Some(std::sync::Arc::new(tokio::sync::Mutex::new(adapter)));
                 info!("Voice connected for guild: {}", self.guild_id);
@@ -657,6 +662,16 @@ impl GuildPlayer {
         self.queue.next_track()
     }
 
+    /// Ping reported on the wire: the measured voice-gateway RTT, or `-1` when
+    /// there is no voice connection to measure. Previously a hardcoded `12`,
+    /// which clients displayed as real latency.
+    fn voice_ping_ms(&self) -> i64 {
+        match &self.voice_ping {
+            Some(ping) => ping.load(std::sync::atomic::Ordering::Relaxed),
+            None => -1,
+        }
+    }
+
     pub fn to_response(&self) -> PlayerResponse {
         let is_connected = self.kizuna_voice_adapter.is_some();
         let current = self.queue.current.clone();
@@ -669,7 +684,7 @@ impl GuildPlayer {
                 time: util::current_timestamp(),
                 position: self.get_position(),
                 connected: is_connected,
-                ping: if is_connected { 12 } else { -1 },
+                ping: self.voice_ping_ms(),
             },
             voice: self.voice.clone().unwrap_or_default(),
             filters: self.filters.clone(),
@@ -787,5 +802,30 @@ mod tests {
         player.paused = false;
         player.play_started_at = None;
         assert_eq!(player.get_position(), 0);
+    }
+
+    #[test]
+    fn test_response_reports_no_ping_without_voice_connection() {
+        let mut player = make_player();
+        player.queue.current = Some(make_test_track("a"));
+
+        let response = player.to_response();
+        assert!(!response.state.connected);
+        // Lavalink v4: ping is -1 when the node is not connected to voice.
+        assert_eq!(response.state.ping, -1);
+    }
+
+    #[test]
+    fn test_response_ping_is_measured_not_hardcoded() {
+        let mut player = make_player();
+        // A measured voice-gateway RTT has to reach the wire verbatim; the old
+        // code reported a hardcoded 12 ms for every connected player.
+        let measured = Arc::new(std::sync::atomic::AtomicI64::new(42));
+        player.voice_ping = Some(measured);
+        assert_eq!(player.to_response().state.ping, 42);
+
+        // Without a measurement the contract is -1, never a fabricated value.
+        player.voice_ping = None;
+        assert_eq!(player.to_response().state.ping, -1);
     }
 }

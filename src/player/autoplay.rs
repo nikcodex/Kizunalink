@@ -9,6 +9,10 @@ pub struct AutoplayEngine {
     pub enabled: bool,
     recent_tracks: VecDeque<String>,
     played_ids: HashSet<String>,
+    /// Insertion order for `played_ids`. A `HashSet` iterator yields an
+    /// arbitrary order, so without this the eviction of already-played ids was
+    /// nondeterministic (which ids survived changed run to run).
+    played_order: VecDeque<String>,
     max_history: usize,
     max_played: usize,
 }
@@ -19,6 +23,7 @@ impl AutoplayEngine {
             enabled: false,
             recent_tracks: VecDeque::new(),
             played_ids: HashSet::new(),
+            played_order: VecDeque::new(),
             max_history: 20,
             max_played: 50,
         }
@@ -55,18 +60,22 @@ impl AutoplayEngine {
         if self.recent_tracks.len() > self.max_history {
             self.recent_tracks.pop_front();
         }
-        self.played_ids.insert(track.info.identifier.clone());
-        if self.played_ids.len() > self.max_played {
-            let oldest: Vec<String> = self.played_ids.iter().take(10).cloned().collect();
-            for id in &oldest {
-                self.played_ids.remove(id);
-            }
+        let identifier = track.info.identifier.clone();
+        if self.played_ids.insert(identifier.clone()) {
+            self.played_order.push_back(identifier);
+        }
+        while self.played_ids.len() > self.max_played {
+            let Some(oldest) = self.played_order.pop_front() else {
+                break;
+            };
+            self.played_ids.remove(&oldest);
         }
     }
 
     pub fn clear(&mut self) {
         self.recent_tracks.clear();
         self.played_ids.clear();
+        self.played_order.clear();
     }
 
     pub async fn get_recommendation(
@@ -413,10 +422,17 @@ mod tests {
         // The most recent title is always retained in the ring buffer.
         let recent = "song 79 artist".to_string();
         assert!(engine.recent_tracks.contains(&recent));
+        // Eviction is FIFO: exactly the newest `max_played` ids survive.
+        assert!(engine.played_ids.contains("id-79"));
+        assert!(engine.played_ids.contains("id-30"));
+        assert!(!engine.played_ids.contains("id-29"));
+        assert!(!engine.played_ids.contains("id-0"));
+        assert_eq!(engine.played_ids.len(), engine.played_order.len());
 
         engine.clear();
         assert!(engine.recent_tracks.is_empty());
         assert!(engine.played_ids.is_empty());
+        assert!(engine.played_order.is_empty());
     }
 
     #[test]
