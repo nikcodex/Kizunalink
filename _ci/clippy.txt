@@ -1,3 +1,0 @@
-[1m[92m   Compiling[0m kizunalink v4.2.1 (/home/runner/work/Kizunalink/Kizunalink)
-[1m[92m    Checking[0m kizuna-voice v0.1.0 (/home/runner/work/Kizunalink/Kizunalink/kizuna-voice)
-[1m[92m    Finished[0m `dev` profile [unoptimized + debuginfo] target(s) in 3.40s
