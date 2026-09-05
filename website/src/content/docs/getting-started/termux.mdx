@@ -1,0 +1,102 @@
+---
+title: Termux / ARM64
+description: Run KizunaLink on Android via Termux, or on any 64-bit ARM Linux box such as a Raspberry Pi or Oracle Ampere VM.
+sidebar:
+  order: 5
+---
+
+import { Steps, Aside, Tabs, TabItem } from '@astrojs/starlight/components';
+
+KizunaLink's ~15 MB footprint and lack of a JVM make it one of the few Lavalink-compatible servers that runs comfortably on a phone. The ARM64 build is produced by CI with `cargo-zigbuild` targeting `aarch64-unknown-linux-gnu`.
+
+<Aside type="caution" title="glibc binary on Android">
+  Termux uses Bionic libc, not glibc, so the stock `kizunalink-linux-arm64` binary must run inside a **glibc environment** — either `proot-distro` (simplest) or Termux's `glibc-runner`. The steps below use proot-distro with Ubuntu.
+</Aside>
+
+## Android with Termux
+
+<Steps>
+1. **Install Termux from F-Droid** (the Play Store build is outdated) and update:
+   ```bash title="Termux"
+   pkg update && pkg upgrade -y
+   pkg install proot-distro curl -y
+   ```
+
+2. **Install and enter Ubuntu**
+   ```bash title="Termux"
+   proot-distro install ubuntu
+   proot-distro login ubuntu
+   ```
+
+3. **Install KizunaLink inside Ubuntu**
+   ```bash title="Ubuntu (proot)"
+   apt update && apt install -y curl ca-certificates
+   curl -sL https://raw.githubusercontent.com/nikcodex/Kizunalink/main/install.sh | bash
+   cd ~/kizunalink
+   ```
+
+4. **Set a password and start**
+   ```bash title="Ubuntu (proot)"
+   sed -i 's/youshallnotpass/change-me-please/' config.toml
+   ./kizunalink
+   ```
+
+5. **Keep it alive in the background**
+
+   Android aggressively kills background processes. In Termux:
+   ```bash title="Termux"
+   termux-wake-lock
+   ```
+   and disable battery optimisation for Termux in Android settings. Run KizunaLink inside `tmux` so you can detach:
+   ```bash title="Ubuntu (proot)"
+   apt install -y tmux
+   tmux new -s kizuna './kizunalink'
+   # detach: Ctrl-b then d   •   reattach: tmux attach -t kizuna
+   ```
+</Steps>
+
+### Reaching it from your bot
+
+If the bot also runs in the same Termux session, use `localhost:2333`. If it runs elsewhere, expose the port with a tunnel — phones are almost always behind CGNAT:
+
+<Tabs>
+  <TabItem label="Cloudflare Tunnel">
+    ```bash title="Ubuntu (proot)"
+    curl -L https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-arm64 -o /usr/local/bin/cloudflared
+    chmod +x /usr/local/bin/cloudflared
+    cloudflared tunnel --url http://localhost:2333
+    ```
+    Use the printed `https://….trycloudflare.com` host with **port 443 and `secure: true`** in your client.
+  </TabItem>
+  <TabItem label="Tailscale">
+    Install Tailscale on both the phone (Play Store app) and the bot host; connect using the phone's `100.x.y.z` address on port 2333. No TLS needed — WireGuard handles it.
+  </TabItem>
+</Tabs>
+
+<Aside type="tip">
+  Voice traffic goes **directly from the phone to Discord's voice servers over UDP** — only the small control API needs the tunnel. Audio quality is not affected by the tunnel's latency.
+</Aside>
+
+## Raspberry Pi and other ARM64 Linux
+
+Any 64-bit OS works (Raspberry Pi OS 64-bit, Ubuntu Server, Debian). The regular [binary install](/getting-started/binary/) and [systemd](/getting-started/systemd/) guides apply unchanged — `install.sh` picks the ARM64 build automatically via `uname -m`.
+
+```bash title="Terminal"
+uname -m
+# aarch64   ← good. If you see armv7l, you're on a 32-bit OS: reinstall a 64-bit image.
+```
+
+Typical resource usage on a Raspberry Pi 4:
+
+| Players | RAM | CPU (1 core) |
+|---|---|---|
+| idle | ~15 MB | ~0 % |
+| 1 stream, no filters | ~30 MB | 3–5 % |
+| 1 stream with timescale + EQ | ~35 MB | 8–12 % |
+| 10 streams | ~120 MB | 40–60 % |
+
+Transcoding to Opus is the main cost; sources that already deliver Opus/WebM (YouTube) are cheaper than MP3/AAC (JioSaavn, Spotify previews, HTTP).
+
+## Building natively on ARM64
+
+If you'd rather compile on the device (e.g. for a musl build), see [Build from Source](/getting-started/build-from-source/). A Pi 4 takes roughly 25–40 minutes for a release build; a Pi 5 about half that.

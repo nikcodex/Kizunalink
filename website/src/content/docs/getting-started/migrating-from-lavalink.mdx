@@ -1,0 +1,131 @@
+---
+title: Migrating from Lavalink
+description: Swap Lavalink for KizunaLink without changing your bot — what maps 1:1, what's different, and the gotchas.
+sidebar:
+  order: 7
+---
+
+import { Aside, Tabs, TabItem } from '@astrojs/starlight/components';
+
+For most bots the migration is: stop Lavalink, start KizunaLink on the same port with the same password. This page covers the details for when it isn't quite that simple.
+
+## Compatibility at a glance
+
+| | Lavalink v4 | KizunaLink 4.x |
+|---|---|---|
+| Base path | `/v4` | `/v4` ✓ |
+| Auth | `Authorization: <password>` | Same ✓ |
+| WebSocket | `/v4/websocket` + `User-Id`, `Client-Name`, `Session-Id` headers | Same ✓ |
+| `ready`, `playerUpdate`, `stats`, `event` messages | ✓ | ✓ |
+| Track/Playlist/LoadResult JSON | ✓ | Identical field names ✓ |
+| Encoded track format | Lavaplayer binary v1/v2/v3, base64 | Decodes all three; encodes v3 ✓ |
+| Filters | 10 built-in + plugin filters | Same 10 ✓; `pluginFilters` accepted and ignored |
+| Session resuming | `PATCH /v4/sessions/{id}` | ✓ (default timeout 60 s) |
+| Route planner | `/v4/routeplanner/*` | ✓ |
+| `?trace=true` | ✓ | ✓ |
+| Plugins (`.jar`) | ✓ | ✗ — see below |
+| `application.yml` | ✓ | ✗ — uses `config.toml` + `KIZUNA_*` env |
+
+## Step by step
+
+1. **Stop Lavalink** and note its `server.port` and `lavalink.server.password` from `application.yml`.
+2. **Install KizunaLink** ([binary](/getting-started/binary/) / [Docker](/getting-started/docker/)).
+3. **Translate the config** — the essentials map like this:
+
+<Tabs>
+  <TabItem label="application.yml (before)">
+    ```yaml
+    server:
+      port: 2333
+      address: 0.0.0.0
+    lavalink:
+      server:
+        password: "youshallnotpass"
+        sources:
+          youtube: false
+          bandcamp: true
+          soundcloud: true
+          twitch: true
+          vimeo: true
+          nico: true
+          http: true
+          local: false
+        ratelimit:
+          ipBlocks: ["1.0.0.0/8"]
+          strategy: "RotateOnBan"
+    logging:
+      level:
+        root: INFO
+    ```
+  </TabItem>
+  <TabItem label="config.toml (after)">
+    ```toml
+    [server]
+    host = "0.0.0.0"
+    port = 2333
+    password = "youshallnotpass"
+
+    [sources]
+    youtube = true          # built in — no youtube-source plugin needed
+    bandcamp = true
+    soundcloud = true
+    twitch = true
+    vimeo = true
+    niconico = true
+    http = true
+    local = false
+    jiosaavn = true         # new
+    spotify = true          # built in — no LavaSrc needed
+    applemusic = true       # built in
+    deezer = true           # built in
+
+    [ratelimit]
+    ip_blocks = ["1.0.0.0/8"]
+    strategy = "RotatingIpRoutePlanner"   # see table below
+
+    [logging]
+    level = "info"
+    ```
+  </TabItem>
+</Tabs>
+
+4. **Start KizunaLink** and restart your bot. Nothing in the bot should need to change.
+
+## Plugins → built-ins
+
+Lavalink's most popular plugins are covered natively:
+
+| Lavalink plugin | KizunaLink equivalent |
+|---|---|
+| `youtube-source` | Built-in YouTube source (`ytsearch:`, `ytmsearch:`) with `YOUTUBE_PO_TOKEN` / `YOUTUBE_OAUTH_TOKEN` support |
+| LavaSrc — Spotify | Built-in (`spsearch:`, track & playlist URLs). Set `SPOTIFY_CLIENT_ID/SECRET` for reliability |
+| LavaSrc — Apple Music | Built-in (`amsearch:`, URLs) |
+| LavaSrc — Deezer | Built-in (`dzsearch:`, track & playlist URLs) |
+| LavaLyrics / lyrics.kt | Built-in [`GET /v4/lyrics`](/api/extensions/#lyrics) and `/v4/sessions/{s}/players/{g}/track/lyrics` (LRCLIB + JioSaavn, synced) |
+| LavaSearch | Not needed — each source has a search prefix |
+| SponsorBlock | Not available |
+| LavaDSPX / extra filters | Not available — the 10 standard filters only |
+
+<Aside type="caution" title="Client-side plugin integrations">
+  Client libraries that call plugin-specific routes (e.g. `/v4/sessions/{id}/players/{guild}/sponsorblock/categories`, or LavaSrc's `spsearch`-specific `pluginInfo` fields) will get `404`s or empty `pluginInfo` objects. Disable those integrations in your client config.
+</Aside>
+
+## Behavioural differences worth knowing
+
+- **Search fallback.** A bare identifier with no prefix and no URL is searched on JioSaavn first, then YouTube, SoundCloud and Bandcamp. Lavalink returns `empty` for unprefixed text. If your bot relied on that, prefix explicitly.
+- **`ytsearch:` may return JioSaavn results** when YouTube is rate-limited or unavailable — check `info.sourceName` if it matters.
+- **`sourceName` values** are lower-case single words: `jiosaavn`, `youtube`, `spotify`, `applemusic`, `deezer`, `soundcloud`, `bandcamp`, `twitch`, `vimeo`, `niconico`, `http`, `local`.
+- **Spotify/Apple/Deezer tracks are played directly** from a resolved stream where available (JioSaavn/YouTube mirror), so `isSeekable` is `true` and `length` is accurate — there's no "ISRC → YouTube" indirection to configure.
+- **`/v4/info`** reports `"jvm": "Rust (Tokio)"` and `"lavaplayer": "symphonia-0.5"`. Clients that parse `jvm` as a version number should treat it as opaque.
+- **`stats.frameStats`** is always present (Lavalink omits it when no players are active).
+- **Route planner strategy names** are the Lavalink class names: `RotatingIpRoutePlanner`, `NanoIpRoutePlanner`, `RotatingNanoIpRoutePlanner`, `BalancingIpRoutePlanner`. `RotateOnBan` etc. from `application.yml` don't exist — map them yourself.
+- **Rate limiting of your own bot.** KizunaLink rate-limits *inbound* requests per IP (default 60/min, burst 10). Big bots hammering `/v4/loadtracks` should raise `ratelimit.max_requests` — see [Rate Limiting](/configuration/rate-limiting/).
+- **Unauthenticated `/health` and `/version`** exist for load balancers (Lavalink's `/version` is also public).
+
+## Running both side by side
+
+Give KizunaLink a different port (`KIZUNA_PORT=2334`) and add it as a second node in your client. Most clients pick the least-loaded node, so you can shift traffic gradually or pin specific guilds to KizunaLink while you evaluate.
+
+## Rolling back
+
+Nothing is persisted by KizunaLink — no database, no cache files. Stop it, start Lavalink again, and you're back.

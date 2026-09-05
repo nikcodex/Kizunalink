@@ -1,0 +1,124 @@
+---
+title: FAQ
+description: Frequently asked questions about KizunaLink — compatibility, sources, quality, hosting, security and how it compares to Lavalink.
+sidebar:
+  order: 0
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+## General
+
+### Is KizunaLink a Lavalink fork?
+
+No. It's a from-scratch Rust implementation of the **Lavalink v4 protocol** (REST + WebSocket) with its own audio engine and its own Discord voice stack. Nothing from lavaplayer or the Lavalink JVM codebase is used. Client libraries can't tell the difference — that's the point.
+
+### Which Lavalink clients work?
+
+Any client that targets **Lavalink v4**: Shoukaku, lavalink-client, Moonlink, Riffy, Poru (JS); Wavelink 3, Lavalink.py, Mafic (Python); Lavalink-Client, Lavakord (JVM); Lavalink4NET (.NET); disgolink (Go); lavalink-rs (Rust). Lavalink **v3** clients are not supported — there is no `/v3` API. See [Connect a Client](/clients/).
+
+### What's different from Lavalink?
+
+Extras: built-in lyrics, server-side queue/loop/autoplay, JioSaavn + Apple Music + Deezer without plugins, `/health`, Prometheus metrics, `GET /v4/players/all`, DAVE end-to-end encryption, ~30 MB RAM idle. Missing: plugins, `/v3`, `loadFailed`/`cleanup` end reasons. The full list is on [Migrating from Lavalink](/getting-started/migrating-from-lavalink/) and [Extensions](/api/extensions/).
+
+### Does it need Java?
+
+No. One static binary (or one small Docker image). No JVM, no `yt-dlp`, no `ffmpeg`.
+
+### Is it free?
+
+Yes — MIT licensed, self-hosted. There is no hosted service.
+
+## Sources
+
+### Why is JioSaavn the default search?
+
+It serves **320 kbps** audio without authentication, is fast and stable, and has deep Indian and international catalogues. Bare text queries and `jssearch:` go there; you can still use `ytsearch:`, `spsearch:`, `scsearch:` etc. explicitly, and `ytsearch:` falls back to JioSaavn when YouTube fails. Details: [Search Prefixes](/api/search/).
+
+### Do I need Spotify / YouTube credentials?
+
+No. Spotify works anonymously; `SPOTIFY_CLIENT_ID/SECRET` only raise rate limits. YouTube works without tokens; `YOUTUBE_PO_TOKEN` / `YOUTUBE_OAUTH_TOKEN` help if your IP is being challenged. See [Audio Sources](/configuration/sources/).
+
+### How is a Spotify/Apple/Deezer track actually played?
+
+Those services provide metadata, not audio. At play time KizunaLink resolves a matching stream — JioSaavn first, then YouTube — using ISRC and title/artist matching. `info.sourceName` stays `spotify` (etc.) in the Track object; the stream used isn't exposed.
+
+### Can I play local files or my own HTTP files?
+
+Yes: enable `sources.local` / `sources.http`. Local paths are sandboxed (no `..`, `/etc`, `/proc`, `/sys`, `/dev`), and HTTP URLs go through [SSRF protection](/configuration/security/#ssrf-protection).
+
+### Does it support live streams?
+
+Twitch channels (`twitch.tv/…`, `twsearch:`) and any HTTP live stream in a symphonia-supported container (`isStream: true`, not seekable). YouTube live streams are not supported.
+
+### What about playlists?
+
+Spotify, YouTube, Deezer playlists and SoundCloud sets load as `loadType: playlist`. Spotify albums/artist pages, YouTube channels and Apple Music playlists are not supported yet.
+
+## Audio
+
+### What quality does Discord receive?
+
+Opus at 48 kHz stereo, encoded per 20 ms frame with libopus in `Audio` mode. Discord caps bot bitrate per channel (typically 64–96 kbps for regular servers, higher for boosted ones); KizunaLink sends what the encoder produces and Discord's servers enforce the cap. The source quality matters more: JioSaavn 320 kbps AAC sounds noticeably better than 128 kbps YouTube after transcoding.
+
+### Are filters identical to Lavalink's?
+
+Same names, parameters, defaults and processing order, so presets port 1:1. The implementations are independent (Rust DSP), so the sound is very close but not bit-identical. See [Filters](/api/filters/) and [DSP Pipeline](/internals/dsp/).
+
+### Why does seeking take a moment?
+
+Streams are re-opened and decoded up to the target position (no HTTP range dependency). Typically 100–500 ms. See [Seeking](/internals/dsp/#seeking).
+
+### How many players can one node run?
+
+Depends on CPU: roughly 20–40 playing players per vCPU without timescale filters. Hard limit 10 000 players per node. See [Capacity planning](/monitoring/#capacity-planning).
+
+## Hosting
+
+### Can I run it on a phone / Raspberry Pi?
+
+Yes — the ARM64 build runs under Termux and on Pi 4/5. Expect ~1 % CPU per playing player on a modern phone SoC. See [Termux / ARM64](/getting-started/termux/).
+
+### Docker?
+
+Build from the repo `Dockerfile` (a published image isn't available yet). Note the shipped compose healthcheck needs a tweak because the runtime image lacks `curl`. See [Docker](/getting-started/docker/).
+
+### Can I put it behind a reverse proxy / TLS?
+
+Yes. Terminate TLS in nginx/Caddy, proxy `/` to `127.0.0.1:2333` with WebSocket upgrade headers, and set the client's `secure: true`. KizunaLink reads `X-Forwarded-For` for rate limiting. See [Security](/configuration/security/).
+
+### Multiple nodes?
+
+Run several instances and list them all in your client; Lavalink clients balance by the `stats` message. There's no clustering or shared state between nodes — a guild lives on one node at a time.
+
+### Does resuming survive a KizunaLink restart?
+
+No. Sessions and players are in memory. Resuming covers **bot** restarts and network blips ([Sessions](/internals/sessions/)). Keep server restarts quick; a restart takes well under a second.
+
+## Security
+
+### Is the default password safe?
+
+`youshallnotpass` is the same default as Lavalink and everyone knows it. Change it (`server.password` or `KIZUNA_PASSWORD`) before exposing the port. Auth comparison is constant-time, and 401s are counted in metrics so you'll notice probing.
+
+### What does SSRF protection block?
+
+Loopback, private (RFC 1918), link-local, and unique-local addresses, plus anything in `security.blocked_hosts`, for user-supplied URLs (loadtracks identifiers and `track.identifier`). Sources' own API hosts are unaffected. See [Security](/configuration/security/).
+
+### Is voice traffic encrypted?
+
+Transport: yes, always (`aead_aes256_gcm_rtpsize`). End-to-end: yes, when Discord negotiates **DAVE** — supported natively. See [DAVE](/internals/dave/).
+
+## Project
+
+### Where do I report bugs or request features?
+
+[GitHub issues](https://github.com/nikcodex/Kizunalink/issues). Include the KizunaLink version (`GET /version`), your client library and version, and the relevant log lines at `debug`. See [Troubleshooting](/help/troubleshooting/) first.
+
+### How can I contribute?
+
+Rust contributions to the engine, docs fixes (every page has an *Edit page* link), and client-library compatibility reports are all welcome. See [Contributing](/help/contributing/).
+
+### Why the name?
+
+絆 (*kizuna*) means "bond" in Japanese — the link between your bot and your community's music. The ⛩️ torii marks the gateway.

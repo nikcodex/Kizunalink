@@ -1,0 +1,160 @@
+---
+title: Troubleshooting
+description: Symptom-first guide to KizunaLink problems — connection failures, silent players, source errors, rate limits, Docker issues — with the exact log lines and error messages to look for.
+sidebar:
+  order: 1
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+Start by turning up logging so you can see what the server thinks is happening:
+
+```bash
+RUST_LOG=info,kizunalink=debug,kizuna_voice=debug ./kizunalink
+```
+
+Then find your symptom below. Each entry lists what you'll see in the **client**, in the **server log**, and what to do.
+
+## Connecting
+
+### `401 Unauthorized` / client says "invalid password"
+
+- Server log: nothing at `info` (auth failures are only counted in metrics — `kizunalink_errors_auth_total`).
+- Causes: wrong password; the client is sending `Authorization: Bearer …` (must be the bare password); `KIZUNA_PASSWORD` set in the environment overriding `config.toml` (env wins).
+- Verify: `curl -i http://HOST:2333/v4/info -H 'Authorization: YOURPASS'` should return `200`.
+
+### Connection refused / timeout
+
+- `curl http://HOST:2333/version` fails.
+- Check `KIZUNA_HOST` — `127.0.0.1` binds loopback only; use `0.0.0.0` to accept remote connections. Check firewalls/security groups for TCP 2333. In Docker, make sure the port is published (`-p 2333:2333`) and the bot connects to the **service name**, not `localhost`.
+- Server log at startup: `⛩️ KizunaLink v4.2.1 listening on 0.0.0.0:2333`. If you see `Failed to bind server to …: Address already in use`, another process (often an old KizunaLink or Lavalink) holds the port.
+
+### WebSocket closes immediately with `1008`
+
+- Server log: `WebSocket connection rejected: Session limit reached…`.
+- 10 000 sessions are already registered — almost always a client in a reconnect loop creating a new session each time without resuming. Fix the client's reconnect; restart the node to clear.
+
+### `429 Too Many Requests` when connecting
+
+- Server log: `WebSocket rate limit exceeded for IP: …`.
+- Per-IP bucket exhausted (60 + 10 burst per minute by default). Many shards from one host, or a reconnect storm. Raise [`ratelimit.max_requests`](/configuration/rate-limiting/) or add the host to `excluded_ips`.
+
+## Playing
+
+### Player exists, `connected: false` forever, no audio
+
+The voice handoff isn't happening. Check in order:
+
+<Steps>
+1. Bot has the **`GuildVoiceStates`** intent (discord.js `GatewayIntentBits.GuildVoiceStates`, discord.py `intents.voice_states`).
+2. The client library's Discord connector is wired: Shoukaku `Connectors.DiscordJS(client)`, lavalink-client `client.on('raw', d => lavalink.sendRawData(d))`, JDA `setVoiceDispatchInterceptor(new JDAVoiceUpdateListener(client))`.
+3. Server log shows `Received voice credentials for guild: …`. If it doesn't, the bot never sent the `voice` object — the problem is on the bot side.
+4. If it does but then `Voice connection failed for guild …: …` or `Voice connection timed out`: KizunaLink can't reach Discord's voice server. Check outbound **UDP** (any port to Discord media servers) and **TCP 443**; some VPS/containers block UDP by default. Also check the `User-Id` header — with the default `"0"` Discord rejects the identify.
+</Steps>
+
+### `TrackExceptionEvent: "Failed to resolve playable audio stream"`
+
+- Server log: `Failed to resolve stream URL for guild …`.
+- The track's source couldn't provide audio: dead YouTube video, region-locked content, Spotify/Apple/Deezer track with no JioSaavn/YouTube match, or the source is having an outage. Try the same query with a different prefix (`jssearch:` vs `ytsearch:`); check `RUST_LOG=kizunalink::sources=debug` for the underlying HTTP error.
+- If **every** YouTube track fails: your IP is being challenged. Set `YOUTUBE_PO_TOKEN`, configure [IP rotation](/configuration/route-planner/), or route through a [proxy](/configuration/proxy/). `ytsearch:` will silently fall back to JioSaavn in the meantime.
+
+### `TrackExceptionEvent: "Voice connection not established"`
+
+- Server log: `Cannot play track: voice not connected for guild …`.
+- A track was PATCHed before the `voice` object arrived (or after the voice connection died). Send the voice update first (client libraries do this automatically when the bot is actually in a channel), then retry.
+
+### Audio plays but is choppy / robotic
+
+- `frameStats.deficit` > 0 in `/v4/stats` → the machine can't keep up. Reduce players per node, avoid `timescale` on many players, or move off shared-CPU hosts.
+- `frameStats.nulled` high with `deficit` ≈ 0 → the **upstream stream** is slow. Common with far-away or throttled YouTube CDNs; JioSaavn is usually fine. Also check that the node isn't CPU-throttled in Docker (`--cpus`).
+- Choppy only for one listener → their client/network, not the node.
+
+### Track starts, then stops after 10–60 s with `WebSocketClosedEvent`
+
+| Code | Fix |
+|---|---|
+| `4006` / `4009` | Stale voice session. The bot changed channel or reconnected without re-sending voice state. Update the client library; as a workaround re-join the channel. |
+| `4014` | Bot was disconnected/moved by a user, or the channel was deleted. Destroy the player. |
+| `4004` | Token expired between `VOICE_SERVER_UPDATE` and the PATCH; re-join. |
+| `4000` with `Voice connection failed: …` | Network/UDP problem — see the `connected: false` entry above. |
+
+Full table on the [WebSocket page](/api/websocket/#websocketclosedevent).
+
+### Spotify / Apple Music / Deezer track plays a 30-second clip
+
+- Server log: `Using Deezer 30s preview for '…' (full track unavailable)` / `Using Apple Music preview for '…'`.
+- No full-length match was found on JioSaavn or YouTube, so the store's preview was used as a last resort. Nothing to fix server-side; the track simply isn't available. Make sure `sources.jiosaavn` and `sources.youtube` are enabled — the mirror needs at least one.
+
+### Wrong song plays for a Spotify link
+
+Mirroring matched a different recording (live version, cover). ISRC matching is used first when available; if a catalogue lacks the ISRC the title/artist match can miss. Search with `jssearch:` directly or report persistent mismatches with the Spotify URL.
+
+### Position jumps / `playerUpdate.position` looks wrong with filters
+
+With `timescale`, `position` is in **track time**, corrected by the tempo factor. A speed of 1.2 advances position 1.2× wall-clock — expected. If position resets to a slightly earlier value when you change timescale parameters, that's the pipeline restart; it's normal and brief.
+
+## Loading
+
+### `loadType: "empty"` for everything
+
+- All sources disabled, or the search is hitting a disabled source. `GET /v4/info` → `sourceManagers` shows what's on. Bare text needs `jiosaavn` (or `youtube`, `soundcloud`, `bandcamp` for the fallback chain).
+- If `sourceManagers` is fine, check `RUST_LOG=kizunalink::sources=debug` for HTTP errors (blocked outbound HTTPS, DNS failure in the container).
+
+### `loadType: "error"`, `cause: "SSRF protection"`
+
+- Server log: `SSRF blocked for '…'`.
+- The URL resolves to a private/loopback/link-local address or a host in `security.blocked_hosts`. Intended. If you really need to load from a LAN host, put it behind a public hostname or use `sources.local` with a mounted path.
+
+### `400 Access to sensitive or relative paths is forbidden`
+
+Local file path contained `..` or pointed under `/etc`, `/proc`, `/sys`, `/dev`. Use absolute paths to a dedicated media directory.
+
+### `429 Rate limit exceeded for source: youtube`
+
+Per-source bucket (30/min for JioSaavn/YouTube/Spotify, 20/min for SoundCloud/Deezer/Apple) from one IP. Autocomplete features that fire a search per keystroke hit this first — debounce them.
+
+### Search results ignore my `ytsearch:` and come from JioSaavn
+
+Working as designed: YouTube failed or was rate-limited, and `ytsearch:` falls back to JioSaavn. Check `info.sourceName` if you need to know. Fix YouTube access (`YOUTUBE_PO_TOKEN`, IP rotation) to get YouTube results back.
+
+## Sessions
+
+### `404 Session not found` on every REST call
+
+- The `sessionId` is stale: the WebSocket dropped and (without resuming) the session was destroyed, or the node restarted. Reconnect the WebSocket and use the new `sessionId` from `ready`.
+- Some clients cache the session ID across node restarts — set `resuming` and handle `resumed: false` by re-creating players.
+
+### Players vanish after a bot restart
+
+Resuming wasn't enabled, or the bot took longer than `timeout` to reconnect. Set `resuming: true` with a generous `timeout` (60–120 s) as soon as you get `ready`, and reconnect with the `Session-Id` header. See [Resuming](/api/websocket/#resuming).
+
+### Two bots / two processes, one guild: `404 Player not found`
+
+Only the session that created a player can see it. A second process (a forgotten old instance, a dev bot with the same token) owns the guild. Kill the other process or wait for its session to expire.
+
+## Docker
+
+### Container `unhealthy`
+
+The repo's compose healthcheck uses `curl`, which isn't in the slim runtime image. Replace it with the `/dev/tcp` probe from [Health & Stats](/monitoring/#liveness) or add curl to the image.
+
+### `version` warning from Compose
+
+`version: '3.8'` at the top of the shipped `docker-compose.yml` is obsolete in Compose v2 — delete the line.
+
+### Bot can't reach `localhost:2333` from its container
+
+Containers have separate network namespaces. Use the compose service name (`kizunalink:2333`) or `host.docker.internal` on Docker Desktop.
+
+### Config changes ignored
+
+`config.toml` is read from the **working directory**. In the image that's `/app/config.toml`; mount yours there (`-v ./config.toml:/app/config.toml:ro`) or use environment variables, which override the file.
+
+## Still stuck?
+
+Open an issue at [github.com/nikcodex/Kizunalink/issues](https://github.com/nikcodex/Kizunalink/issues) with:
+
+- `GET /version` output and how you installed (binary, Docker, source)
+- Client library + version
+- `RUST_LOG=kizunalink=debug,kizuna_voice=debug` log around the failure (redact tokens; the log sanitiser strips control characters but not secrets you print yourself)
+- The exact request/response if it's a REST issue (`?trace=true` helps)

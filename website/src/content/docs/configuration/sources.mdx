@@ -1,0 +1,173 @@
+---
+title: Audio Sources
+description: Setup, credentials, supported URLs and search prefixes for all 12 KizunaLink audio sources.
+sidebar:
+  order: 3
+---
+
+import { Aside, Tabs, TabItem, Badge } from '@astrojs/starlight/components';
+
+KizunaLink resolves everything through one endpoint, [`GET /v4/loadtracks?identifier=…`](/api/rest/#load-tracks). The identifier is matched against URL patterns and search prefixes in a fixed order; this page documents each source and what it needs.
+
+## Resolution order
+
+When you pass an identifier, KizunaLink checks, in order:
+
+1. `file://` or absolute path → **local**
+2. `http(s)://` with an audio extension or Discord CDN attachment → **http**
+3. URL patterns: Bandcamp → Twitch → Vimeo → NicoNico → SoundCloud sets → Spotify → YouTube → Apple Music → Deezer
+4. Search prefixes: `jsrec:`, `scsearch:`, `spsearch:`, `ytsearch:`, `ytmsearch:`, `amsearch:`, `dzsearch:`, `bcsearch:`, `nisearch:`, `twsearch:`, `vmsearch:`
+5. Anything else (including `jssearch:`) → **JioSaavn search**, then falling back to YouTube → SoundCloud → Bandcamp if JioSaavn returns nothing.
+
+<Aside type="note">
+  Unlike Lavalink, an unprefixed plain-text identifier is **searched** rather than returning `empty`. Bots that want strict behaviour should always use a prefix.
+</Aside>
+
+## JioSaavn <Badge text="default on" variant="success" />
+
+The flagship source. Resolves direct **320 kbps** CDN streams with no transcoding step in between, and provides lyrics and recommendations used by autoplay.
+
+| | |
+|---|---|
+| Config | `sources.jiosaavn = true` |
+| Credentials | None |
+| Search | `jssearch:<query>` (also the default for unprefixed queries) |
+| Recommendations | `jsrec:<song id or query>` → `loadType: "search"` |
+| URLs | JioSaavn song URLs are resolved via search |
+| `sourceName` | `jiosaavn` |
+
+## YouTube & YouTube Music <Badge text="default on" variant="success" />
+
+Uses the InnerTube API with multiple client identities (`ANDROID_VR`, `TVHTML5_SIMPLY`, `IOS`, `WEB`) and automatic fallback between them.
+
+| | |
+|---|---|
+| Config | `sources.youtube = true` |
+| Credentials | Optional: `YOUTUBE_PO_TOKEN`, `YOUTUBE_OAUTH_TOKEN` |
+| Search | `ytsearch:<query>`, `ytmsearch:<query>` |
+| URLs | `youtube.com/watch?v=`, `youtu.be/`, `youtube.com/shorts/`, `music.youtube.com/watch`, `youtube.com/playlist?list=` (also `&list=` on a watch URL → playlist) |
+| `sourceName` | `youtube` |
+
+<Aside type="caution" title="Datacenter IPs">
+  YouTube aggressively blocks cloud provider IP ranges. Symptoms: searches return nothing, or `TrackExceptionEvent` with "Failed to resolve playable audio stream". Mitigations, roughly in order of effectiveness:
+
+  1. Set a `YOUTUBE_PO_TOKEN` (and optionally `YOUTUBE_OAUTH_TOKEN`).
+  2. Use the [route planner](/configuration/route-planner/) with an IPv6 `/64`.
+  3. Route through a residential [proxy](/configuration/proxy/).
+  4. Let the built-in fallback serve the same song from JioSaavn (happens automatically for `ytsearch:`/`ytmsearch:` when YouTube fails).
+</Aside>
+
+## Spotify <Badge text="default on" variant="success" />
+
+Spotify doesn't stream full tracks to third parties. KizunaLink fetches metadata from Spotify and plays the audio from a matching source (JioSaavn/YouTube), returning a normal seekable track with `sourceName: "spotify"` and the correct `isrc`.
+
+| | |
+|---|---|
+| Config | `sources.spotify = true` |
+| Credentials | **Strongly recommended:** `SPOTIFY_CLIENT_ID` + `SPOTIFY_CLIENT_SECRET`. Without them an anonymous web token is used and rate limits are tight. |
+| Search | `spsearch:<query>` |
+| URLs | `open.spotify.com/track/<id>`, `open.spotify.com/playlist/<id>` |
+| `sourceName` | `spotify` |
+
+Create credentials at the [Spotify Developer Dashboard](https://developer.spotify.com/dashboard) — any app type works; no redirect URI is needed for `client_credentials`.
+
+## Apple Music <Badge text="default on" variant="success" />
+
+Metadata from Apple, audio from a matching source (same approach as Spotify).
+
+| | |
+|---|---|
+| Config | `sources.applemusic = true` |
+| Credentials | None |
+| Search | `amsearch:<query>` |
+| URLs | `music.apple.com/<region>/album/<slug>/<albumId>?i=<trackId>` and song URLs |
+| `sourceName` | `applemusic` |
+
+## Deezer <Badge text="default on" variant="success" />
+
+| | |
+|---|---|
+| Config | `sources.deezer = true` |
+| Credentials | None |
+| Search | `dzsearch:<query>` |
+| URLs | `deezer.com/<lang>/track/<id>`, `deezer.com/<lang>/playlist/<id>` |
+| `sourceName` | `deezer` |
+
+## SoundCloud <Badge text="default on" variant="success" />
+
+| | |
+|---|---|
+| Config | `sources.soundcloud = true` |
+| Credentials | Optional `SOUNDCLOUD_CLIENT_ID`; otherwise a rotating pool of public client IDs is used |
+| Search | `scsearch:<query>` |
+| URLs | Track pages and `/sets/` playlists |
+| `sourceName` | `soundcloud` |
+
+## Bandcamp <Badge text="default on" variant="success" />
+
+| | |
+|---|---|
+| Config | `sources.bandcamp = true` |
+| Credentials | None |
+| Search | `bcsearch:<query>` |
+| URLs | `*.bandcamp.com/track/…`, `bcvc.live` |
+| `sourceName` | `bandcamp` |
+
+## Twitch <Badge text="default on" variant="success" />
+
+Live streams only (`isStream: true`, `length: 0`, not seekable).
+
+| | |
+|---|---|
+| Config | `sources.twitch = true` |
+| Credentials | None |
+| Search | `twsearch:<channel>` |
+| URLs | `twitch.tv/<channel>` |
+| `sourceName` | `twitch` |
+
+## Vimeo <Badge text="default off" variant="note" />
+
+| | |
+|---|---|
+| Config | `sources.vimeo = true` |
+| Search | `vmsearch:<query>` |
+| URLs | `vimeo.com/<id>` |
+| `sourceName` | `vimeo` |
+
+## NicoNico <Badge text="default off" variant="note" />
+
+| | |
+|---|---|
+| Config | `sources.niconico = true` |
+| Search | `nisearch:<query>` |
+| URLs | `nicovideo.jp/watch/<id>`, `nico.ms/<id>` |
+| `sourceName` | `niconico` |
+
+## HTTP <Badge text="default on" variant="success" />
+
+Direct audio URLs. The URL must end (before any `?query`) in `.mp3`, `.wav`, `.ogg`, `.flac`, `.m4a`, `.aac`, `.opus` or `.webm`, **or** be a `cdn.discordapp.com/attachments/` link. Every URL passes the [SSRF guard](/configuration/security/) first, and redirects are re-validated hop by hop.
+
+| | |
+|---|---|
+| Config | `sources.http = true` |
+| `sourceName` | `http` |
+| Notes | `length` is `0` and `isSeekable` may be `false` when the server doesn't advertise a size. |
+
+## Local files <Badge text="default off" variant="note" />
+
+| | |
+|---|---|
+| Config | `sources.local = true` |
+| Identifiers | `/absolute/path/song.flac` (must have an audio extension) or `file:///absolute/path/song.flac` |
+| Blocked | Anything containing `..`, or under `/etc`, `/proc`, `/sys`, `/dev` |
+| `sourceName` | `local` |
+
+Formats are whatever [Symphonia](https://github.com/pdeljanov/Symphonia) decodes: MP3, AAC/M4A, FLAC, WAV, OGG Vorbis, Opus, WebM/MKV containers.
+
+<Aside type="danger">
+  Enabling `local` lets anyone with the password read any audio file the process can. Combine it with the systemd `ProtectSystem=strict` sandbox or a read-only Docker volume.
+</Aside>
+
+## Metrics per source
+
+Every successful load increments `kizunalink_source_<name>_total` in [Prometheus metrics](/monitoring/prometheus/), so you can see which sources your users actually hit.

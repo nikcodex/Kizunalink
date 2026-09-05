@@ -1,0 +1,117 @@
+---
+title: Route Planner (IP Rotation)
+description: Rotate outbound requests across an IPv6 /64 or a pool of IPv4 addresses to avoid YouTube rate limits and bans.
+sidebar:
+  order: 5
+---
+
+import { Aside, Steps, Tabs, TabItem } from '@astrojs/starlight/components';
+
+Streaming services — YouTube in particular — throttle or ban IP addresses that make many requests. The route planner binds each outbound request to a different source IP from a block you own, spreading load across thousands of addresses. It's API-compatible with Lavalink's route planner, including the `/v4/routeplanner/*` endpoints.
+
+## Prerequisites
+
+You need an IP block **routed to your server**, not just assigned to it. The cheap, standard option is an IPv6 `/64` — most VPS providers (Hetzner, OVH, Vultr, Linode, Oracle) hand one out for free. A `/64` holds 18 quintillion addresses.
+
+<Steps>
+1. **Confirm the block is routed.** On Hetzner Cloud, for example, the `/64` is routed to the server automatically. On others you may need to request it as a *routed* block.
+
+2. **Tell the kernel to accept any address in the block** (Linux):
+   ```bash title="Terminal"
+   sudo ip -6 route replace local 2001:db8:1234:5678::/64 dev lo
+   sudo sysctl -w net.ipv6.ip_nonlocal_bind=1
+   ```
+   Persist across reboots by adding `net.ipv6.ip_nonlocal_bind=1` to `/etc/sysctl.d/99-kizuna.conf` and the route to your network manager (netplan/systemd-networkd) or a `@reboot` cron.
+
+3. **Verify** you can bind an arbitrary address:
+   ```bash title="Terminal"
+   curl --interface 2001:db8:1234:5678::dead:beef https://api64.ipify.org
+   # 2001:db8:1234:5678::dead:beef
+   ```
+
+4. **Configure KizunaLink:**
+   ```toml title="config.toml"
+   [ratelimit]
+   ip_blocks = ["2001:db8:1234:5678::/64"]
+   strategy  = "RotatingNanoIpRoutePlanner"
+   excluded_ips = ["2001:db8:1234:5678::1"]   # your server's primary address, optional
+   ```
+   or `KIZUNA_IP_BLOCKS=2001:db8:1234:5678::/64 KIZUNA_ROUTEPLANNER_STRATEGY=RotatingNanoIpRoutePlanner`.
+
+5. **Restart and check status:**
+   ```bash title="Terminal"
+   curl -H "Authorization: $PASS" localhost:2333/v4/routeplanner/status | jq
+   ```
+</Steps>
+
+<Aside type="caution" title="Docker">
+  Inside a container the block isn't reachable unless you use `network_mode: host` (or configure an IPv6-enabled Docker network with the block delegated to it). Host networking is by far the simplest.
+</Aside>
+
+## Strategies
+
+| Strategy | Picks the next IP by | Best for |
+|---|---|---|
+| `RotatingIpRoutePlanner` *(default)* | Incrementing a counter — walks through the block sequentially | IPv4 pools and small blocks |
+| `NanoIpRoutePlanner` | Current time in nanoseconds — effectively random within the block | Large IPv6 blocks; every request looks unrelated |
+| `RotatingNanoIpRoutePlanner` | Counter **+** nanoseconds | Large IPv6 blocks under heavy load; avoids nanosecond collisions between concurrent requests |
+| `BalancingIpRoutePlanner` | Uniform random | Multiple blocks of different sizes |
+
+Names are case-insensitive, and the short forms `nano`, `rotatingnano`, `balancing` are also accepted.
+
+## Failure handling
+
+- When YouTube answers **429 or 403**, or the request errors, the IP that made it is **marked failing** and skipped for a **120-second cooldown**, then automatically retried.
+- The selector makes up to 32 attempts to find an IP that's neither excluded nor cooling down, then falls back to the first address of the first block.
+- You can inspect and clear failing addresses through the REST API:
+
+<Tabs syncKey="lang">
+  <TabItem label="curl" icon="seti:shell">
+    ```bash
+    # status
+    curl -H "Authorization: $PASS" localhost:2333/v4/routeplanner/status
+    # free one address
+    curl -X POST -H "Authorization: $PASS" -H "Content-Type: application/json" \
+      -d '{"address":"2001:db8:1234:5678::1a2b"}' localhost:2333/v4/routeplanner/free/address
+    # free all
+    curl -X POST -H "Authorization: $PASS" localhost:2333/v4/routeplanner/free/all
+    ```
+  </TabItem>
+  <TabItem label="JavaScript" icon="seti:javascript">
+    ```js
+    const status = await node.rest.getRoutePlannerStatus();   // Shoukaku
+    await node.rest.unmarkAllFailedAddress();
+    ```
+  </TabItem>
+  <TabItem label="Python" icon="seti:python">
+    ```python
+    status = await node.fetch_route_planner_status()          # Wavelink ≥ 3.0 (raw)
+    ```
+  </TabItem>
+</Tabs>
+
+Full details of the response shape are in the [REST reference](/api/rest/#route-planner).
+
+## Which sources use it?
+
+Currently the route planner is wired into the **YouTube** source (the one that needs it). Other sources use the default client (optionally via the [proxy](/configuration/proxy/)). Clients bound to a specific IP are cached per address, so rotation has no connection-setup overhead beyond the first use of each IP.
+
+## IPv4 pools
+
+Multiple single addresses or small CIDRs work too:
+
+```toml
+ip_blocks = ["203.0.113.10", "203.0.113.11", "203.0.113.16/29"]
+strategy  = "RotatingIpRoutePlanner"
+```
+
+Each address must be configured on an interface (`ip addr add 203.0.113.11/32 dev eth0`) or covered by `ip_nonlocal_bind` with a corresponding route.
+
+## Troubleshooting
+
+| Symptom | Likely cause |
+|---|---|
+| `/v4/routeplanner/status` returns `204 No Content` | `ip_blocks` is empty or every entry failed to parse — check the start-up log |
+| Requests fail immediately with "cannot assign requested address" | Block isn't routed / `ip_nonlocal_bind` not set |
+| Everything still comes from one IP | Running in Docker without `network_mode: host` |
+| Still getting 429s | Ensure the block is genuinely a `/64` — providers sometimes give a `/128` labelled "IPv6 address" |

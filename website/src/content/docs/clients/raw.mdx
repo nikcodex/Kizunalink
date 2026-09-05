@@ -1,0 +1,244 @@
+---
+title: Raw WebSocket & REST
+description: Talk to KizunaLink without a client library — the exact handshake, voice handoff and messages, in Node.js and Python.
+sidebar:
+  order: 5
+---
+
+import { Tabs, TabItem, Aside, Steps } from '@astrojs/starlight/components';
+
+This page is for people writing their **own** client, porting one to a new language, or debugging an existing one. Everything a library does is shown here explicitly. For a bot, use a [client library](/clients/) instead.
+
+## 1. Open the WebSocket
+
+```
+GET ws://HOST:2333/v4/websocket
+Authorization: youshallnotpass
+User-Id: 123456789012345678
+Client-Name: my-client/0.1.0
+Session-Id: <previous id, optional>
+```
+
+<Tabs syncKey="lang">
+  <TabItem label="curl">
+    ```bash
+    # websocat is the easiest CLI WebSocket client
+    websocat -H 'Authorization: youshallnotpass' -H 'User-Id: 123456789012345678' -H 'Client-Name: websocat/1' \
+      ws://localhost:2333/v4/websocket
+    # {"op":"ready","resumed":false,"sessionId":"a1b2c3d4e5f6"}
+    ```
+  </TabItem>
+  <TabItem label="JavaScript">
+    ```js
+    import WebSocket from 'ws';
+
+    const ws = new WebSocket('ws://localhost:2333/v4/websocket', {
+      headers: {
+        Authorization: 'youshallnotpass',
+        'User-Id': '123456789012345678',
+        'Client-Name': 'my-client/0.1.0',
+      },
+    });
+
+    let sessionId;
+    ws.on('message', (raw) => {
+      const msg = JSON.parse(raw);
+      switch (msg.op) {
+        case 'ready':        sessionId = msg.sessionId; console.log('session', sessionId, 'resumed', msg.resumed); break;
+        case 'playerUpdate': console.log(msg.guildId, msg.state); break;      // every ~5 s per player
+        case 'event':        console.log(msg.type, msg.guildId, msg); break;  // TrackStartEvent, TrackEndEvent, …
+        case 'stats':        console.log('players', msg.players, 'cpu', msg.cpu); break;  // every 60 s
+      }
+    });
+    ws.on('close', (code, reason) => console.log('closed', code, reason.toString()));
+    ```
+  </TabItem>
+  <TabItem label="Python">
+    ```python
+    import asyncio, json
+    import websockets
+
+    HEADERS = {
+        "Authorization": "youshallnotpass",
+        "User-Id": "123456789012345678",
+        "Client-Name": "my-client/0.1.0",
+    }
+
+    async def main():
+        async with websockets.connect("ws://localhost:2333/v4/websocket", additional_headers=HEADERS) as ws:
+            async for raw in ws:
+                msg = json.loads(raw)
+                match msg["op"]:
+                    case "ready":        print("session", msg["sessionId"], "resumed", msg["resumed"])
+                    case "playerUpdate": print(msg["guildId"], msg["state"])
+                    case "event":        print(msg["type"], msg["guildId"])
+                    case "stats":        print("players", msg["players"])
+
+    asyncio.run(main())
+    ```
+  </TabItem>
+</Tabs>
+
+Failure modes: wrong password → HTTP 401 and no upgrade; too many connections from one IP → HTTP 429; messages over 64 KiB → silently dropped; a malformed frame → close code `1008`.
+
+## 2. Get voice credentials from Discord
+
+Your bot sends **Gateway op 4** on the shard that owns the guild:
+
+```json
+{ "op": 4, "d": { "guild_id": "G", "channel_id": "C", "self_mute": false, "self_deaf": true } }
+```
+
+Discord answers with two dispatches. You need three values from them:
+
+| Dispatch | Field | Player update field |
+|---|---|---|
+| `VOICE_STATE_UPDATE` (for your bot's user id) | `session_id` | `voice.sessionId` |
+| `VOICE_SERVER_UPDATE` | `token` | `voice.token` |
+| `VOICE_SERVER_UPDATE` | `endpoint` | `voice.endpoint` |
+
+They can arrive in either order. Wait for both, then continue. A `VOICE_SERVER_UPDATE` with `endpoint: null` means Discord is migrating the voice server — wait for the next one.
+
+## 3. Hand the credentials to KizunaLink
+
+<Tabs syncKey="lang">
+  <TabItem label="curl">
+    ```bash
+    curl -X PATCH "http://localhost:2333/v4/sessions/$SESSION/players/$GUILD" \
+      -H 'Authorization: youshallnotpass' -H 'Content-Type: application/json' \
+      -d '{"voice":{"token":"abc123","endpoint":"india1234.discord.media:443","sessionId":"9f8e7d…"}}'
+    ```
+  </TabItem>
+  <TabItem label="JavaScript">
+    ```js
+    const BASE = 'http://localhost:2333';
+    const H = { Authorization: 'youshallnotpass', 'Content-Type': 'application/json' };
+
+    async function updatePlayer(guildId, body, noReplace = false) {
+      const r = await fetch(`${BASE}/v4/sessions/${sessionId}/players/${guildId}?noReplace=${noReplace}`, {
+        method: 'PATCH', headers: H, body: JSON.stringify(body),
+      });
+      if (!r.ok) throw new Error(`${r.status} ${(await r.json()).message}`);
+      return r.json();   // PlayerResponse
+    }
+
+    await updatePlayer(guildId, { voice: { token, endpoint, sessionId: voiceSessionId } });
+    ```
+  </TabItem>
+  <TabItem label="Python">
+    ```python
+    import aiohttp
+
+    BASE = "http://localhost:2333"
+    H = {"Authorization": "youshallnotpass"}
+
+    async def update_player(http: aiohttp.ClientSession, session_id: str, guild_id: str, body: dict, no_replace=False):
+        async with http.patch(f"{BASE}/v4/sessions/{session_id}/players/{guild_id}",
+                              params={"noReplace": str(no_replace).lower()}, json=body, headers=H) as r:
+            data = await r.json()
+            if r.status >= 400:
+                raise RuntimeError(f"{r.status} {data['message']}")
+            return data
+
+    await update_player(http, session_id, guild_id, {"voice": {"token": token, "endpoint": endpoint, "sessionId": voice_session_id}})
+    ```
+  </TabItem>
+</Tabs>
+
+Within a second you'll see `playerUpdate` messages with `"connected": true` and a real `ping`.
+
+## 4. Load and play
+
+<Tabs syncKey="lang">
+  <TabItem label="curl">
+    ```bash
+    curl -G 'http://localhost:2333/v4/loadtracks' --data-urlencode 'identifier=jssearch:kesariya' -H 'Authorization: youshallnotpass'
+    # {"loadType":"search","data":[{"encoded":"QAAA…","info":{...}}, …]}
+
+    curl -X PATCH "http://localhost:2333/v4/sessions/$SESSION/players/$GUILD" \
+      -H 'Authorization: youshallnotpass' -H 'Content-Type: application/json' \
+      -d '{"track":{"encoded":"QAAA…"},"volume":80}'
+    ```
+  </TabItem>
+  <TabItem label="JavaScript">
+    ```js
+    const res = await fetch(`${BASE}/v4/loadtracks?identifier=${encodeURIComponent('jssearch:kesariya')}`, { headers: H }).then(r => r.json());
+    const track = res.loadType === 'search' ? res.data[0]
+                : res.loadType === 'track' ? res.data
+                : res.loadType === 'playlist' ? res.data.tracks[0] : null;
+    if (!track) throw new Error(res.loadType === 'error' ? res.data.message : 'no results');
+
+    await updatePlayer(guildId, { track: { encoded: track.encoded }, volume: 80 });
+    ```
+  </TabItem>
+  <TabItem label="Python">
+    ```python
+    async with http.get(f"{BASE}/v4/loadtracks", params={"identifier": "jssearch:kesariya"}, headers=H) as r:
+        res = await r.json()
+    match res["loadType"]:
+        case "search":   track = res["data"][0]
+        case "track":    track = res["data"]
+        case "playlist": track = res["data"]["tracks"][0]
+        case "error":    raise RuntimeError(res["data"]["message"])
+        case _:          raise RuntimeError("no results")
+
+    await update_player(http, session_id, guild_id, {"track": {"encoded": track["encoded"]}, "volume": 80})
+    ```
+  </TabItem>
+</Tabs>
+
+## 5. What comes back on the socket
+
+```json
+{"op":"event","type":"TrackStartEvent","guildId":"G","track":{"encoded":"…","info":{…}}}
+{"op":"playerUpdate","guildId":"G","state":{"time":1757000000000,"position":5012,"connected":true,"ping":48}}
+{"op":"event","type":"TrackEndEvent","guildId":"G","track":{…},"reason":"finished"}
+{"op":"stats","players":1,"playingPlayers":1,"uptime":81234,"memory":{…},"cpu":{…},"frameStats":{…}}
+```
+
+Every message shape is listed in the [WebSocket reference](/api/websocket/).
+
+## 6. Leave
+
+1. Send Gateway op 4 with `"channel_id": null` so Discord disconnects the bot.
+2. `DELETE /v4/sessions/{sessionId}/players/{guildId}` → `204`.
+
+Closing the WebSocket without resuming enabled destroys every player of that session automatically.
+
+## Resuming
+
+```bash
+curl -X PATCH "http://localhost:2333/v4/sessions/$SESSION" -H 'Authorization: youshallnotpass' \
+  -H 'Content-Type: application/json' -d '{"resuming":true,"timeout":60}'
+```
+
+Reconnect within `timeout` seconds sending `Session-Id: $SESSION`. The `ready` message says `"resumed": true` and is followed by up to 100 buffered events you missed. After the timeout, the session and its players are gone and a fresh session ID is issued.
+
+## Client-to-server ops
+
+Standard Lavalink v4 clients never *send* on the WebSocket. KizunaLink additionally accepts these JSON messages (all need `guildId` except `ping`):
+
+```json
+{"op":"ping"}                                            → {"op":"pong"}
+{"op":"updatePlayer","guildId":"G", ...PlayerUpdate body}
+{"op":"queueTrack","guildId":"G","encoded":"QAAA…"}
+{"op":"skipTrack","guildId":"G"}
+{"op":"previousTrack","guildId":"G"}
+{"op":"loop","guildId":"G","mode":"queue"}               // none | track | queue
+{"op":"autoplay","guildId":"G"}                          // toggle
+{"op":"shuffleQueue","guildId":"G"}
+{"op":"clearQueue","guildId":"G"}
+{"op":"destroyPlayer","guildId":"G"}
+```
+
+They exist so a bot can drive KizunaLink with a single socket and no REST at all. Details in [Extensions](/api/extensions/).
+
+## Checklist for client authors
+
+- Send `Authorization` as the **bare password**. No `Bearer`, no base64.
+- Always send `User-Id`; KizunaLink uses it in voice payloads.
+- Treat `sessionId` as opaque; it's a random hex string, not a UUID.
+- Handle `WebSocketClosedEvent` codes `4006`, `4009`, `4014`: re-send the voice state (4006/4009) or destroy the player (4014 = kicked/disconnected).
+- `ping: -1` in `playerUpdate` means not connected yet.
+- Send `noReplace=true` when queuing so a race doesn't cut off the current track.
+- Rate limits: `429` with `Retry-After` — back off per node, not per guild.

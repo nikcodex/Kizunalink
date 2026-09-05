@@ -1,0 +1,60 @@
+# Builds the Starlight site and publishes it to GitHub Pages.
+#
+# One-time setup in the Kizuna-Docs repository:
+#   Settings → Pages → Build and deployment → Source: "GitHub Actions"
+#
+# The site URL/base default to https://nikcodex.github.io/Kizuna-Docs in
+# astro.config.mjs; override with DOCS_SITE / DOCS_BASE if the repo moves
+# or a custom domain is added (then also add public/CNAME).
+name: Deploy docs
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # Turns on GitHub Pages (source: GitHub Actions) for the repository on
+      # the first run, so no manual Settings → Pages step is needed.
+      - uses: actions/configure-pages@v5
+        with:
+          enablement: true
+        # If the token can't flip the setting, don't block the build — the
+        # deploy job then fails with GitHub's "enable Pages" hint instead.
+        continue-on-error: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+        env:
+          # Keep in sync with the engine's Cargo.toml; the Hero also fetches
+          # the latest GitHub Release at runtime once one exists.
+          KIZUNA_VERSION: 4.2.1
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

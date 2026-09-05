@@ -1,0 +1,87 @@
+---
+title: Logging
+description: Control KizunaLink's log verbosity per module, disable colours, and read the log format.
+sidebar:
+  order: 8
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+KizunaLink logs to **stdout** using the [`tracing`](https://docs.rs/tracing) ecosystem. There is no log file option — let systemd, Docker or your process manager capture the stream.
+
+## Level
+
+Three places can set the level; the first that is set wins:
+
+1. `RUST_LOG` environment variable
+2. `KIZUNA_LOG_LEVEL` environment variable
+3. `logging.level` in `config.toml` (default `info`)
+
+Levels from quietest to loudest: `error`, `warn`, `info`, `debug`, `trace`.
+
+### Per-module filtering
+
+`RUST_LOG` (and `logging.level`) accept full `EnvFilter` directives, so you can be loud about one subsystem only:
+
+```bash title="Examples"
+# everything at info, but trace the WebSocket handler
+RUST_LOG="info,kizunalink::ws=trace"
+
+# debug all source resolvers, quiet everything else
+RUST_LOG="warn,kizunalink::sources=debug"
+
+# see voice gateway/UDP details
+RUST_LOG="info,kizuna_voice=debug"
+
+# silence hyper/reqwest noise at debug level
+RUST_LOG="debug,hyper=info,reqwest=info,rustls=info"
+```
+
+Useful targets:
+
+| Target | What it covers |
+|---|---|
+| `kizunalink::rest` | REST handlers, auth failures |
+| `kizunalink::ws` | WebSocket connections, ops, session resume |
+| `kizunalink::player` | Player lifecycle, track start/end, queue |
+| `kizunalink::sources::youtube` (etc.) | Each source resolver |
+| `kizunalink::dsp` | Filter pipeline |
+| `kizunalink::sources::route_planner` | IP rotation, failing addresses |
+| `kizuna_voice::gateway` | Discord voice WebSocket (v8), DAVE negotiation |
+| `kizuna_voice::transport` | UDP, IP discovery, RTP/crypto |
+
+## Colour
+
+```toml
+[logging]
+colored = false
+```
+
+or `KIZUNA_LOG_COLORED=false`. Any other value (including unset) keeps ANSI colours on. Turn them off for journald, files, or log shippers.
+
+## Format
+
+```
+2026-09-04T09:12:41.123456Z  INFO kizunalink::ws::handler: WebSocket connected: client=shoukaku/4.1.1 user=1234567890 ip=127.0.0.1
+└──────── timestamp ───────┘ └lvl┘ └──────── target ────────┘ └────────────────────────── message ──────────────────────────┘
+```
+
+Targets are always shown; thread IDs are not. The format is stable enough to grep but not a machine format — if you need JSON logs, open an issue; it's a one-line change in `main.rs`.
+
+## What gets logged at each level
+
+| Level | Examples |
+|---|---|
+| `error` | Failed to send `ready`, WebSocket I/O errors, player update failures |
+| `warn` | Auth failures, rate limits, SSRF blocks, YouTube client fallbacks, dropped oversized frames, unknown ops |
+| `info` | Start-up config, connections/disconnections, voice credentials received, track start/stop, resolved streams, session resume timers |
+| `debug` | Source API requests, filter chain changes, queue operations |
+| `trace` | Every WebSocket frame, RTP scheduling details |
+
+<Aside type="tip">
+  `info` is safe for production and shows the full lifecycle of every track. `debug` on a busy bot generates several MB per minute.
+</Aside>
+
+## Correlating with the bot
+
+Every player-related line includes `guild: <id>` (or `for guild <id>`), and every WebSocket line includes the session ID. Search by guild ID to follow a single voice session from `Received voice credentials` through `Started playback` to `TrackEndEvent`.

@@ -1,0 +1,74 @@
+---
+title: Grafana Dashboard
+description: A ready-made Grafana dashboard for KizunaLink — import it, point it at your Prometheus, and get players, audio health, source usage, errors and process panels.
+sidebar:
+  order: 2
+---
+
+import { Aside, Steps, LinkButton } from '@astrojs/starlight/components';
+
+A dashboard JSON is published with these docs. It expects metrics scraped as described in [Prometheus Metrics](/monitoring/prometheus/) (job name is irrelevant; nodes are selected through the `instance` label).
+
+<LinkButton href="/grafana/kizunalink-dashboard.json" icon="download" variant="primary">Download kizunalink-dashboard.json</LinkButton>
+
+## What's on it
+
+| Row | Panels |
+|---|---|
+| **Overview** | Players, Playing, WebSocket connections, Uptime, CPU gauge, Memory |
+| **Players & audio** | Players over time (total vs playing); frame health — sent / nulled / deficit |
+| **Tracks & sources** | Tracks loaded vs failed per minute; source usage donut for the selected range; per-source request rate |
+| **HTTP & errors** | Requests per second per node; stacked 401 / 404 / 429 / 5xx per minute |
+| **Process** | CPU share and RSS over time |
+
+A `Node` variable at the top filters everything by `instance` (multi-select, defaults to All).
+
+## Import
+
+<Steps>
+1. In Grafana go to **Dashboards → New → Import**.
+2. Upload the JSON file (or paste its contents).
+3. When prompted, choose your Prometheus data source for `DS_PROMETHEUS`.
+4. Click **Import**. The dashboard's UID is `kizunalink-overview`, so re-importing updates in place.
+</Steps>
+
+### Provisioning (Docker / IaC)
+
+```yaml title="grafana/provisioning/dashboards/kizunalink.yml"
+apiVersion: 1
+providers:
+  - name: kizunalink
+    folder: Music
+    type: file
+    options:
+      path: /var/lib/grafana/dashboards
+```
+
+Mount the JSON at `/var/lib/grafana/dashboards/kizunalink-dashboard.json`. Because the file uses the `${DS_PROMETHEUS}` input variable, provisioned copies need it replaced with your data source UID — a one-liner:
+
+```bash
+sed 's/\${DS_PROMETHEUS}/prometheus/g' kizunalink-dashboard.json > grafana/dashboards/kizunalink-dashboard.json
+```
+
+(`prometheus` here is the data source **UID**, which you set in its provisioning file.)
+
+## Reading the panels
+
+- **Frame health** is the fastest signal that a node is overloaded. `deficit` should hug zero; sustained `nulled` points at slow upstream sources rather than CPU.
+- **Tracks failed** rising while **loaded** stays flat almost always means a single source (usually YouTube) is failing to resolve streams — check `RUST_LOG=kizunalink::sources=debug`.
+- **Source usage** tells you which source credentials are worth setting up. If Spotify dominates, add `SPOTIFY_CLIENT_ID/SECRET` for better rate limits; if YouTube dominates, consider [IP rotation](/configuration/route-planner/).
+- **401s** in production should be zero. A steady trickle usually means a bot with an old password still trying to connect.
+
+<Aside type="tip">
+  Pair the dashboard with the [alert rules](/monitoring/prometheus/#alert-rules) so you don't have to watch it.
+</Aside>
+
+## Extending
+
+Everything is plain PromQL, so add panels freely. Ideas:
+
+- **Per-player memory**: `kizunalink_memory_used_bytes / clamp_min(kizunalink_players_playing, 1)`
+- **Peak concurrent players (24 h)**: `max_over_time(kizunalink_players_playing[24h])`
+- **Track failure ratio**: `rate(kizunalink_tracks_failed_total[15m]) / clamp_min(rate(kizunalink_tracks_loaded_total[15m]), 0.001)`
+
+There are no per-guild or per-session metrics by design (cardinality); use [`GET /v4/players/all`](/api/extensions/#all-players) for that level of detail.

@@ -1,0 +1,256 @@
+---
+title: Filters
+description: All ten KizunaLink audio filters — volume, equalizer, karaoke, timescale, tremolo, vibrato, distortion, rotation, channelMix, lowPass — with parameters, ranges, defaults and ready-made presets.
+sidebar:
+  order: 4
+tableOfContents:
+  maxHeadingLevel: 3
+---
+
+import { Tabs, TabItem, Aside } from '@astrojs/starlight/components';
+
+Filters are set with the `filters` field of a [player update](/api/rest/#update-player). The object **replaces** the current filter set: send everything you want active each time, and send `{}` to clear all.
+
+```json title="PATCH /v4/sessions/{sessionId}/players/{guildId}"
+{
+  "filters": {
+    "volume": 1.0,
+    "equalizer": [{ "band": 0, "gain": 0.25 }],
+    "timescale": { "speed": 1.1, "pitch": 1.1, "rate": 1.0 }
+  }
+}
+```
+
+The field names and defaults match Lavalink/lavaplayer, so client-library filter helpers work as-is. Processing order is fixed: **volume → equalizer → karaoke → timescale → tremolo → vibrato → distortion → rotation → channelMix → lowPass**, followed by a soft-knee limiter (tanh saturation above 0.95) that prevents clipping when heavy EQ or gain pushes samples past full scale.
+
+<Aside type="note" title="Applying live">
+  Most filter changes apply on the next audio chunk without interrupting playback. Changing `timescale` parameters rebuilds the resampler and restarts the stream at the current position — a few milliseconds of gap. Omitted sections are removed.
+</Aside>
+
+## `volume`
+
+Filter-chain gain multiplier, separate from the player's `volume` field (which is 0–1000 percent).
+
+| Field | Type | Range | Default |
+|---|---|---|---|
+| `volume` | float | `0.0`–`5.0` (clamped) | `1.0` |
+
+```json
+{ "filters": { "volume": 1.5 } }
+```
+
+## `equalizer`
+
+15-band peaking EQ. Only the bands you list are changed; others keep their last value (set a band to `0` to reset it).
+
+| Field | Type | Range |
+|---|---|---|
+| `band` | int | `0`–`14` |
+| `gain` | float | `-0.25`–`1.0` (lavaplayer's range; values outside are honoured but will distort) |
+
+| Band | Hz | Band | Hz | Band | Hz |
+|---|---|---|---|---|---|
+| 0 | 25 | 5 | 250 | 10 | 2 500 |
+| 1 | 40 | 6 | 400 | 11 | 4 000 |
+| 2 | 63 | 7 | 630 | 12 | 6 300 |
+| 3 | 100 | 8 | 1 000 | 13 | 10 000 |
+| 4 | 160 | 9 | 1 600 | 14 | 16 000 |
+
+```json
+{ "filters": { "equalizer": [
+  { "band": 0, "gain": 0.20 }, { "band": 1, "gain": 0.15 }, { "band": 2, "gain": 0.10 }, { "band": 3, "gain": 0.05 }
+] } }
+```
+
+## `karaoke`
+
+Removes band-limited centre content (usually the lead vocal): the centre `(L+R)/2` is band-passed around `filterBand` and subtracted from both channels.
+
+| Field | Type | Range | Default | Meaning |
+|---|---|---|---|---|
+| `level` | float | `0.0`–`1.0` | `1.0` | How much of the centre band to remove |
+| `monoLevel` | float | `0.0`–`1.0` | `1.0` | How much of the remaining mono to keep |
+| `filterBand` | float (Hz) | `20`–`20000` | `220.0` | Centre frequency of the vocal band |
+| `filterWidth` | float (Hz) | ≥ `0` | `100.0` | Width of the band |
+
+```json
+{ "filters": { "karaoke": { "level": 1.0, "monoLevel": 1.0, "filterBand": 220.0, "filterWidth": 100.0 } } }
+```
+
+## `timescale`
+
+Speed / pitch / tempo. Semantics match lavaplayer:
+
+- `speed` — varispeed: duration ÷ speed **and** pitch × speed
+- `pitch` — pitch shift only, duration unchanged
+- `rate` — tempo (time-stretch) only, pitch unchanged
+
+| Field | Type | Range | Default |
+|---|---|---|---|
+| `speed` | float | `0.25`–`4.0` (clamped) | `1.0` |
+| `pitch` | float | `0.25`–`4.0` (clamped) | `1.0` |
+| `rate` | float | `0.25`–`4.0` (clamped) | `1.0` |
+
+Implemented with a sinc resampler (rubato) for the pitch/speed component and WSOLA for time-stretching. All-`1.0` is a bit-exact pass-through. Reported `position` is scaled so seeking stays consistent.
+
+```json
+{ "filters": { "timescale": { "speed": 1.2, "pitch": 1.2, "rate": 1.0 } } }
+```
+
+## `tremolo`
+
+Amplitude modulation (volume wobble).
+
+| Field | Type | Range | Default |
+|---|---|---|---|
+| `frequency` | float (Hz) | `0.1`–`20.0` (clamped) | `2.0` |
+| `depth` | float | `0.0`–`1.0` (clamped) | `0.5` |
+
+```json
+{ "filters": { "tremolo": { "frequency": 4.0, "depth": 0.75 } } }
+```
+
+## `vibrato`
+
+Pitch modulation.
+
+| Field | Type | Range | Default |
+|---|---|---|---|
+| `frequency` | float (Hz) | `0.1`–`14.0` (clamped) | `2.0` |
+| `depth` | float | `0.0`–`1.0` (clamped) | `0.5` |
+
+```json
+{ "filters": { "vibrato": { "frequency": 4.0, "depth": 0.5 } } }
+```
+
+## `distortion`
+
+Waveshaping through mixed `sin`/`cos`/`tan` transfer functions, lavaplayer parameter set. `tan` arguments are wrapped to avoid asymptote blow-ups.
+
+| Field | Default | Field | Default |
+|---|---|---|---|
+| `sinOffset` | `0.0` | `sinScale` | `1.0` |
+| `cosOffset` | `0.0` | `cosScale` | `1.0` |
+| `tanOffset` | `0.0` | `tanScale` | `1.0` |
+| `offset` | `0.0` | `scale` | `1.0` |
+
+```json
+{ "filters": { "distortion": { "sinOffset": 0, "sinScale": 1, "cosOffset": 0, "cosScale": 1, "tanOffset": 0, "tanScale": 1, "offset": 0, "scale": 1.2 } } }
+```
+
+## `rotation`
+
+Rotates the stereo field (the "8D audio" effect) with an amplitude-preserving rotation matrix.
+
+| Field | Type | Range | Default |
+|---|---|---|---|
+| `rotationHz` | float | `-10.0`–`10.0` (clamped; negative = counter-clockwise) | `0.0` |
+
+```json
+{ "filters": { "rotation": { "rotationHz": 0.2 } } }
+```
+
+## `channelMix`
+
+Mixes left/right channels. `1/0/0/1` is identity; `0.5` everywhere is mono.
+
+| Field | Default |
+|---|---|
+| `leftToLeft` | `1.0` |
+| `leftToRight` | `0.0` |
+| `rightToLeft` | `0.0` |
+| `rightToRight` | `1.0` |
+
+```json
+{ "filters": { "channelMix": { "leftToLeft": 0.5, "leftToRight": 0.5, "rightToLeft": 0.5, "rightToRight": 0.5 } } }
+```
+
+## `lowPass`
+
+Single-pole low-pass. `cutoff = sampleRate / (2 × smoothing)`, so higher smoothing = duller.
+
+| Field | Type | Range | Default |
+|---|---|---|---|
+| `smoothing` | float | `1.0`–`100.0` (clamped) | `20.0` |
+
+```json
+{ "filters": { "lowPass": { "smoothing": 20.0 } } }
+```
+
+## `pluginFilters`
+
+Unknown top-level keys in `filters` are accepted, stored, and echoed back in the Player object, but have **no effect** (there are no plugins). This keeps clients that always send `pluginFilters` working.
+
+## Presets
+
+Copy-paste bodies for a `PATCH …/players/{guildId}` request:
+
+<Tabs>
+  <TabItem label="Bass boost">
+    ```json
+    { "filters": { "equalizer": [
+      { "band": 0, "gain": 0.20 }, { "band": 1, "gain": 0.15 }, { "band": 2, "gain": 0.10 },
+      { "band": 3, "gain": 0.05 }, { "band": 4, "gain": 0.00 }
+    ] } }
+    ```
+  </TabItem>
+  <TabItem label="Nightcore">
+    ```json
+    { "filters": { "timescale": { "speed": 1.2, "pitch": 1.2, "rate": 1.0 } } }
+    ```
+  </TabItem>
+  <TabItem label="Vaporwave">
+    ```json
+    { "filters": { "timescale": { "speed": 0.85, "pitch": 0.85, "rate": 1.0 }, "equalizer": [ { "band": 1, "gain": 0.3 }, { "band": 0, "gain": 0.3 } ] } }
+    ```
+  </TabItem>
+  <TabItem label="8D">
+    ```json
+    { "filters": { "rotation": { "rotationHz": 0.2 } } }
+    ```
+  </TabItem>
+  <TabItem label="Karaoke">
+    ```json
+    { "filters": { "karaoke": { "level": 1.0, "monoLevel": 1.0, "filterBand": 220.0, "filterWidth": 100.0 } } }
+    ```
+  </TabItem>
+  <TabItem label="Soft / lo-fi">
+    ```json
+    { "filters": { "lowPass": { "smoothing": 30.0 }, "tremolo": { "frequency": 0.5, "depth": 0.15 } } }
+    ```
+  </TabItem>
+  <TabItem label="Clear all">
+    ```json
+    { "filters": {} }
+    ```
+  </TabItem>
+</Tabs>
+
+<Tabs syncKey="lang">
+  <TabItem label="curl">
+    ```bash
+    curl -X PATCH $KZ/v4/sessions/$SESSION/players/$GUILD -H "Authorization: $KZ_PASS" -H 'Content-Type: application/json' \
+      -d '{"filters":{"timescale":{"speed":1.2,"pitch":1.2,"rate":1.0}}}'
+    ```
+  </TabItem>
+  <TabItem label="JavaScript">
+    ```js
+    await updatePlayer(guildId, { filters: { timescale: { speed: 1.2, pitch: 1.2, rate: 1.0 } } });
+    ```
+  </TabItem>
+  <TabItem label="Python">
+    ```python
+    update_player(guild_id, {"filters": {"timescale": {"speed": 1.2, "pitch": 1.2, "rate": 1.0}}})
+    ```
+  </TabItem>
+</Tabs>
+
+## Reading the current filters
+
+The Player object returned by every `GET`/`PATCH` includes the active set; unset sections are omitted:
+
+```json
+{ "filters": { "volume": 1.0, "timescale": { "speed": 1.2, "pitch": 1.2, "rate": 1.0 } } }
+```
+
+`/v4/info.filters` lists the ten names above so clients can feature-detect.

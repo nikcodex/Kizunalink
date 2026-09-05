@@ -1,0 +1,164 @@
+---
+title: KizunaLink
+description: KizunaLink (絆) is a high-performance, Lavalink v4 compatible Discord audio engine written in Rust. Zero GC pauses, ~15 MB RAM, 12 audio sources, DAVE end-to-end encryption.
+template: splash
+hero:
+  tagline: A standalone Discord voice &amp; audio streaming engine. Drop-in replacement for Lavalink — no JVM, no GC pauses, ~15&nbsp;MB of RAM.
+---
+
+import { Tabs, TabItem, Card, CardGrid, LinkCard, Steps } from '@astrojs/starlight/components';
+
+<section class="kz-section not-content">
+  <h2>Why KizunaLink?</h2>
+  <p class="lead">Lavalink defined the protocol. KizunaLink keeps the protocol and replaces everything underneath it with a single static Rust binary built on <code>tokio</code>, <code>axum</code> and <code>symphonia</code>.</p>
+
+  <div class="kz-grid">
+    <div class="kz-card"><div class="icon">⚡</div><h3>Zero GC jitter</h3><p>No JVM, no garbage collector. Audio frames are scheduled by Tokio on a fixed 20 ms cadence with no stop-the-world pauses.</p></div>
+    <div class="kz-card"><div class="icon">🪶</div><h3>~15 MB idle</h3><p>A stripped, LTO-optimised binary. Run it next to your bot on a 512 MB VPS — or on a phone with Termux.</p></div>
+    <div class="kz-card"><div class="icon">🔁</div><h3>Lavalink v4 compatible</h3><p>Same REST routes, same WebSocket messages, same track encoding. Existing clients like Shoukaku, Wavelink and Lavalink4NET just work.</p></div>
+    <div class="kz-card"><div class="icon">🎵</div><h3>Native 320 kbps</h3><p>Direct CDN stream resolution for JioSaavn, plus YouTube, Spotify, Apple Music, Deezer, SoundCloud and more — 12 sources built in.</p></div>
+    <div class="kz-card"><div class="icon">🔐</div><h3>DAVE E2EE ready</h3><p>Implements Discord's DAVE end-to-end encryption protocol (MLS) via <code>kizuna-voice</code>, so you're ready when Discord enforces it.</p></div>
+    <div class="kz-card"><div class="icon">🧰</div><h3>Batteries included</h3><p>Server-side queue, autoplay, loop, synced lyrics, Prometheus metrics, IP rotation, SSRF protection — no plugins required.</p></div>
+  </div>
+</section>
+
+<section class="kz-section not-content">
+  <h2>Up and running in 60 seconds</h2>
+  <p class="lead">Pick your platform. Every path ends with a server listening on port <code>2333</code> that any Lavalink v4 client can connect to.</p>
+</section>
+
+<Tabs syncKey="install">
+  <TabItem label="Linux (one-liner)">
+    ```bash title="Terminal"
+    curl -sL https://raw.githubusercontent.com/nikcodex/Kizunalink/main/install.sh | bash
+    cd ~/kizunalink && ./kizunalink
+    ```
+  </TabItem>
+  <TabItem label="Docker">
+    ```bash title="Terminal"
+    git clone https://github.com/nikcodex/Kizunalink.git && cd Kizunalink
+    docker compose up -d
+    ```
+  </TabItem>
+  <TabItem label="Termux (Android)">
+    ```bash title="Termux"
+    pkg install curl -y
+    curl -sL https://raw.githubusercontent.com/nikcodex/Kizunalink/main/install.sh | bash
+    cd ~/kizunalink && ./kizunalink
+    ```
+  </TabItem>
+  <TabItem label="From source">
+    ```bash title="Terminal"
+    sudo apt install -y cmake libopus-dev   # build deps
+    git clone https://github.com/nikcodex/Kizunalink.git && cd Kizunalink
+    cargo build --release
+    ./target/release/kizunalink
+    ```
+  </TabItem>
+</Tabs>
+
+Then point any Lavalink v4 client at it:
+
+<Tabs syncKey="lang">
+  <TabItem label="JavaScript" icon="seti:javascript">
+    ```js title="bot.js" {5-9}
+    import { Client, GatewayIntentBits } from 'discord.js';
+    import { Shoukaku, Connectors } from 'shoukaku';
+
+    const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildVoiceStates] });
+    const nodes = [{
+      name: 'kizuna',
+      url: 'localhost:2333',
+      auth: 'youshallnotpass',
+    }];
+    const shoukaku = new Shoukaku(new Connectors.DiscordJS(client), nodes);
+    shoukaku.on('ready', (name) => console.log(`⛩️ ${name} connected`));
+    client.login(process.env.DISCORD_TOKEN);
+    ```
+  </TabItem>
+  <TabItem label="Python" icon="seti:python">
+    ```python title="bot.py" {9-12}
+    import discord, wavelink
+    from discord.ext import commands
+
+    class Bot(commands.Bot):
+        def __init__(self):
+            super().__init__(command_prefix="!", intents=discord.Intents.all())
+
+        async def setup_hook(self):
+            node = wavelink.Node(
+                uri="http://localhost:2333",
+                password="youshallnotpass",
+            )
+            await wavelink.Pool.connect(nodes=[node], client=self)
+
+    Bot().run("DISCORD_TOKEN")
+    ```
+  </TabItem>
+  <TabItem label="curl" icon="seti:shell">
+    ```bash title="Terminal"
+    curl -H "Authorization: youshallnotpass" \
+      "http://localhost:2333/v4/loadtracks?identifier=ytsearch:never%20gonna%20give%20you%20up"
+    ```
+  </TabItem>
+</Tabs>
+
+<section class="kz-section not-content">
+  <h2>12 audio sources, one endpoint</h2>
+  <p class="lead">Paste a URL or use a search prefix with <code>/v4/loadtracks</code>. Toggle any source in <code>config.toml</code>.</p>
+  <div class="kz-sources">
+    <div class="kz-source"><i class="sw" style="background:#2bc5b4"></i>JioSaavn<code>jssearch:</code></div>
+    <div class="kz-source"><i class="sw" style="background:#ff0000"></i>YouTube<code>ytsearch:</code></div>
+    <div class="kz-source"><i class="sw" style="background:#ff0000"></i>YouTube Music<code>ytmsearch:</code></div>
+    <div class="kz-source"><i class="sw" style="background:#1db954"></i>Spotify<code>spsearch:</code></div>
+    <div class="kz-source"><i class="sw" style="background:#fa233b"></i>Apple Music<code>amsearch:</code></div>
+    <div class="kz-source"><i class="sw" style="background:#a238ff"></i>Deezer<code>dzsearch:</code></div>
+    <div class="kz-source"><i class="sw" style="background:#ff5500"></i>SoundCloud<code>scsearch:</code></div>
+    <div class="kz-source"><i class="sw" style="background:#629aa9"></i>Bandcamp<code>bcsearch:</code></div>
+    <div class="kz-source"><i class="sw" style="background:#9146ff"></i>Twitch<code>twsearch:</code></div>
+    <div class="kz-source"><i class="sw" style="background:#1ab7ea"></i>Vimeo<code>vmsearch:</code></div>
+    <div class="kz-source"><i class="sw" style="background:#252525"></i>NicoNico<code>nisearch:</code></div>
+    <div class="kz-source"><i class="sw" style="background:#8b8f9b"></i>HTTP / Local<code>https:// file://</code></div>
+  </div>
+</section>
+
+<section class="kz-section not-content">
+  <h2>How it compares</h2>
+  <p class="lead">Same protocol, different engine. Numbers are typical idle figures on a single-core VPS.</p>
+  <table class="kz-compare">
+    <thead>
+      <tr><th></th><th class="kz">KizunaLink</th><th>Lavalink</th><th>NodeLink</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Runtime</td><td class="kz">Rust (Tokio)</td><td>JVM (Kotlin)</td><td>Node.js</td></tr>
+      <tr><td>Idle memory</td><td class="kz">~15 MB</td><td>~300–500 MB</td><td>~80–120 MB</td></tr>
+      <tr><td>GC pauses</td><td class="kz"><span class="kz-yes">None</span></td><td>Yes</td><td>Yes</td></tr>
+      <tr><td>Lavalink v4 REST + WS</td><td class="kz"><span class="kz-yes">✓</span></td><td><span class="kz-yes">✓</span></td><td><span class="kz-yes">✓</span></td></tr>
+      <tr><td>Built-in sources</td><td class="kz">12</td><td>6 (+ plugins)</td><td>~10</td></tr>
+      <tr><td>Server-side queue &amp; autoplay</td><td class="kz"><span class="kz-yes">✓</span></td><td><span class="kz-no">plugin</span></td><td><span class="kz-no">—</span></td></tr>
+      <tr><td>Synced lyrics endpoint</td><td class="kz"><span class="kz-yes">✓</span></td><td><span class="kz-no">plugin</span></td><td><span class="kz-part">partial</span></td></tr>
+      <tr><td>DAVE E2EE</td><td class="kz"><span class="kz-yes">✓</span></td><td><span class="kz-yes">✓</span></td><td><span class="kz-part">partial</span></td></tr>
+      <tr><td>Prometheus metrics</td><td class="kz"><span class="kz-yes">✓</span></td><td><span class="kz-yes">✓</span></td><td><span class="kz-no">—</span></td></tr>
+      <tr><td>Plugin system</td><td class="kz"><span class="kz-no">not yet</span></td><td><span class="kz-yes">✓</span></td><td><span class="kz-no">—</span></td></tr>
+      <tr><td>Deploy</td><td class="kz">single static binary</td><td>JAR + JRE 17</td><td>Node 18+ &amp; deps</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="kz-section not-content">
+  <h2>Explore the docs</h2>
+</section>
+
+<CardGrid>
+  <LinkCard title="Quick Start" description="Install, configure and play your first track in five minutes." href="/getting-started/quick-start/" />
+  <LinkCard title="Configuration" description="Every config.toml key and KIZUNA_* environment variable, with defaults." href="/configuration/" />
+  <LinkCard title="Connect a client" description="Shoukaku, Wavelink, Lavalink4NET, Lavakord — or raw WebSocket." href="/clients/" />
+  <LinkCard title="REST API" description="All /v4 routes with curl, JavaScript and Python examples." href="/api/rest/" />
+  <LinkCard title="KizunaLink extensions" description="Queue ops, autoplay, loop, lyrics — features beyond the Lavalink spec." href="/api/extensions/" />
+  <LinkCard title="Migrating from Lavalink" description="What changes, what doesn't, and the gotchas." href="/getting-started/migrating-from-lavalink/" />
+</CardGrid>
+
+<section class="kz-section not-content">
+  <h2>Found a bug? Need help?</h2>
+  <p class="lead">Open an <a href="https://github.com/nikcodex/Kizunalink/issues/new">issue on GitHub</a> for bugs, or start a <a href="https://github.com/nikcodex/Kizunalink/discussions">discussion</a> for questions. Contributions to the engine and these docs are welcome.</p>
+</section>

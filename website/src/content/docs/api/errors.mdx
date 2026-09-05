@@ -1,0 +1,148 @@
+---
+title: Errors
+description: KizunaLink's error response format, every HTTP status code it returns and the exact messages, plus WebSocket close codes and how clients should react.
+sidebar:
+  order: 7
+---
+
+import { Tabs, TabItem, Aside } from '@astrojs/starlight/components';
+
+## Error object
+
+Every non-2xx REST response is JSON with the same six fields as Lavalink:
+
+```json
+{
+  "timestamp": 1757000000000,
+  "status": 404,
+  "error": "Not Found",
+  "trace": null,
+  "message": "Player not found for guild: 123456789012345678",
+  "path": "/v4/sessions/a1b2c3d4e5f6/players/123456789012345678"
+}
+```
+
+| Field | Description |
+|---|---|
+| `timestamp` | Unix time in ms |
+| `status` | HTTP status code |
+| `error` | Canonical reason phrase (`Bad Request`, `Not Found`, …) |
+| `trace` | `null`, or a diagnostic string when `?trace=true` is set |
+| `message` | Human-readable cause — stable enough to match on |
+| `path` | The request path |
+
+### `?trace=true`
+
+Append `trace=true` to any request's query string and errors carry a trace:
+
+```
+kizunalink::Not Found: Session not found: abc
+  path: /v4/sessions/abc
+<rust backtrace>
+::backtrace-end
+```
+
+The trace never contains the password or authorization headers. Backtraces are only symbolised if the binary wasn't stripped (release builds are stripped), so on official builds expect mostly the header lines.
+
+## Status codes
+
+| Status | `message` | Cause & fix |
+|---|---|---|
+| `400` | `Guild ID must be numeric` / `Empty guild ID` / `Guild ID too long` | `guildId` path segment must be 1–32 digits |
+| `400` | `Session ID contains invalid characters` / `Empty session ID` / `Session ID too long` | `sessionId` must be hex characters and `-`, ≤ 128 |
+| `400` | `Identifier exceeds maximum length of 2048` | Shorten the `identifier` |
+| `400` | `Access to sensitive or relative paths is forbidden` | Local file path contained `..`, `/etc`, `/proc`, `/sys` or `/dev` |
+| `400` | `Missing query parameter 'encodedTrack'` | `/v4/decodetrack` without the parameter |
+| `400` | `Failed to decode track: …` | Not a valid v1–v3 track (bad base64, truncated, unsupported version) |
+| `400` | `Batch size N exceeds maximum of 100` | `/v4/decodetracks` array too large |
+| `400` | `Missing required query parameter: 'query', 'track', or 'trackName' & 'artistName'` | `/v4/lyrics` with no usable parameters |
+| `400` | `Song ID cannot be empty` | `/v4/lyrics/{songId}` with a blank ID |
+| `400` | (axum message) | Malformed JSON body or wrong `Content-Type` |
+| `401` | `Unauthorized: Missing authorization header` / `Unauthorized: Invalid authorization header` | Send the bare password in `Authorization` |
+| `404` | `Session not found: {id}` | Session never existed, expired after its resume timeout, or the node restarted — reconnect the WebSocket |
+| `404` | `Player not found for guild: {id}` | No player for that guild **in this session**; players owned by another session look identical |
+| `404` | `Player has no track currently playing` | Lyrics requested for an idle player |
+| `404` | `No lyrics found for '…'` | All lyric sources missed |
+| `404` | (no body) | Unknown route |
+| `413` | (no JSON body) | Request body exceeds `security.max_body_size` (1 MiB) |
+| `429` | `Rate limit exceeded` | Per-IP bucket empty; honour the `Retry-After` header (seconds) |
+| `429` | `Rate limit exceeded for source: {name}` | Per-source limit hit inside `/v4/loadtracks` — back off for that source |
+| `503` | `Player limit reached: maximum 10000 players allowed` | Node is at capacity; add a node |
+| `500` | (error text) | Unexpected failure; check the server log and file an issue |
+
+### Not errors
+
+Some failures are reported inside a `200` body on purpose, because that's what Lavalink clients expect:
+
+- `/v4/loadtracks` → `{"loadType":"empty"}` for no results or disabled sources, `{"loadType":"error","data":{…}}` for blocked URLs.
+- A track whose audio can't be resolved is accepted by `PATCH …/players/{guildId}` and then fails asynchronously with a `TrackExceptionEvent` on the WebSocket.
+
+## Handling errors in code
+
+<Tabs syncKey="lang">
+  <TabItem label="JavaScript">
+    ```js
+    class KizunaError extends Error {
+      constructor(body, retryAfter) { super(body.message); Object.assign(this, body); this.retryAfter = retryAfter; }
+    }
+
+    async function kz(path, init = {}) {
+      const r = await fetch(`${KZ}${path}`, { ...init, headers: { Authorization: KZ_PASS, 'Content-Type': 'application/json', ...init.headers } });
+      if (r.status === 204) return null;
+      const body = await r.json().catch(() => ({ status: r.status, message: r.statusText }));
+      if (!r.ok) throw new KizunaError(body, Number(r.headers.get('retry-after') ?? 0));
+      return body;
+    }
+
+    try {
+      await kz(`/v4/sessions/${sessionId}/players/${guildId}`, { method: 'PATCH', body: JSON.stringify({ paused: true }) });
+    } catch (e) {
+      if (e.status === 404 && e.message.startsWith('Session not found')) reconnectWebSocket();
+      else if (e.status === 429) await sleep(e.retryAfter * 1000);
+      else throw e;
+    }
+    ```
+  </TabItem>
+  <TabItem label="Python">
+    ```python
+    class KizunaError(Exception):
+        def __init__(self, body: dict, retry_after: int = 0):
+            super().__init__(body.get("message"))
+            self.status, self.path, self.retry_after = body.get("status"), body.get("path"), retry_after
+
+    def kz(method: str, path: str, **kwargs) -> dict | None:
+        r = httpx.request(method, f"{KZ}{path}", headers=H, **kwargs)
+        if r.status_code == 204:
+            return None
+        body = r.json() if r.headers.get("content-type", "").startswith("application/json") else {"status": r.status_code, "message": r.text}
+        if r.is_error:
+            raise KizunaError(body, int(r.headers.get("retry-after", 0)))
+        return body
+
+    try:
+        kz("PATCH", f"/v4/sessions/{session_id}/players/{guild_id}", json={"paused": True})
+    except KizunaError as e:
+        if e.status == 404 and str(e).startswith("Session not found"):
+            reconnect_websocket()
+        elif e.status == 429:
+            time.sleep(e.retry_after)
+        else:
+            raise
+    ```
+  </TabItem>
+</Tabs>
+
+## WebSocket close codes
+
+Closes initiated by KizunaLink on **your** connection:
+
+| Code | Reason | Meaning |
+|---|---|---|
+| `1008` | `Session limit reached: maximum 10000 active sessions allowed` | Policy violation during handshake |
+| `1000`/`1001` | – | Server shutting down (SIGTERM / Ctrl-C). Reconnect with `Session-Id` — but note sessions don't survive a restart |
+
+Discord **voice** connection closes are reported as `WebSocketClosedEvent` messages; see the [code table](/api/websocket/#websocketclosedevent).
+
+## Metrics
+
+Errors are counted for Prometheus: `kizunalink_errors_auth_total` (401), `kizunalink_errors_not_found_total` (404), `kizunalink_errors_rate_limit_total` (429), `kizunalink_errors_internal_total` (5xx). See [Prometheus Metrics](/monitoring/prometheus/).

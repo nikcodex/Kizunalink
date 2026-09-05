@@ -1,0 +1,113 @@
+---
+title: Autoplay & Queue
+description: Exact semantics of KizunaLink's server-side queue, loop modes and history, and how the autoplay recommendation engine builds queries, scores candidates and avoids repeats.
+sidebar:
+  order: 5
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+## Queue model
+
+Every `GuildPlayer` owns a `TrackQueue`:
+
+```rust
+pub struct TrackQueue {
+    pub tracks:    VecDeque<LavalinkTrack>,   // pending
+    pub current:   Option<LavalinkTrack>,     // now playing
+    pub previous:  VecDeque<LavalinkTrack>,   // history, newest at the back
+    pub loop_mode: LoopMode,                  // None | Track | Queue
+    max_history:   usize,                     // server.queue_max_history, default 50
+}
+```
+
+The queue is **optional** from the client's point of view: a plain Lavalink client that PATCHes one track at a time only ever uses `current`. The queue fills through the WebSocket `queueTrack` op ([Extensions](/api/extensions/#server-side-queue)).
+
+### Operations
+
+| Trigger | Effect |
+|---|---|
+| `queueTrack` while idle | Track starts immediately (becomes `current`); nothing is queued |
+| `queueTrack` while playing | Appended to `tracks` |
+| track finishes | `next_track()` (see loop modes) → play it, else autoplay, else stop |
+| `skipTrack` | Stop current, `next_track()`; if none → player stops (`TrackEndEvent: stopped`) |
+| `previousTrack` | Stop current, pop the newest history entry and play it. History is **not** pushed again, so repeated `previousTrack` walks backwards |
+| `shuffleQueue` | Fisher–Yates shuffle of `tracks` only; `current` and history untouched |
+| `clearQueue` | Empties `tracks`; `current` keeps playing, history and loop mode kept |
+| PATCH with a new track | Replaces `current` (`TrackEndEvent: replaced`); the queue is left as is |
+| PATCH `track.encoded: null` / `DELETE` | Stops; pending tracks stay queued until the player is destroyed |
+
+### Loop modes and `next_track()`
+
+```
+LoopMode::None   current → history;                   pop front of tracks
+LoopMode::Track  return current again (never touches history or tracks)
+LoopMode::Queue  current → history AND → back of tracks; pop front of tracks
+```
+
+History is capped at `max_history` (oldest dropped). With `Track` loop and no current track (e.g. right after a skip), the next queued track is popped normally. `endTime` is cleared once the position passes it, so a looped track with `endTime` plays the segment again.
+
+Loop mode is set with the `loop` op or the `loop` field in a player update and shows up in every Player object. It persists until changed or the player is destroyed.
+
+## Autoplay
+
+When `autoplay` is enabled and `next_track()` returns nothing, `PlayerManager::handle_track_end` asks the `AutoplayEngine` for a recommendation based on the track that just finished. The engine lives per player and remembers what it has played.
+
+### Memory
+
+- `recent_tracks` — normalised `"title author"` strings of the last **20** played tracks, for fuzzy duplicate detection.
+- `played_ids` — identifiers of the last **50** tracks; hard-excluded.
+
+Every track that starts (`play_track`) is recorded, whether it came from the queue, a PATCH or autoplay, so autoplay won't replay what the user just queued.
+
+### Query building
+
+From the last track's `author` and `title`:
+
+1. `main_artist` = the author cut at the first of `feat`, `ft`, `&`, `x`, `vs`, `versus` (so "Arijit Singh feat. Shreya Ghoshal" → "Arijit Singh").
+2. Queries, in order: `"<main_artist>"`, `"<main_artist> popular"`, `"<main_artist> mix"`, `"<first three words of title>"`.
+
+### Source selection
+
+Searches go to the **same source** the last track came from — Spotify for `spotify`, YouTube for `youtube`, and JioSaavn for everything else (JioSaavn, Apple Music, Deezer, SoundCloud, HTTP…). Each query fetches up to 10 candidates; the engine stops at the first query that yields at least one eligible candidate.
+
+### Scoring
+
+Each candidate that isn't in `played_ids` and isn't a fuzzy duplicate (Levenshtein ratio > 0.75 against any `recent_tracks` entry, after stripping words like *official, music video, audio, lyrics, hd, 4k, remix, feat, ft, explicit, clean*) gets a score:
+
+| Criterion | Points |
+|---|---|
+| Artist related to the original (`main_artist` equal, or Levenshtein ratio > 0.85) | **+60** |
+| Artist unrelated | **−30** |
+| Duration similarity | up to **+20** (ratio of shorter/longer × 20) |
+| Same `sourceName` as the original | **+15** |
+
+Candidates scoring **≥ 40** are eligible; the highest wins. In practice that means "same artist, similar length" almost always wins, and an unrelated artist can only qualify with a near-identical duration on the same source (−30 + 20 + 15 = 5 → not eligible), so autoplay stays on-artist unless the artist has nothing else.
+
+### Fallback
+
+If no candidate qualifies, a plain `main_artist` search is tried on **JioSaavn → YouTube → Spotify** (5 results each) and the first result not already played and not a duplicate is used. If that also fails, the player stops and emits `TrackEndEvent(finished)` with no subsequent start — clients should treat that like a normal queue end.
+
+### Observability
+
+Autoplay logs the pick at `info`:
+
+```
+INFO Autoplay picked: Tum Hi Ho by Arijit Singh (score: 92.3)
+```
+
+Set `RUST_LOG=kizunalink::player::autoplay=debug` to see rejected candidates.
+
+## Interaction with client-side queues
+
+A client library queue (Wavelink, lavalink-client, Lavalink4NET Queued player) reacts to `TrackEndEvent: finished` by PATCHing the next track. If KizunaLink's queue/autoplay also starts a track, the client's PATCH will *replace* it a moment later (`TrackEndEvent: replaced`) — the music keeps playing but you get flapping events and wasted stream resolutions. Decide per player:
+
+- **Client-managed**: never send `queueTrack`, keep `autoplay: false`, `loop: "none"`. (Default behaviour — nothing to do.)
+- **Server-managed**: disable the library's autoplay/queue advancing and drive KizunaLink through the WebSocket ops.
+
+## Related settings
+
+| Setting | Default | Effect |
+|---|---|---|
+| `server.queue_max_history` / `KIZUNA_QUEUE_MAX_HISTORY` | `50` | History depth for `previousTrack` and loop bookkeeping |
+| `sources.jiosaavn` / `youtube` / `spotify` | on | Disabled sources are skipped by autoplay's fallback chain |

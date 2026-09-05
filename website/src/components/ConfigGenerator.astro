@@ -1,0 +1,331 @@
+---
+/**
+ * Interactive config generator.
+ * Pure client-side; outputs config.toml, .env and docker-compose.yml
+ * that match KizunaLink's real defaults (see src/config.rs in the engine).
+ */
+const sources = [
+  { key: 'jiosaavn', label: 'JioSaavn', def: true },
+  { key: 'youtube', label: 'YouTube', def: true },
+  { key: 'spotify', label: 'Spotify', def: true },
+  { key: 'soundcloud', label: 'SoundCloud', def: true },
+  { key: 'applemusic', label: 'Apple Music', def: true },
+  { key: 'deezer', label: 'Deezer', def: true },
+  { key: 'bandcamp', label: 'Bandcamp', def: true },
+  { key: 'twitch', label: 'Twitch', def: true },
+  { key: 'vimeo', label: 'Vimeo', def: false },
+  { key: 'niconico', label: 'NicoNico', def: false },
+  { key: 'http', label: 'HTTP streams', def: true },
+  { key: 'local', label: 'Local files', def: false },
+];
+---
+
+<div class="kz-gen not-content" id="kz-gen">
+  <form id="kz-gen-form" autocomplete="off">
+    <fieldset>
+      <legend>Server</legend>
+      <div class="row">
+        <label>Host <input type="text" name="host" value="0.0.0.0" /></label>
+        <label>Port <input type="number" name="port" value="2333" min="1" max="65535" /></label>
+        <label>
+          Password
+          <input type="text" name="password" value="youshallnotpass" />
+          <span class="hint">Sent by clients in the <code>Authorization</code> header.</span>
+        </label>
+      </div>
+      <div class="row" style="margin-top:.75rem">
+        <label>Max connections <input type="number" name="max_connections" value="1000" min="1" /></label>
+        <label>Request timeout (s) <input type="number" name="request_timeout_secs" value="30" min="1" /></label>
+        <label>Queue history <input type="number" name="queue_max_history" value="50" min="0" /></label>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Sources</legend>
+      <div class="sources-grid">
+        {sources.map((s) => (
+          <label class="check">
+            <input type="checkbox" name={`src_${s.key}`} checked={s.def} /> {s.label}
+          </label>
+        ))}
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Credentials (optional)</legend>
+      <div class="row">
+        <label>Spotify client ID <input type="text" name="spotify_id" placeholder="from developer.spotify.com" /></label>
+        <label>Spotify client secret <input type="text" name="spotify_secret" placeholder="••••••••" /></label>
+        <label>SoundCloud client ID <input type="text" name="sc_id" placeholder="auto-scraped if empty" /></label>
+        <label>YouTube PO token <input type="text" name="yt_po" placeholder="optional" /></label>
+      </div>
+      <p class="hint" style="margin:.6rem 0 0">Credentials are written to <code>.env</code>, never to <code>config.toml</code>.</p>
+    </fieldset>
+
+    <fieldset>
+      <legend>Rate limiting &amp; route planner</legend>
+      <div class="row">
+        <label>Max requests / window <input type="number" name="max_requests" value="60" min="1" /></label>
+        <label>Window (s) <input type="number" name="window_secs" value="60" min="1" /></label>
+        <label>Burst <input type="number" name="burst" value="10" min="0" /></label>
+      </div>
+      <div class="row" style="margin-top:.75rem">
+        <label>
+          IP blocks (CIDR, comma-separated)
+          <input type="text" name="ip_blocks" placeholder="2001:db8::/64" />
+        </label>
+        <label>
+          Strategy
+          <select name="strategy">
+            <option>RotatingIpRoutePlanner</option>
+            <option>NanoIpRoutePlanner</option>
+            <option>RotatingNanoIpRoutePlanner</option>
+            <option>BalancingIpRoutePlanner</option>
+          </select>
+        </label>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Proxy, security &amp; logging</legend>
+      <div class="row">
+        <label>Proxy URL <input type="text" name="proxy_url" placeholder="socks5://proxy:1080" /></label>
+        <label>Proxy user <input type="text" name="proxy_user" /></label>
+        <label>Proxy pass <input type="text" name="proxy_pass" /></label>
+      </div>
+      <div class="row" style="margin-top:.75rem">
+        <label>Max body size (bytes) <input type="number" name="max_body_size" value="1048576" min="1024" /></label>
+        <label>
+          Log level
+          <select name="log_level">
+            <option>error</option><option>warn</option><option selected>info</option><option>debug</option><option>trace</option>
+          </select>
+        </label>
+        <label class="check" style="align-self:end"><input type="checkbox" name="log_colored" checked /> Colored logs</label>
+        <label class="check" style="align-self:end"><input type="checkbox" name="metrics" checked /> Prometheus metrics</label>
+      </div>
+    </fieldset>
+  </form>
+
+  <div class="sticky">
+    <div class="tabs" role="tablist" aria-label="Output format">
+      <button type="button" role="tab" aria-selected="true" data-tab="toml">config.toml</button>
+      <button type="button" role="tab" aria-selected="false" data-tab="env">.env</button>
+      <button type="button" role="tab" aria-selected="false" data-tab="compose">docker-compose.yml</button>
+    </div>
+    <div class="out">
+      <button type="button" class="copy" id="kz-gen-copy">Copy</button>
+      <pre id="kz-gen-out"></pre>
+    </div>
+    <p class="warn" id="kz-gen-warn" hidden></p>
+  </div>
+</div>
+
+<script>
+  const form = document.getElementById('kz-gen-form') as HTMLFormElement;
+  const out = document.getElementById('kz-gen-out') as HTMLPreElement;
+  const warn = document.getElementById('kz-gen-warn') as HTMLParagraphElement;
+  const copyBtn = document.getElementById('kz-gen-copy') as HTMLButtonElement;
+  const tabs = Array.from(document.querySelectorAll<HTMLButtonElement>('#kz-gen [role=tab]'));
+  let active = 'toml';
+
+  const SOURCE_KEYS = [
+    'jiosaavn', 'youtube', 'spotify', 'soundcloud', 'applemusic', 'deezer',
+    'bandcamp', 'twitch', 'vimeo', 'niconico', 'http', 'local',
+  ];
+
+  function v(name: string): string {
+    const el = form.elements.namedItem(name) as HTMLInputElement | HTMLSelectElement | null;
+    return el ? String(el.value ?? '').trim() : '';
+  }
+  function b(name: string): boolean {
+    const el = form.elements.namedItem(name) as HTMLInputElement | null;
+    return !!el && el.checked;
+  }
+  function tomlStr(s: string) {
+    return '"' + s.replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"';
+  }
+  function list(csv: string) {
+    return csv.split(',').map((s) => s.trim()).filter(Boolean);
+  }
+
+  function genToml(): string {
+    const lines: string[] = [];
+    lines.push('# ==============================================================================');
+    lines.push('#  KizunaLink Configuration  (generated by the docs Config Generator)');
+    lines.push('#  Environment variables (KIZUNA_*) override anything set here.');
+    lines.push('# ==============================================================================');
+    lines.push('');
+    lines.push('[server]');
+    lines.push(`host = ${tomlStr(v('host') || '0.0.0.0')}`);
+    lines.push(`port = ${Number(v('port')) || 2333}`);
+    lines.push(`password = ${tomlStr(v('password') || 'youshallnotpass')}`);
+    lines.push(`max_connections = ${Number(v('max_connections')) || 1000}`);
+    lines.push(`request_timeout_secs = ${Number(v('request_timeout_secs')) || 30}`);
+    lines.push(`queue_max_history = ${Number(v('queue_max_history')) || 50}`);
+    lines.push('');
+    lines.push('[sources]');
+    for (const k of SOURCE_KEYS) lines.push(`${k} = ${b('src_' + k)}`);
+    lines.push('');
+    lines.push('[ratelimit]');
+    const blocks = list(v('ip_blocks'));
+    lines.push(`ip_blocks = [${blocks.map(tomlStr).join(', ')}]`);
+    lines.push(`strategy = ${tomlStr(v('strategy') || 'RotatingIpRoutePlanner')}`);
+    lines.push('excluded_ips = []');
+    lines.push(`max_requests = ${Number(v('max_requests')) || 60}`);
+    lines.push(`window_secs = ${Number(v('window_secs')) || 60}`);
+    lines.push(`burst = ${Number(v('burst')) || 10}`);
+    lines.push('');
+    lines.push('[logging]');
+    lines.push(`level = ${tomlStr(v('log_level') || 'info')}`);
+    lines.push(`colored = ${b('log_colored')}`);
+    lines.push('');
+    lines.push('[metrics]');
+    lines.push(`enabled = ${b('metrics')}`);
+    lines.push('');
+    lines.push('[security]');
+    lines.push(`max_body_size = ${Number(v('max_body_size')) || 1048576}`);
+    lines.push('blocked_hosts = []');
+    lines.push('');
+    lines.push('[proxy]');
+    if (v('proxy_url')) {
+      lines.push(`url = ${tomlStr(v('proxy_url'))}`);
+      if (v('proxy_user')) lines.push(`username = ${tomlStr(v('proxy_user'))}`);
+      if (v('proxy_pass')) lines.push(`password = ${tomlStr(v('proxy_pass'))}`);
+    } else {
+      lines.push('# url = "socks5://proxy:1080"');
+      lines.push('# username = ""');
+      lines.push('# password = ""');
+    }
+    return lines.join('\n') + '\n';
+  }
+
+  function genEnv(): string {
+    const lines: string[] = [];
+    lines.push('# KizunaLink environment  (generated by the docs Config Generator)');
+    lines.push('# These override config.toml. Loaded automatically from ./.env via dotenvy.');
+    lines.push('');
+    lines.push(`KIZUNA_HOST=${v('host') || '0.0.0.0'}`);
+    lines.push(`KIZUNA_PORT=${Number(v('port')) || 2333}`);
+    lines.push(`KIZUNA_PASSWORD=${v('password') || 'youshallnotpass'}`);
+    lines.push(`KIZUNA_MAX_CONNECTIONS=${Number(v('max_connections')) || 1000}`);
+    lines.push(`KIZUNA_QUEUE_MAX_HISTORY=${Number(v('queue_max_history')) || 50}`);
+    lines.push(`KIZUNA_MAX_REQUESTS=${Number(v('max_requests')) || 60}`);
+    lines.push(`KIZUNA_LOG_LEVEL=${v('log_level') || 'info'}`);
+    lines.push(`KIZUNA_LOG_COLORED=${b('log_colored')}`);
+    lines.push(`RUST_LOG=${v('log_level') || 'info'}`);
+    const blocks = list(v('ip_blocks'));
+    if (blocks.length) {
+      lines.push(`KIZUNA_IP_BLOCKS=${blocks.join(',')}`);
+      lines.push(`KIZUNA_ROUTEPLANNER_STRATEGY=${v('strategy') || 'RotatingIpRoutePlanner'}`);
+    }
+    if (v('proxy_url')) {
+      lines.push(`KIZUNA_PROXY_URL=${v('proxy_url')}`);
+      if (v('proxy_user')) lines.push(`KIZUNA_PROXY_USER=${v('proxy_user')}`);
+      if (v('proxy_pass')) lines.push(`KIZUNA_PROXY_PASS=${v('proxy_pass')}`);
+    }
+    lines.push('');
+    lines.push('# --- Source credentials (optional) ---');
+    lines.push(v('spotify_id') ? `SPOTIFY_CLIENT_ID=${v('spotify_id')}` : '# SPOTIFY_CLIENT_ID=');
+    lines.push(v('spotify_secret') ? `SPOTIFY_CLIENT_SECRET=${v('spotify_secret')}` : '# SPOTIFY_CLIENT_SECRET=');
+    lines.push(v('sc_id') ? `SOUNDCLOUD_CLIENT_ID=${v('sc_id')}` : '# SOUNDCLOUD_CLIENT_ID=');
+    lines.push(v('yt_po') ? `YOUTUBE_PO_TOKEN=${v('yt_po')}` : '# YOUTUBE_PO_TOKEN=');
+    lines.push('# YOUTUBE_OAUTH_TOKEN=');
+    return lines.join('\n') + '\n';
+  }
+
+  function genCompose(): string {
+    const port = Number(v('port')) || 2333;
+    const env: string[] = [
+      `KIZUNA_HOST=0.0.0.0`,
+      `KIZUNA_PORT=${port}`,
+      `KIZUNA_PASSWORD=${v('password') || 'youshallnotpass'}`,
+      `KIZUNA_LOG_LEVEL=${v('log_level') || 'info'}`,
+      `RUST_LOG=${v('log_level') || 'info'}`,
+    ];
+    if (v('spotify_id')) env.push(`SPOTIFY_CLIENT_ID=${v('spotify_id')}`);
+    if (v('spotify_secret')) env.push(`SPOTIFY_CLIENT_SECRET=${v('spotify_secret')}`);
+    if (v('sc_id')) env.push(`SOUNDCLOUD_CLIENT_ID=${v('sc_id')}`);
+    if (v('yt_po')) env.push(`YOUTUBE_PO_TOKEN=${v('yt_po')}`);
+    const blocks = list(v('ip_blocks'));
+    if (blocks.length) {
+      env.push(`KIZUNA_IP_BLOCKS=${blocks.join(',')}`);
+      env.push(`KIZUNA_ROUTEPLANNER_STRATEGY=${v('strategy')}`);
+    }
+    if (v('proxy_url')) {
+      env.push(`KIZUNA_PROXY_URL=${v('proxy_url')}`);
+      if (v('proxy_user')) env.push(`KIZUNA_PROXY_USER=${v('proxy_user')}`);
+      if (v('proxy_pass')) env.push(`KIZUNA_PROXY_PASS=${v('proxy_pass')}`);
+    }
+    const extraNet = blocks.length ? '\n    network_mode: host  # required for IP-block rotation\n' : '';
+    return `services:
+  kizunalink:
+    build:
+      context: https://github.com/nikcodex/Kizunalink.git
+      dockerfile: Dockerfile
+    container_name: kizunalink
+    restart: unless-stopped${extraNet}
+    ports:
+      - "${port}:${port}"
+    environment:
+${env.map((e) => `      - ${e}`).join('\n')}
+    volumes:
+      - ./config.toml:/app/config.toml:ro
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${port}/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 64M
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+`;
+  }
+
+  function render() {
+    const text = active === 'toml' ? genToml() : active === 'env' ? genEnv() : genCompose();
+    out.textContent = text;
+
+    const warnings: string[] = [];
+    if ((v('password') || 'youshallnotpass') === 'youshallnotpass')
+      warnings.push('You are using the default password — change it before exposing the server.');
+    if (b('src_local')) warnings.push('Local file playback is enabled; only do this on trusted hosts.');
+    if (list(v('ip_blocks')).length && active === 'compose')
+      warnings.push('IP rotation needs the block routed to this machine and network_mode: host.');
+    warn.hidden = warnings.length === 0;
+    warn.textContent = warnings.map((w) => '⚠ ' + w).join('  ');
+  }
+
+  form.addEventListener('input', render);
+  form.addEventListener('change', render);
+  tabs.forEach((t) =>
+    t.addEventListener('click', () => {
+      active = t.dataset.tab!;
+      tabs.forEach((x) => x.setAttribute('aria-selected', String(x === t)));
+      render();
+    }),
+  );
+  copyBtn.addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(out.textContent ?? '');
+      copyBtn.textContent = 'Copied!';
+      copyBtn.classList.add('done');
+      setTimeout(() => {
+        copyBtn.textContent = 'Copy';
+        copyBtn.classList.remove('done');
+      }, 1500);
+    } catch {
+      copyBtn.textContent = 'Select & copy';
+    }
+  });
+  render();
+</script>

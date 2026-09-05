@@ -1,0 +1,681 @@
+/* ==========================================================================
+   KizunaLink Docs — theme
+   Dark-first, crimson accent, subtle Japanese motif (絆 / ⛩️)
+   ========================================================================== */
+
+/* ---------- Colour system ---------- */
+:root {
+  /* Crimson accent scale (dark theme) */
+  --sl-color-accent-low: #3d0a18;
+  --sl-color-accent: #e5385c;
+  --sl-color-accent-high: #ffb3c1;
+
+  /* Neutral grays with a hint of warmth */
+  --sl-color-white: #ffffff;
+  --sl-color-gray-1: #eeeff2;
+  --sl-color-gray-2: #c2c4cb;
+  --sl-color-gray-3: #8b8f9b;
+  --sl-color-gray-4: #585c69;
+  --sl-color-gray-5: #383b46;
+  --sl-color-gray-6: #24262e;
+  --sl-color-black: #16171c;
+
+  /* Extra tokens used by custom components */
+  --kz-crimson: #e5385c;
+  --kz-crimson-deep: #c9184a;
+  --kz-crimson-glow: rgba(229, 56, 92, 0.35);
+  --kz-gold: #f5c04a;
+  --kz-surface: #1c1d24;
+  --kz-surface-2: #23242c;
+  --kz-border: rgba(255, 255, 255, 0.08);
+
+  --sl-font: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --sl-font-mono: 'JetBrains Mono', ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+}
+
+:root[data-theme='light'] {
+  --sl-color-accent-low: #ffe1e7;
+  --sl-color-accent: #c9184a;
+  --sl-color-accent-high: #6e0d29;
+
+  --sl-color-white: #17181d;
+  --sl-color-gray-1: #24262e;
+  --sl-color-gray-2: #383b46;
+  --sl-color-gray-3: #585c69;
+  --sl-color-gray-4: #8b8f9b;
+  --sl-color-gray-5: #c2c4cb;
+  --sl-color-gray-6: #eeeff2;
+  --sl-color-gray-7: #f6f6f8;
+  --sl-color-black: #ffffff;
+
+  --kz-crimson: #c9184a;
+  --kz-crimson-deep: #a4133c;
+  --kz-crimson-glow: rgba(201, 24, 74, 0.2);
+  --kz-surface: #ffffff;
+  --kz-surface-2: #f6f6f8;
+  --kz-border: rgba(0, 0, 0, 0.08);
+}
+
+/* ---------- Global polish ---------- */
+.sl-markdown-content {
+  font-size: 1rem;
+  line-height: 1.7;
+}
+
+.sl-markdown-content h2 {
+  padding-bottom: 0.35rem;
+  border-bottom: 1px solid var(--kz-border);
+}
+
+.sl-markdown-content code:not(:where(.expressive-code *)) {
+  border-radius: 0.35rem;
+  padding: 0.15rem 0.35rem;
+  font-size: 0.875em;
+  background: color-mix(in srgb, var(--sl-color-accent-low) 55%, var(--sl-color-gray-6));
+  color: var(--sl-color-accent-high);
+}
+
+/* Tables: subtle striped, sticky header feel */
+.sl-markdown-content table {
+  display: block;
+  overflow-x: auto;
+  border-collapse: collapse;
+  border: 1px solid var(--kz-border);
+  border-radius: 0.6rem;
+}
+.sl-markdown-content thead th {
+  background: var(--kz-surface-2);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.sl-markdown-content tbody tr:nth-child(even) {
+  background: color-mix(in srgb, var(--kz-surface-2) 60%, transparent);
+}
+.sl-markdown-content th,
+.sl-markdown-content td {
+  border: 1px solid var(--kz-border);
+  padding: 0.55rem 0.8rem;
+  vertical-align: top;
+}
+.sl-markdown-content td:first-child code {
+  white-space: nowrap;
+}
+
+/* Sidebar: crimson active marker */
+.sidebar-content a[aria-current='page'] {
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--kz-crimson) 20%, transparent),
+    transparent
+  );
+  color: var(--sl-color-white);
+  border-inline-start: 3px solid var(--kz-crimson);
+  border-radius: 0 0.4rem 0.4rem 0;
+  font-weight: 600;
+}
+
+/* Badges in sidebar use our palette */
+.sl-badge.danger {
+  --sl-badge-danger-bg: var(--kz-crimson);
+  --sl-badge-danger-border: var(--kz-crimson-deep);
+}
+
+/* Header: thin crimson line under the nav bar */
+header.header {
+  border-bottom: 1px solid var(--kz-border);
+  box-shadow: 0 1px 0 color-mix(in srgb, var(--kz-crimson) 35%, transparent);
+}
+
+/* Site title logo sizing */
+.site-title img {
+  height: 1.75rem;
+  width: auto;
+}
+
+/* ---------- HTTP method pills (used in API reference) ---------- */
+.kz-method {
+  display: inline-block;
+  font-family: var(--sl-font-mono);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 0.15rem 0.5rem;
+  border-radius: 0.35rem;
+  margin-inline-end: 0.5rem;
+  vertical-align: middle;
+  color: #fff;
+}
+.kz-method.get { background: #1f8a4c; }
+.kz-method.post { background: #2f6fd1; }
+.kz-method.patch { background: #b7791f; }
+.kz-method.delete { background: var(--kz-crimson-deep); }
+.kz-method.ws { background: #6b4bd6; }
+
+.kz-endpoint {
+  font-family: var(--sl-font-mono);
+  font-size: 0.95rem;
+  background: var(--kz-surface-2);
+  border: 1px solid var(--kz-border);
+  border-radius: 0.5rem;
+  padding: 0.55rem 0.8rem;
+  margin: 0.75rem 0 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  flex-wrap: wrap;
+}
+.kz-endpoint .path {
+  color: var(--sl-color-white);
+  word-break: break-all;
+}
+.kz-endpoint .path .param {
+  color: var(--kz-gold);
+}
+
+/* Kizuna-only marker */
+.kz-only {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--kz-crimson);
+  border: 1px solid color-mix(in srgb, var(--kz-crimson) 50%, transparent);
+  background: color-mix(in srgb, var(--kz-crimson) 12%, transparent);
+  border-radius: 999px;
+  padding: 0.1rem 0.55rem;
+  vertical-align: middle;
+}
+
+/* ---------- Landing page ---------- */
+.kz-hero {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 2.5rem;
+  align-items: center;
+  padding: clamp(2rem, 6vw, 5rem) 0 clamp(1.5rem, 4vw, 3rem);
+  overflow: hidden;
+}
+@media (min-width: 60rem) {
+  .kz-hero {
+    grid-template-columns: 1.15fr 0.85fr;
+  }
+}
+.kz-hero::before {
+  content: '';
+  position: absolute;
+  inset: -40% -20% auto -20%;
+  height: 120%;
+  background:
+    radial-gradient(60% 50% at 20% 30%, var(--kz-crimson-glow), transparent 70%),
+    radial-gradient(40% 40% at 85% 20%, rgba(245, 192, 74, 0.12), transparent 70%);
+  filter: blur(40px);
+  z-index: -1;
+  pointer-events: none;
+}
+.kz-hero .eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--kz-crimson);
+  border: 1px solid color-mix(in srgb, var(--kz-crimson) 40%, transparent);
+  border-radius: 999px;
+  padding: 0.3rem 0.8rem;
+  margin-bottom: 1.25rem;
+  background: color-mix(in srgb, var(--kz-crimson) 8%, transparent);
+}
+.kz-hero .eyebrow .dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: var(--kz-crimson);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--kz-crimson) 25%, transparent);
+}
+.kz-hero h1 {
+  font-size: clamp(2.4rem, 6vw, 4rem);
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+  margin: 0 0 1rem;
+  font-weight: 800;
+}
+.kz-hero h1 .kanji {
+  font-weight: 500;
+  color: var(--sl-color-gray-3);
+  font-size: 0.5em;
+  vertical-align: middle;
+  margin-inline-start: 0.4rem;
+}
+.kz-hero h1 .grad {
+  background: linear-gradient(90deg, #ff6b88, var(--kz-crimson) 55%, #ff8fa3);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.kz-hero .tagline {
+  font-size: clamp(1.05rem, 2vw, 1.3rem);
+  color: var(--sl-color-gray-2);
+  max-width: 40rem;
+  margin: 0 0 1.75rem;
+}
+.kz-hero .actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+}
+.kz-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.7rem 1.2rem;
+  border-radius: 0.6rem;
+  font-weight: 600;
+  text-decoration: none;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+  border: 1px solid transparent;
+}
+.kz-btn:hover {
+  transform: translateY(-1px);
+}
+.kz-btn.primary {
+  background: linear-gradient(135deg, #ff4d6d, var(--kz-crimson-deep));
+  color: #fff;
+  box-shadow: 0 8px 24px -8px var(--kz-crimson-glow);
+}
+.kz-btn.primary:hover {
+  box-shadow: 0 12px 28px -8px var(--kz-crimson-glow);
+}
+.kz-btn.secondary {
+  background: var(--kz-surface);
+  color: var(--sl-color-white);
+  border-color: var(--kz-border);
+}
+.kz-btn.secondary:hover {
+  border-color: color-mix(in srgb, var(--kz-crimson) 50%, transparent);
+}
+
+.kz-hero .stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.5rem 2.25rem;
+  margin-top: 2rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--kz-border);
+}
+.kz-hero .stat b {
+  display: block;
+  font-size: 1.4rem;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  color: var(--sl-color-white);
+}
+.kz-hero .stat span {
+  font-size: 0.8rem;
+  color: var(--sl-color-gray-3);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* Terminal card on the right of the hero */
+.kz-terminal {
+  background: #0f1014;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 0.9rem;
+  box-shadow:
+    0 30px 60px -30px rgba(0, 0, 0, 0.7),
+    0 0 0 1px rgba(229, 56, 92, 0.08);
+  overflow: hidden;
+  font-family: var(--sl-font-mono);
+  font-size: 0.8rem;
+}
+:root[data-theme='light'] .kz-terminal {
+  box-shadow: 0 30px 60px -30px rgba(0, 0, 0, 0.35);
+}
+.kz-terminal .bar {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.6rem 0.9rem;
+  background: rgba(255, 255, 255, 0.04);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+.kz-terminal .bar i {
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: 50%;
+  display: inline-block;
+}
+.kz-terminal .bar i:nth-child(1) { background: #ff5f57; }
+.kz-terminal .bar i:nth-child(2) { background: #febc2e; }
+.kz-terminal .bar i:nth-child(3) { background: #28c840; }
+.kz-terminal .bar span {
+  margin-inline-start: auto;
+  color: #6b7080;
+  font-size: 0.72rem;
+}
+.kz-terminal pre {
+  margin: 0;
+  padding: 1rem 1.1rem 1.2rem;
+  color: #d7dae0;
+  line-height: 1.65;
+  overflow-x: auto;
+  white-space: pre;
+}
+.kz-terminal .p { color: #7ee787; }
+.kz-terminal .c { color: #6b7080; }
+.kz-terminal .k { color: #ff7b93; }
+.kz-terminal .t { color: #6b7080; }
+.kz-terminal .i { color: #79c0ff; }
+.kz-terminal .ok { color: #7ee787; }
+.kz-terminal .w { color: #f5c04a; }
+
+/* Feature grid */
+.kz-section {
+  padding: 2.5rem 0 0;
+}
+.kz-section > h2 {
+  font-size: clamp(1.5rem, 3vw, 2rem);
+  letter-spacing: -0.01em;
+  margin: 0 0 0.35rem;
+  border: 0;
+  padding: 0;
+}
+.kz-section > p.lead {
+  color: var(--sl-color-gray-3);
+  margin: 0 0 1.5rem;
+  max-width: 48rem;
+}
+.kz-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  gap: 1rem;
+}
+.kz-card {
+  position: relative;
+  background: var(--kz-surface);
+  border: 1px solid var(--kz-border);
+  border-radius: 0.8rem;
+  padding: 1.15rem 1.2rem;
+  transition: border-color 0.15s ease, transform 0.15s ease;
+}
+.kz-card:hover {
+  border-color: color-mix(in srgb, var(--kz-crimson) 45%, transparent);
+  transform: translateY(-2px);
+}
+.kz-card .icon {
+  font-size: 1.4rem;
+  line-height: 1;
+  margin-bottom: 0.65rem;
+}
+.kz-card h3 {
+  font-size: 1rem;
+  margin: 0 0 0.35rem;
+  font-weight: 700;
+}
+.kz-card p {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--sl-color-gray-3);
+  line-height: 1.55;
+}
+.kz-card a {
+  color: inherit;
+  text-decoration: none;
+}
+.kz-card a::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+}
+
+/* Source logos grid */
+.kz-sources {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  gap: 0.6rem;
+}
+.kz-source {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  background: var(--kz-surface);
+  border: 1px solid var(--kz-border);
+  border-radius: 0.6rem;
+  padding: 0.6rem 0.8rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+.kz-source .sw {
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: 0.2rem;
+  flex: none;
+}
+.kz-source code {
+  margin-inline-start: auto;
+  font-size: 0.7rem;
+  font-weight: 500;
+  color: var(--sl-color-gray-3);
+  background: transparent !important;
+  padding: 0 !important;
+}
+
+/* Comparison table */
+.kz-compare {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  border: 1px solid var(--kz-border);
+  border-radius: 0.8rem;
+  overflow: hidden;
+  font-size: 0.92rem;
+}
+.kz-compare th,
+.kz-compare td {
+  padding: 0.7rem 0.9rem;
+  border-bottom: 1px solid var(--kz-border);
+  text-align: left;
+}
+.kz-compare th {
+  background: var(--kz-surface-2);
+  font-weight: 700;
+}
+.kz-compare tr:last-child td {
+  border-bottom: 0;
+}
+.kz-compare td.kz {
+  background: color-mix(in srgb, var(--kz-crimson) 7%, transparent);
+  font-weight: 600;
+}
+.kz-compare th.kz {
+  color: var(--kz-crimson);
+}
+.kz-yes { color: #3fb950; font-weight: 700; }
+.kz-no { color: var(--sl-color-gray-4); }
+.kz-part { color: var(--kz-gold); font-weight: 700; }
+
+/* Footer extras */
+.kz-footer-note {
+  font-size: 0.85rem;
+  color: var(--sl-color-gray-3);
+  margin-top: 1rem;
+}
+.kz-footer-note a {
+  color: var(--sl-color-gray-2);
+}
+
+/* ---------- Config generator ---------- */
+.kz-gen {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1.25rem;
+  margin-top: 1rem;
+}
+@media (min-width: 72rem) {
+  .kz-gen {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    align-items: start;
+  }
+}
+.kz-gen fieldset {
+  border: 1px solid var(--kz-border);
+  border-radius: 0.8rem;
+  padding: 1rem 1.1rem 1.1rem;
+  margin: 0 0 1rem;
+  background: var(--kz-surface);
+}
+.kz-gen legend {
+  font-weight: 700;
+  padding: 0 0.4rem;
+  color: var(--kz-crimson);
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.kz-gen .row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  gap: 0.75rem;
+}
+.kz-gen label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-size: 0.85rem;
+  color: var(--sl-color-gray-2);
+  font-weight: 500;
+}
+.kz-gen label.check {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  user-select: none;
+}
+.kz-gen input[type='text'],
+.kz-gen input[type='number'],
+.kz-gen input[type='password'],
+.kz-gen select {
+  font: inherit;
+  font-size: 0.9rem;
+  padding: 0.5rem 0.65rem;
+  border-radius: 0.5rem;
+  border: 1px solid var(--kz-border);
+  background: var(--sl-color-black);
+  color: var(--sl-color-white);
+  min-width: 0;
+}
+.kz-gen input:focus,
+.kz-gen select:focus {
+  outline: 2px solid color-mix(in srgb, var(--kz-crimson) 60%, transparent);
+  outline-offset: 1px;
+  border-color: var(--kz-crimson);
+}
+.kz-gen input[type='checkbox'] {
+  accent-color: var(--kz-crimson);
+  width: 1rem;
+  height: 1rem;
+}
+.kz-gen .hint {
+  font-size: 0.75rem;
+  color: var(--sl-color-gray-4);
+  font-weight: 400;
+}
+.kz-gen .sources-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  gap: 0.4rem 0.75rem;
+}
+.kz-gen .tabs {
+  display: flex;
+  gap: 0.25rem;
+  border-bottom: 1px solid var(--kz-border);
+  margin-bottom: 0;
+}
+.kz-gen .tabs button {
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  padding: 0.55rem 0.9rem;
+  background: transparent;
+  color: var(--sl-color-gray-3);
+  border: 0;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  margin-bottom: -1px;
+}
+.kz-gen .tabs button[aria-selected='true'] {
+  color: var(--sl-color-white);
+  border-bottom-color: var(--kz-crimson);
+}
+.kz-gen .out {
+  position: relative;
+  border: 1px solid var(--kz-border);
+  border-top: 0;
+  border-radius: 0 0 0.8rem 0.8rem;
+  background: #0f1014;
+  overflow: hidden;
+}
+.kz-gen .out pre {
+  margin: 0;
+  padding: 1rem 1.1rem;
+  font-family: var(--sl-font-mono);
+  font-size: 0.8rem;
+  line-height: 1.6;
+  color: #d7dae0;
+  overflow: auto;
+  max-height: 34rem;
+  white-space: pre;
+}
+.kz-gen .out .copy {
+  position: absolute;
+  top: 0.6rem;
+  right: 0.6rem;
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.35rem 0.7rem;
+  border-radius: 0.4rem;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.06);
+  color: #fff;
+  cursor: pointer;
+}
+.kz-gen .out .copy:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+.kz-gen .out .copy.done {
+  background: #1f8a4c;
+  border-color: #1f8a4c;
+}
+.kz-gen .warn {
+  margin-top: 0.75rem;
+  font-size: 0.82rem;
+  color: var(--kz-gold);
+}
+.kz-gen .sticky {
+  position: sticky;
+  top: calc(var(--sl-nav-height) + 1rem);
+}
+
+/* ---------- Language switcher note ---------- */
+.kz-lang-note {
+  font-size: 0.8rem;
+  color: var(--sl-color-gray-3);
+  margin: -0.25rem 0 0.75rem;
+}
+
+/* Reduce motion */
+@media (prefers-reduced-motion: reduce) {
+  .kz-card,
+  .kz-btn {
+    transition: none;
+  }
+}

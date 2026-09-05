@@ -1,0 +1,269 @@
+---
+title: Python
+description: Connect a discord.py bot to KizunaLink with Wavelink 3 — play, queue, filters, events, lyrics and KizunaLink's WebSocket extensions.
+sidebar:
+  order: 2
+---
+
+import { Tabs, TabItem, Aside } from '@astrojs/starlight/components';
+
+[Wavelink 3](https://wavelink.dev) is the reference Python client for Lavalink v4 and works with discord.py 2.x (and forks like Pycord and nextcord with minor changes). Everything below runs unchanged against KizunaLink.
+
+## Install
+
+```bash
+pip install -U "discord.py>=2.3" "wavelink>=3.4"
+```
+
+## Connect
+
+```python title="bot.py"
+import logging
+import os
+
+import discord
+import wavelink
+from discord.ext import commands
+
+
+class Bot(commands.Bot):
+    def __init__(self) -> None:
+        intents = discord.Intents.default()
+        intents.message_content = True
+        intents.voice_states = True          # required for the voice handoff
+        super().__init__(command_prefix="!", intents=intents)
+
+    async def setup_hook(self) -> None:
+        node = wavelink.Node(
+            identifier="kizuna-in",
+            uri=os.environ.get("KIZUNA_URI", "http://localhost:2333"),   # http(s)://host:port
+            password=os.environ.get("KIZUNA_PASSWORD", "youshallnotpass"),
+            resume_timeout=60,               # KizunaLink keeps players 60 s after a disconnect
+            retries=None,                    # reconnect forever
+        )
+        await wavelink.Pool.connect(nodes=[node], client=self, cache_capacity=100)
+
+    async def on_ready(self) -> None:
+        logging.info("Logged in as %s (%s)", self.user, self.user.id)
+
+    async def on_wavelink_node_ready(self, payload: wavelink.NodeReadyEventPayload) -> None:
+        logging.info("⛩️ Node %s ready — session %s (resumed=%s)",
+                     payload.node.identifier, payload.session_id, payload.resumed)
+
+
+bot = Bot()
+```
+
+## Play, queue and events
+
+Wavelink ships a client-side queue on every `Player`; the example below uses it (KizunaLink's server-side queue is covered further down).
+
+```python title="cogs/music.py"
+import discord
+import wavelink
+from discord.ext import commands
+
+
+class Music(commands.Cog):
+    def __init__(self, bot: commands.Bot) -> None:
+        self.bot = bot
+
+    # ---------- events ----------
+    @commands.Cog.listener()
+    async def on_wavelink_track_start(self, payload: wavelink.TrackStartEventPayload) -> None:
+        player = payload.player
+        if player and player.home:
+            t = payload.track
+            await player.home.send(f"▶️ **{t.title}** — {t.author}  `[{t.source}]`")
+
+    @commands.Cog.listener()
+    async def on_wavelink_track_end(self, payload: wavelink.TrackEndEventPayload) -> None:
+        # reasons: finished | loadFailed | stopped | replaced | cleanup
+        player = payload.player
+        if player and not player.queue and not player.playing and player.autoplay is wavelink.AutoPlayMode.disabled:
+            await player.disconnect()
+
+    @commands.Cog.listener()
+    async def on_wavelink_track_exception(self, payload: wavelink.TrackExceptionEventPayload) -> None:
+        if payload.player and payload.player.home:
+            await payload.player.home.send(f"⚠️ {payload.exception['message']}")
+
+    # ---------- commands ----------
+    @commands.command()
+    async def play(self, ctx: commands.Context, *, query: str) -> None:
+        if not ctx.author.voice:
+            return await ctx.send("Join a voice channel first.")
+
+        player: wavelink.Player | None = ctx.voice_client
+        if player is None:
+            player = await ctx.author.voice.channel.connect(cls=wavelink.Player, self_deaf=True)
+            player.home = ctx.channel                     # remember where to post updates
+            player.autoplay = wavelink.AutoPlayMode.partial
+
+        # Bare text → JioSaavn (320 kbps). URLs pass straight through.
+        source = None if query.startswith(("http://", "https://")) else "jssearch"
+        tracks = await wavelink.Playable.search(query, source=source)
+        if not tracks:
+            return await ctx.send("Nothing found.")
+
+        if isinstance(tracks, wavelink.Playlist):
+            added = await player.queue.put_wait(tracks)
+            await ctx.send(f"➕ Added playlist **{tracks.name}** ({added} tracks)")
+        else:
+            track = tracks[0]
+            await player.queue.put_wait(track)
+            await ctx.send(f"➕ Queued **{track.title}**")
+
+        if not player.playing:
+            await player.play(player.queue.get(), volume=80)
+
+    @commands.command()
+    async def skip(self, ctx: commands.Context) -> None:
+        if player := ctx.voice_client:
+            await player.skip(force=True)
+            await ctx.message.add_reaction("⏭️")
+
+    @commands.command()
+    async def pause(self, ctx: commands.Context) -> None:
+        if player := ctx.voice_client:
+            await player.pause(not player.paused)
+
+    @commands.command()
+    async def volume(self, ctx: commands.Context, value: int) -> None:
+        if player := ctx.voice_client:
+            await player.set_volume(max(0, min(value, 1000)))
+
+    @commands.command()
+    async def seek(self, ctx: commands.Context, seconds: int) -> None:
+        if player := ctx.voice_client:
+            await player.seek(seconds * 1000)
+
+    @commands.command(aliases=["dc", "leave"])
+    async def stop(self, ctx: commands.Context) -> None:
+        if player := ctx.voice_client:
+            await player.disconnect()
+            await ctx.message.add_reaction("⏹️")
+
+
+async def setup(bot: commands.Bot) -> None:
+    await bot.add_cog(Music(bot))
+```
+
+```python title="bot.py (continued)"
+async def main() -> None:
+    async with bot:
+        await bot.load_extension("cogs.music")
+        await bot.start(os.environ["DISCORD_TOKEN"])
+
+if __name__ == "__main__":
+    import asyncio
+    logging.basicConfig(level=logging.INFO)
+    asyncio.run(main())
+```
+
+<Aside type="note" title="Search prefixes in Wavelink">
+  `wavelink.Playable.search(query, source="jssearch")` prepends `jssearch:` for you. Any KizunaLink prefix works the same way: `spsearch`, `ytsearch`, `ytmsearch`, `amsearch`, `dzsearch`, `scsearch`, `bcsearch`, and `jsrec` for recommendations. Wavelink also has `wavelink.TrackSource.YouTube` etc. constants for the standard ones.
+</Aside>
+
+## Filters
+
+```python
+filters: wavelink.Filters = player.filters
+
+# Nightcore
+filters.timescale.set(speed=1.2, pitch=1.2, rate=1.0)
+
+# Bass boost (Lavalink 15-band EQ; bands 0-2 are lows)
+filters.equalizer.set(bands=[{"band": 0, "gain": 0.25}, {"band": 1, "gain": 0.2}, {"band": 2, "gain": 0.1}])
+
+# 8D
+filters.rotation.set(rotation_hz=0.2)
+
+# Karaoke (vocal cut)
+filters.karaoke.set(level=1.0, mono_level=1.0, filter_band=220.0, filter_width=100.0)
+
+await player.set_filters(filters, seek=True)   # seek=True re-applies at the current position
+
+# Reset
+await player.set_filters(wavelink.Filters(), seek=True)
+```
+
+See the [Filters reference](/api/filters/) for every parameter and its range.
+
+## KizunaLink extensions
+
+### Lyrics
+
+Wavelink has no lyrics helper, but the node exposes an HTTP session for arbitrary calls:
+
+```python
+async def fetch_lyrics(player: wavelink.Player) -> dict | None:
+    node = player.node
+    path = f"/v4/sessions/{node.session_id}/players/{player.guild.id}/track/lyrics"
+    async with node._session.get(f"{node.uri}{path}", headers={"Authorization": node.password}) as resp:
+        if resp.status != 200:
+            return None
+        return await resp.json()
+    # → {"name", "artist", "source": "lrclib", "synced": True, "text": "...", "lines": [{"timestamp": 12340, "line": "..."}]}
+```
+
+```python
+@commands.command()
+async def lyrics(self, ctx: commands.Context) -> None:
+    player: wavelink.Player | None = ctx.voice_client
+    if not player or not player.current:
+        return await ctx.send("Nothing is playing.")
+    data = await fetch_lyrics(player)
+    if not data:
+        return await ctx.send("No lyrics found.")
+    await ctx.send(f"**{data['name']}** — {data['artist']} _(via {data['source']})_\n\n{data['text'][:1800]}")
+```
+
+Or search without a player: `GET /v4/lyrics?query=<text>` or `?trackName=…&artistName=…`.
+
+### Server-side queue over WebSocket
+
+If you'd rather let KizunaLink own the queue (useful for sharded bots), send ops on the node WebSocket. Wavelink keeps the socket on `node._websocket`:
+
+```python
+import json
+
+async def kz_send(node: wavelink.Node, payload: dict) -> None:
+    ws = node._websocket
+    if ws and ws.socket and not ws.socket.closed:
+        await ws.socket.send_str(json.dumps(payload))
+
+# usage
+await kz_send(player.node, {"op": "queueTrack", "guildId": str(guild_id), "encoded": track.encoded})
+await kz_send(player.node, {"op": "skipTrack", "guildId": str(guild_id)})
+await kz_send(player.node, {"op": "loop", "guildId": str(guild_id), "mode": "queue"})   # none|track|queue
+await kz_send(player.node, {"op": "autoplay", "guildId": str(guild_id)})                # toggles
+```
+
+<Aside type="caution">
+  Using KizunaLink's server-side queue and Wavelink's client queue at the same time will fight over what plays next. Pick one: set `player.autoplay = wavelink.AutoPlayMode.disabled` and never call `player.queue` if you go server-side.
+</Aside>
+
+`loop` and `autoplay` are also accepted in the standard player update body — see [Extensions](/api/extensions/).
+
+### All players on the node
+
+```python
+async with node._session.get(f"{node.uri}/v4/players/all", headers={"Authorization": node.password}) as r:
+    data = await r.json()     # {"players": [...], "count": n}
+```
+
+## Pycord / nextcord
+
+Wavelink works with both; replace `commands.Bot` with `discord.Bot` (Pycord) and use slash commands. The node connection code in `setup_hook` (or `on_ready` for Pycord) is identical.
+
+## Alternatives
+
+- **[Lavalink.py](https://github.com/Devoxin/Lavalink.py)** — `lavalink.Client(user_id)` + `client.add_node(host, port, password, region)`. Uses `Authorization` header the same way; nothing KizunaLink-specific to configure.
+- **[Mafic](https://github.com/ooliver1/mafic)** — `NodePool.create_node(host=..., port=..., password=..., label=...)`.
+
+## Tips
+
+- Wavelink's `Playable.source` is the `sourceName` from KizunaLink (`jiosaavn`, `youtube`, `spotify`, …). Use it for icons/branding.
+- `player.ping` is the voice-gateway latency measured by KizunaLink; `-1` means not connected yet.
+- Set `KIZUNA_URI=https://…` and Wavelink switches to `wss://` automatically when you terminate TLS in front of KizunaLink.
