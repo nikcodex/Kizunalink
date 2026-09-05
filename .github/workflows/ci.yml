@@ -2,7 +2,10 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    # TEMPORARY: arena/01a06f22-kizunalink added so the diagnostic below can run
+    # on this branch (workflow_dispatch is not permitted for this token, and no
+    # PR may be opened). Revert to [main] once the Test hang is diagnosed.
+    branches: [main, arena/01a06f22-kizunalink]
   pull_request:
     branches: [main]
   workflow_dispatch:
