@@ -43,6 +43,14 @@ jobs:
         with:
           name: clippy-log
           path: clippy.log
+      - if: always()
+        name: Publish Clippy diagnostics
+        run: |
+          if [[ -s clippy.log ]]; then
+            base64 -w0 clippy.log | fold -w 60000 | while IFS= read -r chunk; do
+              echo "::error file=clippy.log,title=Clippy diagnostics::$chunk"
+            done
+          fi
 
   fmt:
     name: Format
@@ -64,6 +72,14 @@ jobs:
         with:
           name: rustfmt-patch
           path: rustfmt.patch
+      - if: always()
+        name: Publish formatting patch
+        run: |
+          if [[ -s rustfmt.patch ]]; then
+            base64 -w0 rustfmt.patch | fold -w 60000 | while IFS= read -r chunk; do
+              echo "::error file=rustfmt.patch,title=Rustfmt patch::$chunk"
+            done
+          fi
       - run: git diff --exit-code
 
   test:
@@ -84,6 +100,14 @@ jobs:
         with:
           name: test-log
           path: test.log
+      - if: always()
+        name: Publish test diagnostics
+        run: |
+          if [[ -s test.log ]]; then
+            base64 -w0 test.log | fold -w 60000 | while IFS= read -r chunk; do
+              echo "::error file=test.log,title=Test diagnostics::$chunk"
+            done
+          fi
 
   build-release:
     name: Build Release
