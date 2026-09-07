@@ -77,7 +77,9 @@ pub struct StatsPayload {
     pub uptime: u64,
     pub memory: MemoryStats,
     pub cpu: CpuStats,
-    #[serde(rename = "frameStats", skip_serializing_if = "Option::is_none")]
+    /// Lavalink v4: `null` when the node has no players, and always `null` on
+    /// `GET /v4/stats`. The key itself is always present on the wire.
+    #[serde(rename = "frameStats")]
     pub frame_stats: Option<FrameStats>,
 }
 
@@ -113,6 +115,9 @@ pub struct VersionInfo {
     pub patch: u32,
     #[serde(rename = "preRelease")]
     pub pre_release: Option<String>,
+    /// Semver build metadata. Lavalink v4's `/v4/info` always emits this key
+    /// (`"build": null` when there is none), so it must be present on the wire.
+    pub build: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

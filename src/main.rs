@@ -76,6 +76,16 @@ async fn main() {
         config.server.host, config.server.port
     );
 
+    // Every REST and WebSocket endpoint authenticates with this password, and the
+    // shipped default is Lavalink's well-known one.
+    if config::is_default_password(&config.server.password) {
+        warn!(
+            "Using the well-known default password '{}'. Set KIZUNA_PASSWORD or \
+             server.password in config.toml before exposing this instance.",
+            config::DEFAULT_PASSWORD
+        );
+    }
+
     // Initialize the Session Manager, capped by the configured max_connections
     let session_manager = Arc::new(kizunalink::ws::session::SessionManager::new(
         config.server.max_connections,
@@ -99,6 +109,9 @@ async fn main() {
     config::init_security(config.security.clone());
     // Initialize the outbound HTTP request timeout from configuration
     config::init_request_timeout(config.server.request_timeout_secs);
+    // Local file playback is opt-in: the playback path enforces this flag because
+    // a track's stream URL can come from unsigned client input.
+    config::init_local_sources(config.sources.local);
 
     let jiosaavn = JioSaavnSource::new();
     let youtube = YouTubeSource::new(route_planner.clone());
@@ -126,7 +139,6 @@ async fn main() {
         config.sources.clone(),
     ));
 
-    let dave_manager = dave::DaveManager::new();
     let rate_limiter = RateLimiter::new(RateLimitConfig {
         max_requests: config.ratelimit.max_requests,
         window: std::time::Duration::from_secs(config.ratelimit.window_secs),
@@ -147,7 +159,6 @@ async fn main() {
         apple_music,
         deezer,
         session_manager,
-        dave_manager,
         route_planner,
         rate_limiter,
         password,
@@ -195,7 +206,6 @@ async fn main() {
             get(rest::lyrics::get_player_current_lyrics),
         )
         .route("/v4/sessions", get(rest::sessions::list_sessions))
-        .route("/v4/metrics", get(rest::metrics::get_metrics))
         .route(
             "/v4/routeplanner/status",
             get(rest::routeplanner::get_routeplanner_status),
@@ -209,7 +219,18 @@ async fn main() {
             post(rest::routeplanner::free_routeplanner_all),
         )
         .route("/", get(|| async { VERSION }))
-        .route("/v4/websocket", get(ws::handler::ws_handler))
+        .route("/v4/websocket", get(ws::handler::ws_handler));
+
+    // `[metrics] enabled` was parsed but never consulted: the Prometheus
+    // endpoint was served even when metrics were disabled.
+    let app = if config.metrics.enabled {
+        app.route("/v4/metrics", get(rest::metrics::get_metrics))
+    } else {
+        info!("Metrics disabled by configuration; /v4/metrics is not served");
+        app
+    };
+
+    let app = app
         .layer(tower_http::limit::RequestBodyLimitLayer::new(
             config.security.max_body_size,
         ))
@@ -248,11 +269,7 @@ async fn main() {
                     "systemLoad": cpu.system_load,
                     "lavalinkLoad": cpu.lavalink_load
                 },
-                "frameStats": {
-                    "sent": crate::stats::FrameCounters::global().sent.load(std::sync::atomic::Ordering::Relaxed),
-                    "nulled": crate::stats::FrameCounters::global().nulled.load(std::sync::atomic::Ordering::Relaxed),
-                    "deficit": crate::stats::FrameCounters::global().deficit.load(std::sync::atomic::Ordering::Relaxed)
-                }
+                "frameStats": crate::stats::FrameCounters::ws_frame_stats(total_players)
             });
 
             let _ = stats_state.event_tx.send(stats.to_string());

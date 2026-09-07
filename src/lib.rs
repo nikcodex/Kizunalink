@@ -1,5 +1,4 @@
 pub mod config;
-pub mod dave;
 pub mod dsp;
 pub mod metrics;
 pub mod models;
@@ -41,7 +40,6 @@ pub struct AppState {
     pub apple_music: Arc<AppleMusicSource>,
     pub deezer: Arc<DeezerSource>,
     pub session_manager: Arc<SessionManager>,
-    pub dave_manager: dave::DaveManager,
     pub route_planner: Option<Arc<RoutePlanner>>,
     pub rate_limiter: Arc<RateLimiter>,
     pub password: String,

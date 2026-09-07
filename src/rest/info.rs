@@ -55,6 +55,7 @@ pub async fn get_info(
             minor: env!("CARGO_PKG_VERSION_MINOR").parse().unwrap_or(2),
             patch: env!("CARGO_PKG_VERSION_PATCH").parse().unwrap_or(1),
             pre_release: None,
+            build: None,
         },
         build_time: BUILD_TIME,
         git: GitInfo {

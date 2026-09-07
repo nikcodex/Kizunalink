@@ -9,6 +9,10 @@ pub struct AutoplayEngine {
     pub enabled: bool,
     recent_tracks: VecDeque<String>,
     played_ids: HashSet<String>,
+    /// Insertion order for `played_ids`. A `HashSet` iterator yields an
+    /// arbitrary order, so without this the eviction of already-played ids was
+    /// nondeterministic (which ids survived changed run to run).
+    played_order: VecDeque<String>,
     max_history: usize,
     max_played: usize,
 }
@@ -19,6 +23,7 @@ impl AutoplayEngine {
             enabled: false,
             recent_tracks: VecDeque::new(),
             played_ids: HashSet::new(),
+            played_order: VecDeque::new(),
             max_history: 20,
             max_played: 50,
         }
@@ -55,18 +60,22 @@ impl AutoplayEngine {
         if self.recent_tracks.len() > self.max_history {
             self.recent_tracks.pop_front();
         }
-        self.played_ids.insert(track.info.identifier.clone());
-        if self.played_ids.len() > self.max_played {
-            let oldest: Vec<String> = self.played_ids.iter().take(10).cloned().collect();
-            for id in &oldest {
-                self.played_ids.remove(id);
-            }
+        let identifier = track.info.identifier.clone();
+        if self.played_ids.insert(identifier.clone()) {
+            self.played_order.push_back(identifier);
+        }
+        while self.played_ids.len() > self.max_played {
+            let Some(oldest) = self.played_order.pop_front() else {
+                break;
+            };
+            self.played_ids.remove(&oldest);
         }
     }
 
     pub fn clear(&mut self) {
         self.recent_tracks.clear();
         self.played_ids.clear();
+        self.played_order.clear();
     }
 
     pub async fn get_recommendation(
@@ -242,13 +251,38 @@ fn normalize_title(title: &str) -> String {
 
 fn get_main_artist(artist: &str) -> String {
     let separators = [" feat ", " ft ", " & ", " x ", " vs ", " versus "];
-    let lower = artist.to_lowercase();
     for sep in &separators {
-        if let Some(idx) = lower.find(sep) {
+        if let Some(idx) = find_ci_ascii(artist, sep) {
             return artist[..idx].trim().to_string();
         }
     }
     artist.to_string()
+}
+
+/// Case-insensitive search for an ASCII `needle`, returning a byte offset in
+/// `haystack` that is guaranteed to be a char boundary.
+///
+/// The previous implementation searched the *lowercased* string and then sliced
+/// the original at that byte offset. `str::to_lowercase` can change a string's
+/// byte length (e.g. `İ` becomes two chars), so the offset was not necessarily a
+/// boundary in the original — slicing there panics, and artist names come from
+/// remote track metadata.
+fn find_ci_ascii(haystack: &str, needle: &str) -> Option<usize> {
+    let needle_chars: Vec<char> = needle.chars().map(|c| c.to_ascii_lowercase()).collect();
+    let chars: Vec<(usize, char)> = haystack.char_indices().collect();
+    if needle_chars.is_empty() || chars.len() < needle_chars.len() {
+        return None;
+    }
+    for start in 0..=chars.len() - needle_chars.len() {
+        let matches = chars[start..start + needle_chars.len()]
+            .iter()
+            .zip(&needle_chars)
+            .all(|((_, hc), nc)| hc.to_ascii_lowercase() == *nc);
+        if matches {
+            return Some(chars[start].0);
+        }
+    }
+    None
 }
 
 fn are_artists_related(artist1: &str, artist2: &str) -> bool {
@@ -299,4 +333,173 @@ fn levenshtein_ratio(a: &str, b: &str) -> f64 {
 
     let max_len = a_len.max(b_len);
     1.0 - (matrix[a_len][b_len] as f64 / max_len as f64)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::track::{LavalinkTrack, TrackInfo};
+
+    fn track(identifier: &str, title: &str, author: &str) -> LavalinkTrack {
+        LavalinkTrack {
+            encoded: format!("encoded-{}", identifier),
+            info: TrackInfo {
+                identifier: identifier.to_string(),
+                is_seekable: true,
+                author: author.to_string(),
+                length: 200_000,
+                is_stream: false,
+                position: 0,
+                title: title.to_string(),
+                uri: Some(format!("https://example.test/{}", identifier)),
+                artwork_url: None,
+                isrc: None,
+                source_name: "youtube".to_string(),
+            },
+            plugin_info: serde_json::json!({}),
+            // Lavalink v4 types both fields as objects, so fixtures must not use
+            // null: the server never emits `"userData": null`.
+            user_data: serde_json::json!({}),
+        }
+    }
+
+    #[test]
+    fn test_get_main_artist_strips_feature_separators() {
+        // "feat." (with a dot) is not a separator, so the name is left alone.
+        let dotted = get_main_artist("Artist feat. Someone");
+        assert_eq!(dotted, "Artist feat. Someone");
+        assert_eq!(get_main_artist("Artist feat Someone"), "Artist");
+        assert_eq!(get_main_artist("Artist FEAT Someone"), "Artist");
+        assert_eq!(get_main_artist("Artist & Other"), "Artist");
+        assert_eq!(get_main_artist("Artist x Other"), "Artist");
+        assert_eq!(get_main_artist("Artist versus Other"), "Artist");
+        assert_eq!(get_main_artist("Plain Artist"), "Plain Artist");
+    }
+
+    #[test]
+    fn test_get_main_artist_survives_multibyte_artist_names() {
+        // U+212A (KELVIN SIGN) lowercases to a single ASCII "k", shrinking the
+        // lowercased copy by two bytes. The old implementation searched that
+        // lowercased copy and then sliced the *original* at the resulting byte
+        // offset, which landed inside the 3-byte euro sign below and panicked
+        // with "byte index 4 is not a char boundary".
+        let kelvin = "\u{212A}\u{20AC} feat Someone";
+        assert_eq!(get_main_artist(kelvin), "\u{212A}\u{20AC}");
+
+        // U+0130 lowercases to two chars, growing the lowercased copy: the old
+        // offset pointed one byte too far and produced a mangled artist name.
+        assert_eq!(get_main_artist("İstanbul feat Someone"), "İstanbul");
+
+        let cjk = "アーティスト feat 誰か";
+        assert_eq!(get_main_artist(cjk), "アーティスト");
+
+        let emoji = "🎧 Artist x DJ";
+        assert_eq!(get_main_artist(emoji), "🎧 Artist");
+    }
+
+    #[test]
+    fn test_find_ci_ascii_returns_char_boundaries() {
+        assert_eq!(find_ci_ascii("aBc", "b"), Some(1));
+        assert_eq!(find_ci_ascii("Artist FT Other", " ft "), Some(6));
+        assert_eq!(find_ci_ascii("no match", " ft "), None);
+        assert_eq!(find_ci_ascii("", " ft "), None);
+        assert_eq!(find_ci_ascii("anything", ""), None);
+
+        // Offset must index the start of a char, never its interior.
+        let idx = find_ci_ascii("日本語 FT other", " ft ").expect("match");
+        assert_eq!(&"日本語 FT other"[..idx], "日本語");
+    }
+
+    #[test]
+    fn test_record_track_bounds_history_and_played_ids() {
+        let mut engine = AutoplayEngine::new();
+        for i in 0..80 {
+            let played = track(&format!("id-{}", i), &format!("Song {}", i), "Artist");
+            engine.record_track(&played);
+        }
+        // Both collections stay bounded regardless of how many tracks are played.
+        assert!(engine.recent_tracks.len() <= 20);
+        assert!(engine.played_ids.len() <= 50);
+        assert!(!engine.played_ids.is_empty());
+        // The most recent title is always retained in the ring buffer.
+        let recent = "song 79 artist".to_string();
+        assert!(engine.recent_tracks.contains(&recent));
+        // Eviction is FIFO: exactly the newest `max_played` ids survive.
+        assert!(engine.played_ids.contains("id-79"));
+        assert!(engine.played_ids.contains("id-30"));
+        assert!(!engine.played_ids.contains("id-29"));
+        assert!(!engine.played_ids.contains("id-0"));
+        assert_eq!(engine.played_ids.len(), engine.played_order.len());
+
+        engine.clear();
+        assert!(engine.recent_tracks.is_empty());
+        assert!(engine.played_ids.is_empty());
+        assert!(engine.played_order.is_empty());
+    }
+
+    #[test]
+    fn test_is_duplicate_matches_recent_tracks() {
+        let mut engine = AutoplayEngine::new();
+        engine.record_track(&track("a", "Song Title (Official Music Video)", "Artist"));
+
+        // One edit away from the recorded title => treated as a duplicate.
+        let near_duplicate = "song title (official music video) artis";
+        assert!(engine.is_duplicate(near_duplicate));
+        // Completely unrelated input is not a duplicate.
+        assert!(!engine.is_duplicate("zzz qqq xxx www vvv"));
+    }
+
+    #[test]
+    fn test_normalize_title_strips_stop_words() {
+        assert_eq!(normalize_title("Song  [Official Video] 4K"), "song video");
+        assert_eq!(normalize_title("Song (Lyrics)"), "song");
+    }
+
+    #[test]
+    fn test_levenshtein_ratio_edge_cases() {
+        assert_eq!(levenshtein_ratio("", ""), 1.0);
+        assert_eq!(levenshtein_ratio("abc", ""), 0.0);
+        assert_eq!(levenshtein_ratio("", "abc"), 0.0);
+        assert_eq!(levenshtein_ratio("abc", "abc"), 1.0);
+        assert_eq!(levenshtein_ratio("abc", "abd"), 1.0 - 1.0 / 3.0);
+        // Multi-byte input must be measured in chars, not bytes.
+        assert_eq!(levenshtein_ratio("日本語", "日本語"), 1.0);
+    }
+
+    #[test]
+    fn test_are_artists_related() {
+        assert!(are_artists_related("Artist", "artist"));
+        assert!(are_artists_related(
+            "Artist feat Someone",
+            "Artist ft Other"
+        ));
+        assert!(are_artists_related("Artist", "Artists"));
+        assert!(!are_artists_related("Artist", "Completely Different"));
+    }
+
+    #[test]
+    fn test_score_track_prefers_related_artist_and_matching_source() {
+        let engine = AutoplayEngine::new();
+        let candidate = track("c", "Song", "Artist");
+
+        let related = engine.score_track(&candidate, "Artist", 200_000, "youtube");
+        assert!(related >= 60.0);
+
+        // Unrelated artist is penalised below the 40.0 acceptance threshold.
+        let other_artist = "Someone Else";
+        let unrelated = engine.score_track(&candidate, other_artist, 200_000, "youtube");
+        assert!(unrelated < 40.0);
+    }
+
+    #[test]
+    fn test_enable_disable_toggle() {
+        let mut engine = AutoplayEngine::new();
+        assert!(!engine.enabled);
+        assert!(engine.toggle());
+        engine.enable();
+        assert!(engine.enabled);
+        engine.disable();
+        assert!(!engine.enabled);
+        assert!(engine.toggle());
+    }
 }

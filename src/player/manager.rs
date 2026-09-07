@@ -52,7 +52,11 @@ impl std::fmt::Display for PlayerManagerError {
 impl std::error::Error for PlayerManagerError {}
 
 pub struct PlayerManager {
-    players: DashMap<String, PlayerEntry>,
+    /// Shared so that the shallow clone handed back by [`PlayerManager::new`]
+    /// and the clone owned by the background track-end task observe exactly the
+    /// same map. A plain `DashMap` here would be *copied* by `clone_shallow`,
+    /// leaving the track-end task looking at a permanently empty map.
+    players: Arc<DashMap<String, PlayerEntry>>,
     /// Serializes player creation so that the player-limit check and the
     /// ownership claim are atomic (no check-then-act races).
     creation_lock: Arc<Mutex<()>>,
@@ -90,7 +94,7 @@ impl PlayerManager {
         let (track_end_tx, mut track_end_rx) = mpsc::unbounded_channel::<String>();
 
         let manager = Self {
-            players: DashMap::new(),
+            players: Arc::new(DashMap::new()),
             creation_lock: Arc::new(Mutex::new(())),
             max_players,
             bot_user_id: Arc::new(RwLock::new("0".to_string())),
@@ -372,7 +376,47 @@ impl PlayerManager {
             player.set_paused(paused).await;
         }
 
-        player.end_time = payload.end_time;
+        // `endTime` is only touched when the client actually sent the field.
+        // Assigning `payload.end_time` unconditionally silently dropped a
+        // previously configured end time on every unrelated PATCH (volume,
+        // pause, filters, ...), because an omitted field and an explicit `null`
+        // both deserialize to `None`.
+        if let Some(end_time) = payload.end_time {
+            player.end_time = Some(end_time);
+            player.end_time_generation += 1;
+            let generation = player.end_time_generation;
+
+            // Enforce it: Lavalink ends the track once playback reaches the
+            // requested position. The value used to be stored but never acted
+            // on. The watchdog is armed here (rather than on every PATCH) so
+            // there is exactly one per requested end time, and the captured
+            // generation invalidates the previous one when the end time is
+            // re-scheduled or the track changes.
+            if player.queue.current.is_some() {
+                let position = player.get_position();
+                if end_time > position {
+                    let delay = std::time::Duration::from_millis(end_time - position);
+                    let tx = self.track_end_tx.clone();
+                    let gid = guild_id.to_string();
+                    let handle = player_arc.clone();
+                    tokio::spawn(async move {
+                        tokio::time::sleep(delay).await;
+                        let due = {
+                            let p = handle.read().await;
+                            p.end_time == Some(end_time)
+                                && p.end_time_generation == generation
+                                && p.get_position() >= end_time
+                        };
+                        if due {
+                            let _ = tx.send(gid);
+                        }
+                    });
+                } else {
+                    // Already at or past the requested end position.
+                    let _ = self.track_end_tx.send(guild_id.to_string());
+                }
+            }
+        }
 
         if let Some(filters) = payload.filters {
             player.filters = filters;
@@ -449,7 +493,8 @@ impl PlayerManager {
             }
             // SSRF protection: validate URL before creating HTTP track
             if let Err(e) = crate::security::validate_url(clean) {
-                warn!("SSRF blocked in resolve_identifier for '{}': {}", clean, e);
+                let safe = crate::security::sanitize_for_log(clean);
+                warn!("SSRF blocked in resolve_identifier for '{}': {}", safe, e);
                 return None;
             }
             return Some(crate::util::create_http_track(clean));
@@ -536,7 +581,8 @@ impl PlayerManager {
                     .resolve_stream_url(&first_js.info.identifier)
                     .await
                 {
-                    info!("⚡ Spotify->JioSaavn 320kbps for '{}'", track.info.title);
+                    let safe_title = crate::security::sanitize_for_log(&track.info.title);
+                    info!("⚡ Spotify->JioSaavn 320kbps for '{}'", safe_title);
                     return Some(url);
                 }
             }
@@ -570,7 +616,8 @@ impl PlayerManager {
                     .resolve_stream_url(&first_yt.info.identifier)
                     .await
                 {
-                    info!("⚡ Spotify->YouTube for '{}'", track.info.title);
+                    let safe_title = crate::security::sanitize_for_log(&track.info.title);
+                    info!("⚡ Spotify->YouTube for '{}'", safe_title);
                     return Some(url);
                 }
             }
@@ -594,7 +641,8 @@ impl PlayerManager {
                     .resolve_stream_url(&first_js.info.identifier)
                     .await
                 {
-                    info!("⚡ Deezer->JioSaavn for '{}'", track.info.title);
+                    let safe_title = crate::security::sanitize_for_log(&track.info.title);
+                    info!("⚡ Deezer->JioSaavn for '{}'", safe_title);
                     return Some(url);
                 }
             }
@@ -610,7 +658,8 @@ impl PlayerManager {
                         .resolve_stream_url(&yt_track.info.identifier)
                         .await
                     {
-                        info!("⚡ Deezer->YouTube via ISRC for '{}'", track.info.title);
+                        let safe_title = crate::security::sanitize_for_log(&track.info.title);
+                        info!("⚡ Deezer->YouTube via ISRC for '{}'", safe_title);
                         return Some(url);
                     }
                 }
@@ -625,7 +674,8 @@ impl PlayerManager {
                     .resolve_stream_url(&first_yt.info.identifier)
                     .await
                 {
-                    info!("⚡ Deezer->YouTube for '{}'", track.info.title);
+                    let safe_title = crate::security::sanitize_for_log(&track.info.title);
+                    info!("⚡ Deezer->YouTube for '{}'", safe_title);
                     return Some(url);
                 }
             }
@@ -660,7 +710,8 @@ impl PlayerManager {
                     .resolve_stream_url(&first_js.info.identifier)
                     .await
                 {
-                    info!("⚡ AppleMusic->JioSaavn for '{}'", track.info.title);
+                    let safe_title = crate::security::sanitize_for_log(&track.info.title);
+                    info!("⚡ AppleMusic->JioSaavn for '{}'", safe_title);
                     return Some(url);
                 }
             }
@@ -676,7 +727,8 @@ impl PlayerManager {
                         .resolve_stream_url(&yt_track.info.identifier)
                         .await
                     {
-                        info!("⚡ AppleMusic->YouTube via ISRC for '{}'", track.info.title);
+                        let safe_title = crate::security::sanitize_for_log(&track.info.title);
+                        info!("⚡ AppleMusic->YouTube via ISRC for '{}'", safe_title);
                         return Some(url);
                     }
                 }
@@ -691,7 +743,8 @@ impl PlayerManager {
                     .resolve_stream_url(&first_yt.info.identifier)
                     .await
                 {
-                    info!("⚡ AppleMusic->YouTube for '{}'", track.info.title);
+                    let safe_title = crate::security::sanitize_for_log(&track.info.title);
+                    info!("⚡ AppleMusic->YouTube for '{}'", safe_title);
                     return Some(url);
                 }
             }
@@ -892,8 +945,12 @@ impl PlayerManager {
                 );
             }
 
+            // `get_next_track_for_autoplay` consumes `queue.current`, so re-reading
+            // it afterwards always yields `None` and the autoplay branch below
+            // could never run. Seed the recommendation from the track that just
+            // finished instead.
             let next = player.get_next_track_for_autoplay();
-            let last = player.queue.current.clone();
+            let last = finished_track;
             let autoplay = player.autoplay.enabled;
             (next, last, autoplay)
         };

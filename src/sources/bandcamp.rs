@@ -13,9 +13,12 @@ pub struct BandcampSource {
 impl BandcampSource {
     pub fn new() -> Arc<Self> {
         Arc::new(Self {
+            // Every other source caps its HTTP client; without a timeout a hung
+            // upstream keeps the request (and its task) alive indefinitely.
             client: crate::config::global_proxy()
                 .apply_to_builder(Client::builder())
                 .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+                .timeout(crate::config::source_timeout_secs(10))
                 .build()
                 .unwrap_or_default(),
         })

@@ -1,7 +1,9 @@
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::OnceLock;
+use std::time::Duration;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
@@ -262,6 +264,48 @@ pub fn http_client() -> reqwest::Client {
         .expect("Failed to build HTTP client")
 }
 
+/// Outbound timeout used by the per-source HTTP clients.
+///
+/// Sources keep their own tight default (5-10s) but honour
+/// `server.request_timeout_secs` as an upper bound, so lowering the configured
+/// value now applies to every outbound client instead of only to the ones built
+/// through [`http_client`].
+pub fn source_timeout_secs(default_secs: u64) -> Duration {
+    bounded_timeout(Duration::from_secs(default_secs), global_request_timeout())
+}
+
+/// Pure part of [`source_timeout_secs`]: the tighter of the source default and
+/// the configured limit.
+pub fn bounded_timeout(default: Duration, configured: Duration) -> Duration {
+    default.min(configured)
+}
+
+static GLOBAL_LOCAL_SOURCES: AtomicBool = AtomicBool::new(false);
+
+/// Initialize whether the local file source (`sources.local`) is enabled.
+pub fn init_local_sources(enabled: bool) {
+    GLOBAL_LOCAL_SOURCES.store(enabled, Ordering::Relaxed);
+}
+
+/// Whether playback may open local files (`file://` URLs and absolute paths).
+///
+/// Defaults to `false`, matching the shipped `config.toml`. `/v4/loadtracks`
+/// already refuses local identifiers when the source is disabled, but an encoded
+/// track is unsigned client input, so the playback path has to honour the flag
+/// too — otherwise a forged track could stream arbitrary files from disk.
+pub fn local_sources_enabled() -> bool {
+    GLOBAL_LOCAL_SOURCES.load(Ordering::Relaxed)
+}
+
+/// Lavalink's well-known default password, also the value shipped in `config.toml`.
+pub const DEFAULT_PASSWORD: &str = "youshallnotpass";
+
+/// Whether `password` is the well-known default (or empty). Every REST and
+/// WebSocket endpoint authenticates with this value, so startup warns about it.
+pub fn is_default_password(password: &str) -> bool {
+    password.is_empty() || password == DEFAULT_PASSWORD
+}
+
 static GLOBAL_SECURITY: OnceLock<SecurityConfig> = OnceLock::new();
 
 /// Initialize the global security config (call once at startup).
@@ -280,7 +324,7 @@ impl Default for AppConfig {
             server: ServerConfig {
                 host: "0.0.0.0".to_string(),
                 port: 2333,
-                password: "youshallnotpass".to_string(),
+                password: DEFAULT_PASSWORD.to_string(),
                 max_connections: default_max_connections(),
                 request_timeout_secs: default_request_timeout(),
                 queue_max_history: default_queue_max_history(),
@@ -409,5 +453,43 @@ mod tests {
         // Zero/invalid values are clamped to a positive timeout.
         init_request_timeout(0);
         assert_eq!(global_request_timeout(), std::time::Duration::from_secs(1));
+    }
+
+    /// `server.request_timeout_secs` must be able to tighten the per-source
+    /// clients, while a larger configured value keeps the source default.
+    /// Tested through the pure helper: the process-wide timeout global is set by
+    /// `test_request_timeout_global` above, so reading it here would be racy.
+    #[test]
+    fn test_bounded_timeout_uses_tighter_value() {
+        assert_eq!(
+            bounded_timeout(Duration::from_secs(10), Duration::from_secs(30)),
+            Duration::from_secs(10)
+        );
+        assert_eq!(
+            bounded_timeout(Duration::from_secs(10), Duration::from_secs(3)),
+            Duration::from_secs(3)
+        );
+        assert_eq!(
+            bounded_timeout(Duration::from_secs(5), Duration::from_secs(5)),
+            Duration::from_secs(5)
+        );
+    }
+
+    /// The flag is process-wide, so this only pins the documented default; the
+    /// enabled/disabled behaviour itself is covered by
+    /// `security::classify_stream_url`, which takes the flag as an argument.
+    #[test]
+    fn test_local_sources_default_to_disabled() {
+        init_local_sources(false);
+        assert!(!local_sources_enabled());
+    }
+
+    #[test]
+    fn test_is_default_password() {
+        assert!(is_default_password("youshallnotpass"));
+        assert!(is_default_password(""));
+        assert!(!is_default_password("correct-horse-battery-staple"));
+        // Case-sensitive: a different password is not the default.
+        assert!(!is_default_password("YouShallNotPass"));
     }
 }

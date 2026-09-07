@@ -68,7 +68,7 @@ impl YouTubeSource {
         let default_client = crate::config::global_proxy()
             .apply_to_builder(reqwest::Client::builder())
             .default_headers(headers)
-            .timeout(std::time::Duration::from_secs(10))
+            .timeout(crate::config::source_timeout_secs(10))
             .build()
             .expect("Failed to build Reqwest client for YouTube");
 

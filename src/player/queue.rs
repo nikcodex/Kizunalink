@@ -69,10 +69,7 @@ impl TrackQueue {
             LoopMode::None => {
                 // Move current to history first
                 if let Some(current) = self.current.take() {
-                    self.previous.push_back(current);
-                    if self.previous.len() > self.max_history {
-                        self.previous.pop_front();
-                    }
+                    self.push_history(current);
                 }
                 self.tracks.pop_front()
             }
@@ -81,6 +78,14 @@ impl TrackQueue {
 
     pub fn previous_track(&mut self) -> Option<LavalinkTrack> {
         self.previous.pop_back()
+    }
+
+    /// Record a finished/skipped track in the bounded played-history stack.
+    pub fn push_history(&mut self, track: LavalinkTrack) {
+        self.previous.push_back(track);
+        if self.previous.len() > self.max_history {
+            self.previous.pop_front();
+        }
     }
 
     pub fn clear(&mut self) {
@@ -194,5 +199,18 @@ mod tests {
         // Followed by track 2 again
         let track2_again = queue.next_track().unwrap();
         assert_eq!(track2_again.info.identifier, "2");
+    }
+
+    #[test]
+    fn test_push_history_is_bounded_and_lifo() {
+        let mut queue = TrackQueue::new(2);
+        queue.push_history(make_test_track("a"));
+        queue.push_history(make_test_track("b"));
+        queue.push_history(make_test_track("c"));
+
+        // Newest first, and the oldest entry is evicted once max_history is hit.
+        assert_eq!(queue.previous_track().unwrap().info.identifier, "c");
+        assert_eq!(queue.previous_track().unwrap().info.identifier, "b");
+        assert!(queue.previous_track().is_none());
     }
 }

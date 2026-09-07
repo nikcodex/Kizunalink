@@ -179,14 +179,20 @@ impl RateLimitConfig {
 }
 
 /// Extract client IP from request headers or peer address.
+///
+/// Forwarding headers are attacker-supplied, so a candidate is only accepted
+/// when it parses as an IP literal. Accepting arbitrary strings here turned the
+/// header into an unbounded key space for the rate limiter's per-peer map (a
+/// client could allocate a fresh bucket with every request) and let non-IP junk
+/// leak into logs.
 pub fn extract_ip(headers: &axum::http::HeaderMap, fallback: &str) -> String {
     // Check X-Forwarded-For first (for reverse proxies)
     if let Some(forwarded) = headers.get("x-forwarded-for") {
         if let Ok(val) = forwarded.to_str() {
             if let Some(first) = val.split(',').next() {
-                let ip = first.trim().to_string();
-                if !ip.is_empty() {
-                    return ip;
+                let ip = first.trim();
+                if ip.parse::<std::net::IpAddr>().is_ok() {
+                    return ip.to_string();
                 }
             }
         }
@@ -195,12 +201,77 @@ pub fn extract_ip(headers: &axum::http::HeaderMap, fallback: &str) -> String {
     // Check X-Real-IP
     if let Some(real_ip) = headers.get("x-real-ip") {
         if let Ok(val) = real_ip.to_str() {
-            let ip = val.trim().to_string();
-            if !ip.is_empty() {
-                return ip;
+            let ip = val.trim();
+            if ip.parse::<std::net::IpAddr>().is_ok() {
+                return ip.to_string();
             }
         }
     }
 
     fallback.to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::http::{HeaderMap, HeaderValue};
+
+    #[test]
+    fn test_extract_ip_accepts_valid_literals() {
+        let forwarded = HeaderValue::from_static("203.0.113.7, 10.0.0.1");
+        let mut headers = HeaderMap::new();
+        headers.insert("x-forwarded-for", forwarded);
+        assert_eq!(extract_ip(&headers, "0.0.0.0"), "203.0.113.7");
+
+        let real_ip = HeaderValue::from_static("2001:db8::1");
+        let mut headers = HeaderMap::new();
+        headers.insert("x-real-ip", real_ip);
+        assert_eq!(extract_ip(&headers, "0.0.0.0"), "2001:db8::1");
+    }
+
+    #[test]
+    fn test_extract_ip_rejects_non_ip_values() {
+        // Arbitrary attacker-chosen strings must never become rate-limit keys.
+        let values = [
+            "not-an-ip",
+            "",
+            "1.2.3.4.5",
+            "1.2.3",
+            "rate-limit-bypass-12345",
+            "0.0.0.0/0",
+            "::1::2",
+        ];
+        for value in values {
+            let header = HeaderValue::from_str(value).expect("valid header value");
+            let mut headers = HeaderMap::new();
+            headers.insert("x-forwarded-for", header.clone());
+            headers.insert("x-real-ip", header);
+            assert_eq!(extract_ip(&headers, "0.0.0.0"), "0.0.0.0");
+        }
+    }
+
+    #[test]
+    fn test_extract_ip_falls_back_when_headers_missing() {
+        let headers = HeaderMap::new();
+        assert_eq!(extract_ip(&headers, "127.9.9.9"), "127.9.9.9");
+    }
+
+    #[test]
+    fn test_rate_limiter_respects_configured_burst() {
+        let limiter = RateLimiter::new(RateLimitConfig {
+            max_requests: 5,
+            window: Duration::from_secs(60),
+            burst: 2,
+            ..RateLimitConfig::default()
+        });
+
+        // max_requests + burst tokens are available, then the peer is limited.
+        let allowed = (0..10).filter(|_| limiter.check("198.51.100.9")).count();
+        assert_eq!(allowed, 7);
+        assert!(!limiter.check("198.51.100.9"));
+
+        // A different peer keeps its own bucket.
+        assert!(limiter.check("198.51.100.10"));
+        assert_eq!(limiter.window_secs(), 60);
+    }
 }

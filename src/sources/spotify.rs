@@ -3,7 +3,7 @@ use reqwest::header::{HeaderMap, HeaderValue, ACCEPT, AUTHORIZATION, USER_AGENT}
 use serde::Deserialize;
 use serde_json::Value;
 use std::sync::Arc;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::RwLock;
 use tracing::{info, warn};
 
@@ -40,7 +40,7 @@ impl SpotifySource {
         let client = crate::config::global_proxy()
             .apply_to_builder(reqwest::Client::builder())
             .default_headers(headers)
-            .timeout(Duration::from_secs(5))
+            .timeout(crate::config::source_timeout_secs(5))
             .build()
             .expect("Failed to build Reqwest client for Spotify");
 

@@ -117,6 +117,12 @@ pub async fn ws_handler(
         security::sanitize_for_log(&ip)
     );
 
+    // Enforce the message/frame limits at the protocol layer. Without this the
+    // 64 KiB guard in `handle_socket` only runs *after* tungstenite has already
+    // buffered the whole frame (axum's defaults are 64 MiB message / 16 MiB
+    // frame), so a single connection could pin that much memory per message.
+    let ws = ws.max_message_size(MAX_WS_MESSAGE_SIZE);
+    let ws = ws.max_frame_size(MAX_WS_MESSAGE_SIZE);
     ws.on_upgrade(move |socket| handle_socket(socket, state, session_id, user_id))
 }
 
@@ -322,9 +328,17 @@ async fn handle_ws_message(
             | "clearQueue"
             | "destroyPlayer"
     );
-    if requires_guild && guild_id.is_empty() {
-        warn!("WS op {} missing guildId, dropping", op);
-        return;
+    if requires_guild {
+        // REST validates the guild id before it ever reaches the player manager;
+        // the WebSocket path did not. Without this an authenticated client could
+        // create players keyed by arbitrary (unbounded, non-numeric) strings —
+        // growing `players` without limit — and inject newlines into the logs.
+        if let Err(e) = security::validate_guild_id(guild_id) {
+            let safe_op = security::sanitize_for_log(op);
+            let safe_gid = security::sanitize_for_log(guild_id);
+            warn!("WS op '{}' rejected: {} guild='{}'", safe_op, e, safe_gid);
+            return;
+        }
     }
 
     match op {
@@ -556,7 +570,7 @@ async fn handle_ws_message(
             let _ = direct_tx.send(Message::Text(pong.to_string())).await;
         }
         _ => {
-            warn!("Unknown WebSocket op: {}", op);
+            warn!("Unknown WebSocket op: {}", security::sanitize_for_log(op));
         }
     }
 }

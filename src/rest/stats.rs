@@ -26,6 +26,9 @@ pub async fn get_stats(
         uptime,
         memory,
         cpu,
-        frame_stats: Some(crate::stats::FrameCounters::global().snapshot()),
+        // Lavalink v4 documents frameStats as `null` when retrieved via
+        // /v4/stats; the counters are broadcast on the WebSocket stats op and
+        // exported through /v4/metrics instead.
+        frame_stats: None,
     }))
 }
