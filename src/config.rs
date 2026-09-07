@@ -274,7 +274,10 @@ pub fn http_client() -> reqwest::Client {
     {
         Ok(client) => client,
         Err(error) => {
-            tracing::error!("Failed to build configured HTTP client: {}; using defaults", error);
+            tracing::error!(
+                "Failed to build configured HTTP client: {}; using defaults",
+                error
+            );
             reqwest::Client::new()
         }
     }

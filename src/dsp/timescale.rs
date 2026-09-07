@@ -54,15 +54,27 @@ impl Timescale {
     }
 
     pub fn set_speed(&mut self, v: f64) {
-        self.speed = if v.is_finite() { v.clamp(0.25, 4.0) } else { 1.0 };
+        self.speed = if v.is_finite() {
+            v.clamp(0.25, 4.0)
+        } else {
+            1.0
+        };
     }
 
     pub fn set_pitch(&mut self, v: f64) {
-        self.pitch = if v.is_finite() { v.clamp(0.25, 4.0) } else { 1.0 };
+        self.pitch = if v.is_finite() {
+            v.clamp(0.25, 4.0)
+        } else {
+            1.0
+        };
     }
 
     pub fn set_rate(&mut self, v: f64) {
-        self.rate = if v.is_finite() { v.clamp(0.25, 4.0) } else { 1.0 };
+        self.rate = if v.is_finite() {
+            v.clamp(0.25, 4.0)
+        } else {
+            1.0
+        };
     }
 
     /// Rebuild DSP graph after parameter changes. Must be called once after
@@ -83,8 +95,9 @@ impl Timescale {
                 window: WindowFunction::BlackmanHarris,
             };
             Some(
-                SincFixedIn::<f32>::new(ratio, 4.0, params, CHUNK_FRAMES, 2)
-                    .map_err(|error| format!("invalid timescale resampler parameters: {}", error))?,
+                SincFixedIn::<f32>::new(ratio, 4.0, params, CHUNK_FRAMES, 2).map_err(|error| {
+                    format!("invalid timescale resampler parameters: {}", error)
+                })?,
             )
         } else {
             None

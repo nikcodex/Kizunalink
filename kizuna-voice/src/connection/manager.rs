@@ -599,7 +599,9 @@ mod tests {
             session_id: "session".to_string(),
             token: "token".to_string(),
         };
-        let dave = Arc::new(Mutex::new(DaveSession::new("111222333444555".to_string()).unwrap()));
+        let dave = Arc::new(Mutex::new(
+            DaveSession::new("111222333444555".to_string()).unwrap(),
+        ));
         let crypto = Arc::new(Mutex::new(None));
         VoiceConnectionManager::new(credentials, dave, crypto)
     }

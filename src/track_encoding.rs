@@ -192,8 +192,9 @@ pub fn encode_track(track: &LavalinkTrack) -> Result<String, TrackDecodeError> {
     // playable stream after the client sends the encoded track back to us.
     // Without this, Twitch/Vimeo lose their resolved media URL and fall back to
     // an HTML page URL.
-    let plugin_info = serde_json::to_string(&track.plugin_info)
-        .map_err(|e| TrackDecodeError::IoError(format!("Plugin info serialization failed: {}", e)))?;
+    let plugin_info = serde_json::to_string(&track.plugin_info).map_err(|e| {
+        TrackDecodeError::IoError(format!("Plugin info serialization failed: {}", e))
+    })?;
     let user_data = serde_json::to_string(&track.user_data)
         .map_err(|e| TrackDecodeError::IoError(format!("User data serialization failed: {}", e)))?;
     write_nullable_text(&mut output, Some(&plugin_info))?;

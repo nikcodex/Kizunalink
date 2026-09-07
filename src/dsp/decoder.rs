@@ -241,9 +241,9 @@ impl AudioDecoder {
         match result {
             Ok(wave_out) => {
                 let frames = wave_out[0].len().min(wave_out[1].len());
-                for i in 0..frames {
-                    self.out_fifo.push(wave_out[0][i]);
-                    self.out_fifo.push(wave_out[1][i]);
+                for (left, right) in wave_out[0].iter().zip(wave_out[1].iter()).take(frames) {
+                    self.out_fifo.push(*left);
+                    self.out_fifo.push(*right);
                 }
             }
             Err(error) => {
@@ -395,7 +395,7 @@ impl Read for ChannelByteSource {
                 }
                 Some(Err(error)) => {
                     *self.eof.lock().unwrap() = true;
-                    return Err(std::io::Error::new(std::io::ErrorKind::Other, error));
+                    return Err(std::io::Error::other(error));
                 }
                 None => {
                     *self.eof.lock().unwrap() = true;

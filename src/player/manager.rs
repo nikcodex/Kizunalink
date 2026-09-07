@@ -408,34 +408,35 @@ impl PlayerManager {
         if let Some(end_time) = payload.end_time {
             player.end_time = Some(end_time);
             player.end_time_generation += 1;
-            let generation = player.end_time_generation;
+            let end_time_generation = player.end_time_generation;
 
             // Enforce it: Lavalink ends the track once playback reaches the
             // requested position. The value used to be stored but never acted
             // on. The watchdog is armed here (rather than on every PATCH) so
             // there is exactly one per requested end time, and the captured
-            // generation invalidates the previous one when the end time is
-            // re-scheduled or the track changes.
+            // generations invalidate it when the end time is re-scheduled or
+            // the track changes.
             if player.queue.current.is_some() {
                 let position = player.get_position();
                 if end_time > position {
                     let delay = std::time::Duration::from_millis(end_time - position);
                     let tx = self.track_end_tx.clone();
                     let gid = guild_id.to_string();
-                    let generation = player.playback_generation;
+                    let playback_generation = player.playback_generation;
                     let handle = player_arc.clone();
                     tokio::spawn(async move {
                         tokio::time::sleep(delay).await;
                         let due = {
                             let p = handle.read().await;
                             p.end_time == Some(end_time)
-                                && p.end_time_generation == generation
+                                && p.end_time_generation == end_time_generation
+                                && p.playback_generation == playback_generation
                                 && p.get_position() >= end_time
                         };
                         if due {
                             let _ = tx.send(crate::player::manager::TrackEndSignal {
                                 guild_id: gid,
-                                generation,
+                                generation: playback_generation,
                                 error: None,
                             });
                         }
@@ -600,14 +601,18 @@ impl PlayerManager {
             }
             "soundcloud" => self.soundcloud.resolve_stream(identifier).await.ok(),
             "twitch" => {
-                if let Some(stream_url) = track.plugin_info.get("streamUrl").and_then(|u| u.as_str()) {
+                if let Some(stream_url) =
+                    track.plugin_info.get("streamUrl").and_then(|u| u.as_str())
+                {
                     Some(stream_url.to_string())
                 } else {
                     self.twitch.resolve_stream(identifier).await.ok().flatten()
                 }
             }
             "vimeo" => {
-                if let Some(stream_url) = track.plugin_info.get("streamUrl").and_then(|u| u.as_str()) {
+                if let Some(stream_url) =
+                    track.plugin_info.get("streamUrl").and_then(|u| u.as_str())
+                {
                     Some(stream_url.to_string())
                 } else {
                     self.vimeo
@@ -616,7 +621,9 @@ impl PlayerManager {
                         .ok()
                         .flatten()
                         .and_then(|resolved| {
-                            resolved.plugin_info.get("streamUrl")
+                            resolved
+                                .plugin_info
+                                .get("streamUrl")
                                 .and_then(|u| u.as_str())
                                 .map(str::to_string)
                         })
@@ -636,7 +643,7 @@ impl PlayerManager {
                 .get("streamUrl")
                 .and_then(|u| u.as_str())
                 .map(str::to_string)
-                .or_else(|| track.info.uri.clone())
+                .or_else(|| track.info.uri.clone()),
         }
     }
 
@@ -998,12 +1005,7 @@ impl PlayerManager {
         }
     }
 
-    pub async fn handle_track_end(
-        &self,
-        guild_id: &str,
-        generation: u64,
-        error: Option<String>,
-    ) {
+    pub async fn handle_track_end(&self, guild_id: &str, generation: u64, error: Option<String>) {
         let player_arc = match self.players.get(guild_id).map(|r| r.value().player.clone()) {
             Some(p) => p,
             None => return,

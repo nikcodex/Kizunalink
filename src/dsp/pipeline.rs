@@ -118,7 +118,7 @@ fn read_pcm_core(core: &Arc<Mutex<PipelineCore>>, buf: &mut [u8]) -> std::io::Re
                 }
                 if take_bytes == 0 {
                     if let Some(error) = core.fatal_error.take() {
-                        return Err(std::io::Error::new(std::io::ErrorKind::Other, error));
+                        return Err(std::io::Error::other(error));
                     }
                 }
                 return Ok(take_bytes);
@@ -261,27 +261,36 @@ async fn stream_hls(
             let response = match client.get(&playlist_url).send().await {
                 Ok(response) => response,
                 Err(error) => {
-                    let _ = tx.send(Err(format!("HLS playlist request failed: {}", error))).await;
+                    let _ = tx
+                        .send(Err(format!("HLS playlist request failed: {}", error)))
+                        .await;
                     return;
                 }
             };
             if !response.status().is_success() {
                 let _ = tx
-                    .send(Err(format!("HLS playlist returned HTTP {}", response.status())))
+                    .send(Err(format!(
+                        "HLS playlist returned HTTP {}",
+                        response.status()
+                    )))
                     .await;
                 return;
             }
             let text = match response.text().await {
                 Ok(text) => text,
                 Err(error) => {
-                    let _ = tx.send(Err(format!("HLS playlist read failed: {}", error))).await;
+                    let _ = tx
+                        .send(Err(format!("HLS playlist read failed: {}", error)))
+                        .await;
                     return;
                 }
             };
             let base = match Url::parse(&playlist_url) {
                 Ok(base) => base,
                 Err(error) => {
-                    let _ = tx.send(Err(format!("invalid HLS playlist URL: {}", error))).await;
+                    let _ = tx
+                        .send(Err(format!("invalid HLS playlist URL: {}", error)))
+                        .await;
                     return;
                 }
             };
@@ -290,9 +299,10 @@ async fn stream_hls(
                 .map(str::trim)
                 .filter(|line| !line.is_empty() && !line.starts_with('#'))
                 .collect();
-            if let Some(variant) = uris.iter().find(|uri| {
-                uri.to_ascii_lowercase().contains(".m3u8")
-            }) {
+            if let Some(variant) = uris
+                .iter()
+                .find(|uri| uri.to_ascii_lowercase().contains(".m3u8"))
+            {
                 match resolve_hls_uri(&base, variant) {
                     Ok(next) => {
                         playlist_url = next.to_string();
@@ -309,7 +319,9 @@ async fn stream_hls(
         }
 
         let Some((text, base)) = media_playlist else {
-            let _ = tx.send(Err("HLS master playlist nesting is too deep".into())).await;
+            let _ = tx
+                .send(Err("HLS master playlist nesting is too deep".into()))
+                .await;
             return;
         };
         let end_list = text.lines().any(|line| line.trim() == "#EXT-X-ENDLIST");
@@ -340,13 +352,18 @@ async fn stream_hls(
             let response = match client.get(&segment_url).send().await {
                 Ok(response) => response,
                 Err(error) => {
-                    let _ = tx.send(Err(format!("HLS segment request failed: {}", error))).await;
+                    let _ = tx
+                        .send(Err(format!("HLS segment request failed: {}", error)))
+                        .await;
                     return;
                 }
             };
             if !response.status().is_success() {
                 let _ = tx
-                    .send(Err(format!("HLS segment returned HTTP {}", response.status())))
+                    .send(Err(format!(
+                        "HLS segment returned HTTP {}",
+                        response.status()
+                    )))
                     .await;
                 return;
             }
@@ -359,7 +376,9 @@ async fn stream_hls(
                 }
                 Ok(_) => {}
                 Err(error) => {
-                    let _ = tx.send(Err(format!("HLS segment read failed: {}", error))).await;
+                    let _ = tx
+                        .send(Err(format!("HLS segment read failed: {}", error)))
+                        .await;
                     return;
                 }
             }
@@ -444,36 +463,36 @@ pub async fn create_kizuna_source(
                     // Stream URLs carry signed query parameters for some sources, so
                     // only the host is logged.
                     let resp = match client.get(&url).send().await {
-                    Ok(r) => r,
-                    Err(error) => {
-                        tracing::warn!("Stream request to '{}' failed: {}", host, error);
-                        let _ = tx.send(Err(error.to_string())).await;
+                        Ok(r) => r,
+                        Err(error) => {
+                            tracing::warn!("Stream request to '{}' failed: {}", host, error);
+                            let _ = tx.send(Err(error.to_string())).await;
+                            return;
+                        }
+                    };
+                    if !resp.status().is_success() {
+                        let error = format!("stream returned HTTP {}", resp.status());
+                        tracing::warn!("Stream '{}' {}", host, error);
+                        let _ = tx.send(Err(error)).await;
                         return;
                     }
-                };
-                if !resp.status().is_success() {
-                    let error = format!("stream returned HTTP {}", resp.status());
-                    tracing::warn!("Stream '{}' {}", host, error);
-                    let _ = tx.send(Err(error)).await;
-                    return;
-                }
-                let mut stream = resp.bytes_stream();
-                use futures_util::StreamExt;
-                while let Some(chunk) = stream.next().await {
-                    match chunk {
-                        Ok(bytes) => {
-                            if tx.send(Ok(bytes.to_vec())).await.is_err() {
+                    let mut stream = resp.bytes_stream();
+                    use futures_util::StreamExt;
+                    while let Some(chunk) = stream.next().await {
+                        match chunk {
+                            Ok(bytes) => {
+                                if tx.send(Ok(bytes.to_vec())).await.is_err() {
+                                    break;
+                                }
+                            }
+                            Err(error) => {
+                                let _ = tx.send(Err(error.to_string())).await;
                                 break;
                             }
                         }
-                        Err(error) => {
-                            let _ = tx.send(Err(error.to_string())).await;
-                            break;
-                        }
                     }
-                }
-            });
-        }
+                });
+            }
         }
     }
 

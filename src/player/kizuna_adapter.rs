@@ -119,9 +119,8 @@ impl KizunaVoiceAdapter {
                 // handshake before the async UDP callback and SessionDescription
                 // handler necessarily finish. Do not let playback start until
                 // both pieces of media transport are ready.
-                let transport_ready = tokio::time::timeout(
-                    std::time::Duration::from_secs(5),
-                    async {
+                let transport_ready =
+                    tokio::time::timeout(std::time::Duration::from_secs(5), async {
                         loop {
                             let udp_ready = self.udp.read().await.is_some();
                             if udp_ready && manager.transport_ready().await {
@@ -129,10 +128,9 @@ impl KizunaVoiceAdapter {
                             }
                             tokio::time::sleep(std::time::Duration::from_millis(10)).await;
                         }
-                    },
-                )
-                .await
-                .unwrap_or(false);
+                    })
+                    .await
+                    .unwrap_or(false);
                 if !transport_ready {
                     manager.shutdown().await;
                     return Err("Voice transport did not become ready".into());

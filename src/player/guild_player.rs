@@ -229,7 +229,10 @@ impl GuildPlayer {
         ) {
             Ok(adapter) => adapter,
             Err(error) => {
-                warn!("Voice crypto initialization failed for guild {}: {}", self.guild_id, error);
+                warn!(
+                    "Voice crypto initialization failed for guild {}: {}",
+                    self.guild_id, error
+                );
                 self.voice = Some(merged);
                 return Err(error);
             }
@@ -294,7 +297,11 @@ impl GuildPlayer {
         self.playback_generation
     }
 
-    fn spawn_track_end_notifier(&self, handle: &kizuna_voice::audio::KizunaTrackHandle, generation: u64) {
+    fn spawn_track_end_notifier(
+        &self,
+        handle: &kizuna_voice::audio::KizunaTrackHandle,
+        generation: u64,
+    ) {
         let guild_id = self.guild_id.clone();
         let tx = self.track_end_tx.clone();
         let handle = handle.clone();
@@ -323,7 +330,10 @@ impl GuildPlayer {
             return;
         }
         let Some(adapter_arc) = self.kizuna_voice_adapter.clone() else {
-            warn!("Cannot restart playback without voice for guild {}", self.guild_id);
+            warn!(
+                "Cannot restart playback without voice for guild {}",
+                self.guild_id
+            );
             return;
         };
         let position_ms = self.safe_position(requested_position_ms);
@@ -367,8 +377,7 @@ impl GuildPlayer {
             .unwrap()
             .duration_factor()
             .max(1e-6);
-        let wall_offset_ms = ((position_ms as f64 / factor).max(0.0))
-            .min(u64::MAX as f64) as u64;
+        let wall_offset_ms = ((position_ms as f64 / factor).max(0.0)).min(u64::MAX as f64) as u64;
 
         if was_paused {
             if let Some(k_handle) = &self.kizuna_track_handle {
@@ -530,8 +539,8 @@ impl GuildPlayer {
                 1.0
             };
             let paused_position = self.safe_position(self.paused_position);
-            let wall_offset_ms = (paused_position as f64 / factor.max(1e-6))
-                .min(u64::MAX as f64) as u64;
+            let wall_offset_ms =
+                (paused_position as f64 / factor.max(1e-6)).min(u64::MAX as f64) as u64;
             let now = Instant::now();
             self.play_started_at = Some(
                 now.checked_sub(Duration::from_millis(wall_offset_ms))
