@@ -22,7 +22,11 @@ use crate::models::filters::Filters;
 struct TimescaleSignature(f64, f64, f64);
 
 pub struct FilterChain {
+    /// Lavalink filter volume multiplier.
     pub volume: f64,
+    /// Player volume multiplier, kept separate so PATCH volume does not erase
+    /// the filter volume. Both are applied together exactly once.
+    player_volume: f64,
     equalizer: Equalizer,
     karaoke: Option<Karaoke>,
     timescale: Option<Timescale>,
@@ -41,6 +45,7 @@ impl FilterChain {
     pub fn new(sample_rate: f64) -> Self {
         Self {
             volume: 1.0,
+            player_volume: 1.0,
             equalizer: Equalizer::new(sample_rate),
             karaoke: None,
             timescale: None,
@@ -58,7 +63,7 @@ impl FilterChain {
     /// Update output volume multiplier directly.
     pub fn set_volume(&mut self, vol: f32) {
         if vol.is_finite() && vol >= 0.0 {
-            self.volume = (vol as f64).clamp(0.0, 10.0);
+            self.player_volume = (vol as f64).clamp(0.0, 10.0);
         }
     }
 
@@ -67,8 +72,33 @@ impl FilterChain {
     /// Returns `true` when the change is *structural* (Timescale graph changed),
     /// meaning an active playback stream should be rebuilt to apply cleanly.
     /// All other changes are applied live on the next processed samples.
-    pub fn update_from_lavalink(&mut self, filters: &Filters) -> bool {
-        self.volume = filters.volume.unwrap_or(1.0).clamp(0.0, 5.0) as f64;
+    pub fn update_from_lavalink(&mut self, filters: &Filters) -> Result<bool, String> {
+        let new_ts_sig = filters
+            .timescale
+            .as_ref()
+            .map(|t| TimescaleSignature(t.speed, t.pitch, t.rate));
+
+        // Validate and build the structural graph before mutating any live
+        // filter state. A malformed client filter must leave the previous graph
+        // intact rather than partially applying a request.
+        let requested_timescale = filters
+            .timescale
+            .as_ref()
+            .map(|_| Self::build_timescale(filters, self.sample_rate))
+            .transpose()?;
+
+        let structural = match (&self.timescale, new_ts_sig) {
+            (None, None) => false,
+            (Some(_), Some(sig)) => sig != self.last_timescale_sig,
+            (_, Some(_)) => true,
+            (Some(_), None) => true,
+        };
+
+        self.volume = filters
+            .volume
+            .filter(|value| value.is_finite())
+            .unwrap_or(1.0)
+            .clamp(0.0, 5.0) as f64;
 
         if let Some(ref bands) = filters.equalizer {
             for band in bands {
@@ -77,11 +107,6 @@ impl FilterChain {
                 }
             }
         }
-
-        let new_ts_sig = filters
-            .timescale
-            .as_ref()
-            .map(|t| TimescaleSignature(t.speed, t.pitch, t.rate));
 
         self.karaoke = filters.karaoke.as_ref().map(|k| {
             let mut karaoke = Karaoke::new(self.sample_rate);
@@ -92,31 +117,13 @@ impl FilterChain {
             karaoke
         });
 
-        let structural = match (&self.timescale, new_ts_sig) {
-            (None, None) => false,
-            (Some(_), Some(sig)) => {
-                if sig != self.last_timescale_sig {
-                    // rebuild timescale with fresh params
-                    let ts = Self::build_timescale(filters, self.sample_rate);
-                    self.timescale = Some(ts);
-                    true
-                } else {
-                    false
-                }
-            }
-            (_, Some(sig)) => {
-                self.timescale = Some(Self::build_timescale(filters, self.sample_rate));
-                self.last_timescale_sig = sig;
-                true
-            }
-            (Some(_), None) => {
-                self.timescale = None;
-                self.last_timescale_sig = TimescaleSignature(1.0, 1.0, 1.0);
-                true
-            }
-        };
+        if structural {
+            self.timescale = requested_timescale;
+        }
         if let Some(sig) = new_ts_sig {
             self.last_timescale_sig = sig;
+        } else if structural {
+            self.last_timescale_sig = TimescaleSignature(1.0, 1.0, 1.0);
         }
 
         self.tremolo = filters.tremolo.as_ref().map(|t| {
@@ -167,18 +174,18 @@ impl FilterChain {
             low
         });
 
-        structural
+        Ok(structural)
     }
 
-    fn build_timescale(filters: &Filters, sample_rate: f64) -> Timescale {
+    fn build_timescale(filters: &Filters, sample_rate: f64) -> Result<Timescale, String> {
         let mut ts = Timescale::new(sample_rate);
         if let Some(t) = &filters.timescale {
             ts.set_speed(t.speed);
             ts.set_pitch(t.pitch);
             ts.set_rate(t.rate);
         }
-        ts.prepare();
-        ts
+        ts.prepare()?;
+        Ok(ts)
     }
 
     /// Process one arbitrary-size interleaved stereo chunk.
@@ -191,8 +198,9 @@ impl FilterChain {
         let mut work: Vec<f32> = input.to_vec();
 
         // Length-preserving stages first (per-sample / per-frame transforms)
-        if (self.volume - 1.0).abs() > 1e-4 {
-            let vol = self.volume as f32;
+        let combined_volume = self.volume * self.player_volume;
+        if (combined_volume - 1.0).abs() > 1e-4 {
+            let vol = combined_volume as f32;
             for s in work.iter_mut() {
                 *s *= vol;
             }
@@ -238,6 +246,13 @@ impl FilterChain {
         // Instead of hard-clamping which causes harsh buzzing square waves, apply smooth tanh saturation
         // for peaks above 0.95 (approx -0.45 dBFS).
         for sample in work.iter_mut() {
+            if !sample.is_finite() {
+                // A bad client filter must not turn the rest of the track into
+                // NaN/Inf PCM. Drop the invalid sample rather than emitting an
+                // Opus frame that cannot be decoded.
+                *sample = 0.0;
+                continue;
+            }
             let abs_val = sample.abs();
             if abs_val > 0.95 {
                 let sign = sample.signum();
@@ -268,7 +283,7 @@ impl FilterChain {
 
     /// True when any DSP beyond plain passthrough is configured.
     pub fn is_active(&self) -> bool {
-        (self.volume - 1.0).abs() > 1e-4
+        ((self.volume * self.player_volume) - 1.0).abs() > 1e-4
             || self.timescale.is_some()
             || self.karaoke.is_some()
             || self.tremolo.is_some()

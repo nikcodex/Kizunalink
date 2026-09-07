@@ -213,7 +213,17 @@ impl ProxyConfig {
     pub fn apply_to_builder(&self, builder: reqwest::ClientBuilder) -> reqwest::ClientBuilder {
         let builder = builder.redirect(crate::security::redirect_policy());
         if let Some(ref url) = self.url {
-            let mut proxy = reqwest::Proxy::all(url).expect("Invalid proxy URL");
+            let mut proxy = match reqwest::Proxy::all(url) {
+                Ok(proxy) => proxy,
+                Err(error) => {
+                    tracing::error!(
+                        "Invalid proxy URL '{}'; using a direct client: {}",
+                        crate::security::sanitize_for_log(url),
+                        error
+                    );
+                    return builder;
+                }
+            };
             if let (Some(ref user), Some(ref pass)) = (&self.username, &self.password) {
                 proxy = proxy.basic_auth(user.as_str(), pass.as_str());
             }
@@ -257,11 +267,20 @@ pub fn global_request_timeout() -> std::time::Duration {
 
 /// Create a reqwest::Client with proxy settings and request timeout applied.
 pub fn http_client() -> reqwest::Client {
-    global_proxy()
+    match global_proxy()
         .apply_to_builder(reqwest::Client::builder())
         .timeout(global_request_timeout())
         .build()
-        .expect("Failed to build HTTP client")
+    {
+        Ok(client) => client,
+        Err(error) => {
+            tracing::error!(
+                "Failed to build configured HTTP client: {}; using defaults",
+                error
+            );
+            reqwest::Client::new()
+        }
+    }
 }
 
 /// Outbound timeout used by the per-source HTTP clients.

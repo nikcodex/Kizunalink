@@ -6,7 +6,7 @@ mod tests {
 
     #[test]
     fn test_dave_session_init() {
-        let session = DaveSession::new("test_guild".into());
+        let session = DaveSession::new("test_guild".into()).unwrap();
         assert!(!session.is_active());
         assert_eq!(session.epoch(), 0);
     }

@@ -33,6 +33,25 @@ impl FrameScheduler {
         let mut volume = 1.0f32;
         let mut last_tick = Instant::now();
 
+        // Decode on a separate task. The source may block on network input, but
+        // command handling stays in this loop so Stop/Pause/Resume are not held
+        // hostage by a stalled stream.
+        let (request_tx, mut request_rx) = mpsc::channel::<()>(1);
+        let (frame_tx, mut frame_rx) = mpsc::channel(1);
+        let source = self.source.clone();
+        let source_task = tokio::spawn(async move {
+            while request_rx.recv().await.is_some() {
+                let result = {
+                    let mut source = source.lock().await;
+                    source.next_frame().await
+                };
+                if frame_tx.send(result).await.is_err() {
+                    break;
+                }
+            }
+        });
+        let mut frame_pending = false;
+
         loop {
             tokio::select! {
                 cmd_opt = rx_cmd.recv() => {
@@ -61,6 +80,7 @@ impl FrameScheduler {
                         }
                         Some(TrackCommand::Stop) | None => {
                             let _ = event_tx.send(TrackEvent::Stopped);
+                            source_task.abort();
                             break;
                         }
                         Some(TrackCommand::Seek(pos)) => {
@@ -76,52 +96,56 @@ impl FrameScheduler {
                             }
                         }
                         Some(TrackCommand::SetVolume(vol)) => {
+                            // The KizunaLink player applies volume in its DSP
+                            // chain. Keep this value for TrackInfo compatibility,
+                            // but do not multiply PCM a second time here.
                             volume = vol.clamp(0.0, 1000.0);
                         }
                         Some(TrackCommand::GetInfo(tx)) => {
                             let _ = tx.send(TrackInfo {
                                 state: state.clone(),
                                 position,
-                                duration: None, // Could fetch from source
+                                duration: None,
                                 volume,
                             });
                         }
                     }
                 }
                 _ = interval.tick() => {
-                    if state != TrackState::Playing { continue; }
-
-                    let elapsed = last_tick.elapsed();
-                    position += elapsed;
-                    last_tick = Instant::now();
-
-                    let frame_opt = {
-                        let mut source = self.source.lock().await;
-                        match source.next_frame().await {
-                            Ok(Some(mut frame)) => {
-                                // Apply volume if PCM
-                                if volume != 1.0 {
-                                    if let AudioFrame::Pcm(ref mut samples) = frame {
-                                        for sample in samples.iter_mut() {
-                                            *sample = (*sample as f32 * volume).clamp(i16::MIN as f32, i16::MAX as f32) as i16;
-                                        }
-                                    }
-                                }
-                                Some(frame)
-                            }
-                            Ok(None) => {
-                                let _ = event_tx.send(TrackEvent::Ended);
-                                break;
-                            }
-                            Err(e) => {
-                                let _ = event_tx.send(TrackEvent::Error(e.to_string()));
-                                break;
+                    if state == TrackState::Playing && !frame_pending {
+                        let elapsed = last_tick.elapsed();
+                        position += elapsed;
+                        last_tick = Instant::now();
+                        if request_tx.send(()).await.is_ok() {
+                            frame_pending = true;
+                        }
+                    }
+                }
+                frame_result = frame_rx.recv(), if frame_pending => {
+                    frame_pending = false;
+                    match frame_result {
+                        Some(Ok(Some(frame))) => {
+                            // A frame requested before Pause may arrive after the
+                            // state change; discard it instead of emitting audio
+                            // while paused.
+                            if state == TrackState::Playing {
+                                send_callback(frame).await;
                             }
                         }
-                    };
-
-                    if let Some(frame) = frame_opt {
-                        send_callback(frame).await;
+                        Some(Ok(None)) => {
+                            let _ = event_tx.send(TrackEvent::Ended);
+                            source_task.abort();
+                            break;
+                        }
+                        Some(Err(e)) => {
+                            let _ = event_tx.send(TrackEvent::Error(e.to_string()));
+                            source_task.abort();
+                            break;
+                        }
+                        None => {
+                            let _ = event_tx.send(TrackEvent::Error("audio source task stopped".into()));
+                            break;
+                        }
                     }
                 }
             }

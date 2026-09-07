@@ -164,6 +164,12 @@ impl VoiceConnectionManager {
         self.ping_ms.clone()
     }
 
+    /// Whether the current voice cycle has received SessionDescription and
+    /// installed the negotiated RTP transport key.
+    pub async fn transport_ready(&self) -> bool {
+        self.transport_crypto.lock().await.is_some()
+    }
+
     pub async fn set_has_session(&self, value: bool) {
         let mut hs = self.has_established_session.lock().await;
         *hs = value;
@@ -424,6 +430,10 @@ impl VoiceConnectionManager {
         gw: &mut VoiceGatewayClient,
         heartbeat_interval: f64,
     ) -> Result<(), String> {
+        // A fresh voice cycle receives a new secret key. Do not let a prior
+        // session's crypto object encrypt packets on the new UDP socket.
+        *self.transport_crypto.lock().await = None;
+
         gw.send_identify(
             &self.credentials.server_id,
             &self.credentials.user_id,
@@ -589,7 +599,9 @@ mod tests {
             session_id: "session".to_string(),
             token: "token".to_string(),
         };
-        let dave = Arc::new(Mutex::new(DaveSession::new("111222333444555".to_string())));
+        let dave = Arc::new(Mutex::new(
+            DaveSession::new("111222333444555".to_string()).unwrap(),
+        ));
         let crypto = Arc::new(Mutex::new(None));
         VoiceConnectionManager::new(credentials, dave, crypto)
     }

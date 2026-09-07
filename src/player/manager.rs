@@ -7,6 +7,7 @@ use crate::sources::jiosaavn::JioSaavnSource;
 use crate::sources::soundcloud::SoundCloudSource;
 use crate::sources::spotify::SpotifySource;
 use crate::sources::youtube::YouTubeSource;
+use crate::sources::{niconico::NicoNicoSource, twitch::TwitchSource, vimeo::VimeoSource};
 use dashmap::DashMap;
 use std::sync::Arc;
 use tokio::sync::{broadcast, mpsc, Mutex, RwLock};
@@ -23,6 +24,15 @@ pub const MAX_PLAYERS: usize = 10000;
 pub struct PlayerEntry {
     pub player: Arc<RwLock<GuildPlayer>>,
     pub session_id: String,
+}
+
+/// Completion signal scoped to the playback generation that produced it.
+/// Obsolete schedulers must never be allowed to finish a replacement track.
+#[derive(Debug, Clone)]
+pub struct TrackEndSignal {
+    pub guild_id: String,
+    pub generation: u64,
+    pub error: Option<String>,
 }
 
 /// Errors from player operations that map to distinct HTTP semantics.
@@ -63,13 +73,16 @@ pub struct PlayerManager {
     max_players: usize,
     pub bot_user_id: Arc<RwLock<String>>,
     event_tx: broadcast::Sender<String>,
-    track_end_tx: mpsc::UnboundedSender<String>,
+    track_end_tx: mpsc::UnboundedSender<TrackEndSignal>,
     jiosaavn: Arc<JioSaavnSource>,
     youtube: Arc<YouTubeSource>,
     spotify: Arc<SpotifySource>,
     soundcloud: Arc<SoundCloudSource>,
     deezer: Arc<DeezerSource>,
     apple_music: Arc<AppleMusicSource>,
+    twitch: Arc<TwitchSource>,
+    vimeo: Arc<VimeoSource>,
+    niconico: Arc<NicoNicoSource>,
     pub queue_max_history: usize,
     sources: crate::config::SourcesConfig,
 }
@@ -81,6 +94,9 @@ pub struct SourceBundle {
     pub soundcloud: Arc<SoundCloudSource>,
     pub deezer: Arc<DeezerSource>,
     pub apple_music: Arc<AppleMusicSource>,
+    pub twitch: Arc<TwitchSource>,
+    pub vimeo: Arc<VimeoSource>,
+    pub niconico: Arc<NicoNicoSource>,
 }
 
 impl PlayerManager {
@@ -91,7 +107,7 @@ impl PlayerManager {
         max_players: usize,
         sources_config: crate::config::SourcesConfig,
     ) -> Self {
-        let (track_end_tx, mut track_end_rx) = mpsc::unbounded_channel::<String>();
+        let (track_end_tx, mut track_end_rx) = mpsc::unbounded_channel::<TrackEndSignal>();
 
         let manager = Self {
             players: Arc::new(DashMap::new()),
@@ -106,6 +122,9 @@ impl PlayerManager {
             soundcloud: sources.soundcloud,
             deezer: sources.deezer,
             apple_music: sources.apple_music,
+            twitch: sources.twitch,
+            vimeo: sources.vimeo,
+            niconico: sources.niconico,
             queue_max_history,
             sources: sources_config,
         };
@@ -114,8 +133,10 @@ impl PlayerManager {
         let task_manager = manager_arc.clone();
 
         tokio::spawn(async move {
-            while let Some(guild_id) = track_end_rx.recv().await {
-                task_manager.handle_track_end(&guild_id).await;
+            while let Some(signal) = track_end_rx.recv().await {
+                task_manager
+                    .handle_track_end(&signal.guild_id, signal.generation, signal.error)
+                    .await;
             }
         });
 
@@ -140,6 +161,9 @@ impl PlayerManager {
             soundcloud: self.soundcloud.clone(),
             deezer: self.deezer.clone(),
             apple_music: self.apple_music.clone(),
+            twitch: self.twitch.clone(),
+            vimeo: self.vimeo.clone(),
+            niconico: self.niconico.clone(),
             queue_max_history: self.queue_max_history,
             sources: self.sources.clone(),
         }
@@ -384,43 +408,69 @@ impl PlayerManager {
         if let Some(end_time) = payload.end_time {
             player.end_time = Some(end_time);
             player.end_time_generation += 1;
-            let generation = player.end_time_generation;
+            let end_time_generation = player.end_time_generation;
 
             // Enforce it: Lavalink ends the track once playback reaches the
             // requested position. The value used to be stored but never acted
             // on. The watchdog is armed here (rather than on every PATCH) so
             // there is exactly one per requested end time, and the captured
-            // generation invalidates the previous one when the end time is
-            // re-scheduled or the track changes.
+            // generations invalidate it when the end time is re-scheduled or
+            // the track changes.
             if player.queue.current.is_some() {
                 let position = player.get_position();
                 if end_time > position {
                     let delay = std::time::Duration::from_millis(end_time - position);
                     let tx = self.track_end_tx.clone();
                     let gid = guild_id.to_string();
+                    let playback_generation = player.playback_generation;
                     let handle = player_arc.clone();
                     tokio::spawn(async move {
                         tokio::time::sleep(delay).await;
                         let due = {
                             let p = handle.read().await;
                             p.end_time == Some(end_time)
-                                && p.end_time_generation == generation
+                                && p.end_time_generation == end_time_generation
+                                && p.playback_generation == playback_generation
                                 && p.get_position() >= end_time
                         };
                         if due {
-                            let _ = tx.send(gid);
+                            let _ = tx.send(crate::player::manager::TrackEndSignal {
+                                guild_id: gid,
+                                generation: playback_generation,
+                                error: None,
+                            });
                         }
                     });
                 } else {
                     // Already at or past the requested end position.
-                    let _ = self.track_end_tx.send(guild_id.to_string());
+                    let _ = self.track_end_tx.send(TrackEndSignal {
+                        guild_id: guild_id.to_string(),
+                        generation: player.playback_generation,
+                        error: None,
+                    });
                 }
             }
         }
 
         if let Some(filters) = payload.filters {
+            let previous_filters = player.filters.clone();
             player.filters = filters;
-            player.apply_filters().await;
+            if let Err(error) = player.apply_filters().await {
+                warn!("Rejected filters for guild {}: {}", guild_id, error);
+                player.filters = previous_filters;
+                player.emit_event(
+                    "TrackExceptionEvent",
+                    serde_json::json!({
+                        "track": player.queue.current.clone(),
+                        "exception": {
+                            "message": format!("Invalid audio filters: {}", error),
+                            "severity": "fault",
+                            "cause": "filter validation",
+                            "causeStackTrace": ""
+                        }
+                    }),
+                );
+            }
         }
 
         if let Some(autoplay) = payload.autoplay {
@@ -550,19 +600,50 @@ impl PlayerManager {
                 None
             }
             "soundcloud" => self.soundcloud.resolve_stream(identifier).await.ok(),
-            "spotify" => self.resolve_spotify_mirror(track).await,
-            "deezer" => self.resolve_deezer_mirror(track).await,
-            "applemusic" => self.resolve_apple_music_mirror(track).await,
-            "http" => track.info.uri.clone(),
-            _ => {
+            "twitch" => {
                 if let Some(stream_url) =
                     track.plugin_info.get("streamUrl").and_then(|u| u.as_str())
                 {
                     Some(stream_url.to_string())
                 } else {
-                    track.info.uri.clone()
+                    self.twitch.resolve_stream(identifier).await.ok().flatten()
                 }
             }
+            "vimeo" => {
+                if let Some(stream_url) =
+                    track.plugin_info.get("streamUrl").and_then(|u| u.as_str())
+                {
+                    Some(stream_url.to_string())
+                } else {
+                    self.vimeo
+                        .resolve_video(identifier)
+                        .await
+                        .ok()
+                        .flatten()
+                        .and_then(|resolved| {
+                            resolved
+                                .plugin_info
+                                .get("streamUrl")
+                                .and_then(|u| u.as_str())
+                                .map(str::to_string)
+                        })
+                }
+            }
+            "niconico" => {
+                // A NicoNico watch page is HTML, not an audio stream. Do not
+                // fall back to the page URL and feed it to Symphonia.
+                None
+            }
+            "spotify" => self.resolve_spotify_mirror(track).await,
+            "deezer" => self.resolve_deezer_mirror(track).await,
+            "applemusic" => self.resolve_apple_music_mirror(track).await,
+            "http" => track.info.uri.clone(),
+            _ => track
+                .plugin_info
+                .get("streamUrl")
+                .and_then(|u| u.as_str())
+                .map(str::to_string)
+                .or_else(|| track.info.uri.clone()),
         }
     }
 
@@ -924,7 +1005,7 @@ impl PlayerManager {
         }
     }
 
-    pub async fn handle_track_end(&self, guild_id: &str) {
+    pub async fn handle_track_end(&self, guild_id: &str, generation: u64, error: Option<String>) {
         let player_arc = match self.players.get(guild_id).map(|r| r.value().player.clone()) {
             Some(p) => p,
             None => return,
@@ -933,16 +1014,23 @@ impl PlayerManager {
         // Emit finished event
         let (next_track, last_track, is_autoplay) = {
             let mut player = player_arc.write().await;
+            if player.playback_generation != generation {
+                return;
+            }
             let finished_track = player.queue.current.clone();
 
             if let Some(ref track) = finished_track {
-                player.emit_event(
-                    "TrackEndEvent",
-                    serde_json::json!({
-                        "track": track,
-                        "reason": "finished",
-                    }),
-                );
+                if let Some(ref error) = error {
+                    player.emit_track_load_failed(track, error);
+                } else {
+                    player.emit_event(
+                        "TrackEndEvent",
+                        serde_json::json!({
+                            "track": track,
+                            "reason": "finished",
+                        }),
+                    );
+                }
             }
 
             // `get_next_track_for_autoplay` consumes `queue.current`, so re-reading
@@ -958,6 +1046,9 @@ impl PlayerManager {
         if let Some(track) = next_track {
             if let Some(stream_url) = self.resolve_stream_url(&track).await {
                 let mut player = player_arc.write().await;
+                if player.playback_generation != generation {
+                    return;
+                }
                 player.play_track(track, stream_url).await;
                 return;
             }
@@ -976,6 +1067,9 @@ impl PlayerManager {
                 if let Some(rec) = recommendation {
                     if let Some(stream_url) = self.resolve_stream_url(&rec).await {
                         let mut player = player_arc.write().await;
+                        if player.playback_generation != generation {
+                            return;
+                        }
                         player.play_track(rec, stream_url).await;
                         return;
                     }
@@ -984,7 +1078,9 @@ impl PlayerManager {
         }
 
         let mut player = player_arc.write().await;
-        player.stop();
+        if player.playback_generation == generation {
+            player.stop();
+        }
     }
 
     pub async fn count_players(&self) -> (usize, usize) {

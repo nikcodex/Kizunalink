@@ -40,6 +40,13 @@ impl Equalizer {
     /// gain_db: -0.5 to 1.0 (matching lavaplayer's range)
     pub fn set_band(&mut self, band: usize, gain_db: f32) {
         if band < NUM_BANDS {
+            // Keep untrusted filter JSON from producing infinite biquad
+            // coefficients. These are the ranges used by the Lavalink model.
+            let gain_db = if gain_db.is_finite() {
+                gain_db.clamp(-0.5, 1.0)
+            } else {
+                0.0
+            };
             self.gains[band] = gain_db;
             self.bands_l[band].update_peaking_eq(
                 self.sample_rate,

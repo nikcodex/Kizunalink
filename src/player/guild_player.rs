@@ -4,6 +4,7 @@ use crate::models::{
     track::LavalinkTrack,
 };
 use crate::player::autoplay::AutoplayEngine;
+use crate::player::manager::TrackEndSignal;
 use crate::player::queue::{LoopMode, TrackQueue};
 use crate::util;
 use std::sync::Arc;
@@ -15,6 +16,7 @@ use tracing::{info, warn};
 use crate::dsp::pipeline::{self, SharedChain};
 
 const SAMPLE_RATE: f64 = 48000.0;
+const MAX_UNBOUNDED_POSITION_MS: u64 = 24 * 60 * 60 * 1000;
 
 // ---------------------------------------------------------------------------
 // Voice disconnect handling
@@ -72,7 +74,10 @@ pub struct GuildPlayer {
     pub paused_at: Option<Instant>,
     pub paused_position: u64,
     pub event_tx: broadcast::Sender<String>,
-    pub track_end_tx: mpsc::UnboundedSender<String>,
+    pub track_end_tx: mpsc::UnboundedSender<TrackEndSignal>,
+    /// Incremented whenever a source is replaced or stopped. Completion events
+    /// from older schedulers are ignored by PlayerManager.
+    pub playback_generation: u64,
 
     pub shared_chain: SharedChain,
     filtered_active: bool,
@@ -84,7 +89,7 @@ impl GuildPlayer {
         guild_id: String,
         user_id: String,
         event_tx: broadcast::Sender<String>,
-        track_end_tx: mpsc::UnboundedSender<String>,
+        track_end_tx: mpsc::UnboundedSender<TrackEndSignal>,
         queue_max_history: usize,
     ) -> Self {
         Self {
@@ -108,6 +113,7 @@ impl GuildPlayer {
             paused_position: 0,
             event_tx,
             track_end_tx,
+            playback_generation: 0,
 
             shared_chain: pipeline::new_shared_chain(SAMPLE_RATE),
             filtered_active: false,
@@ -215,12 +221,22 @@ impl GuildPlayer {
             return Ok(false);
         }
 
-        let mut adapter = crate::player::kizuna_adapter::KizunaVoiceAdapter::new(
+        let mut adapter = match crate::player::kizuna_adapter::KizunaVoiceAdapter::new(
             merged.session_id.clone(),
             merged.token.clone(),
             merged.endpoint.clone(),
             self.guild_id.clone(),
-        );
+        ) {
+            Ok(adapter) => adapter,
+            Err(error) => {
+                warn!(
+                    "Voice crypto initialization failed for guild {}: {}",
+                    self.guild_id, error
+                );
+                self.voice = Some(merged);
+                return Err(error);
+            }
+        };
         match adapter
             .connect(self.guild_id.clone(), self.user_id.clone())
             .await
@@ -265,63 +281,95 @@ impl GuildPlayer {
         }
     }
 
-    async fn restart_at(&mut self, position_ms: u64) {
+    fn safe_position(&self, requested_ms: u64) -> u64 {
+        let max_position = self
+            .queue
+            .current
+            .as_ref()
+            .filter(|track| track.info.length > 0)
+            .map(|track| track.info.length)
+            .unwrap_or(MAX_UNBOUNDED_POSITION_MS);
+        requested_ms.min(max_position)
+    }
+
+    fn next_playback_generation(&mut self) -> u64 {
+        self.playback_generation = self.playback_generation.wrapping_add(1);
+        self.playback_generation
+    }
+
+    fn spawn_track_end_notifier(
+        &self,
+        handle: &kizuna_voice::audio::KizunaTrackHandle,
+        generation: u64,
+    ) {
+        let guild_id = self.guild_id.clone();
+        let tx = self.track_end_tx.clone();
+        let handle = handle.clone();
+        tokio::spawn(async move {
+            while let Ok(event) = handle.next_event().await {
+                let error = match event {
+                    kizuna_voice::audio::TrackEvent::Ended => None,
+                    kizuna_voice::audio::TrackEvent::Error(error) => Some(error),
+                    _ => continue,
+                };
+                let _ = tx.send(TrackEndSignal {
+                    guild_id: guild_id.clone(),
+                    generation,
+                    error,
+                });
+                break;
+            }
+        });
+    }
+
+    async fn restart_at(&mut self, requested_position_ms: u64) {
         let Some(url) = self.current_stream_url.clone() else {
             return;
         };
-        let Some(_track) = self.queue.current.clone() else {
+        if self.queue.current.is_none() {
+            return;
+        }
+        let Some(adapter_arc) = self.kizuna_voice_adapter.clone() else {
+            warn!(
+                "Cannot restart playback without voice for guild {}",
+                self.guild_id
+            );
             return;
         };
-
-        self.stop_handle_silently();
-
+        let position_ms = self.safe_position(requested_position_ms);
         let was_paused = self.paused;
         let filtered = self.shared_chain.lock().unwrap().is_active();
+        let skip_frames = position_ms.saturating_mul(48);
 
-        if let Some(adapter_arc) = &self.kizuna_voice_adapter {
-            let skip_frames = position_ms.saturating_mul(48); // 48kHz audio = 48 samples per millisecond
-            match crate::dsp::pipeline::create_kizuna_source(
-                url.clone(),
-                Self::extension_hint(&url),
-                self.shared_chain.clone(),
-                skip_frames,
-            )
-            .await
-            {
-                Ok(k_source) => {
-                    let k_src = Arc::new(Mutex::new(k_source));
-                    let mut adapter = adapter_arc.lock().await;
-                    let k_handle = adapter.play_source(k_src, self.user_id.clone());
-
-                    let guild_id = self.guild_id.clone();
-                    let tx = self.track_end_tx.clone();
-                    let kh_clone = k_handle.clone();
-
-                    // TrackEndNotifier replacement loop
-                    tokio::spawn(async move {
-                        while let Ok(event) = kh_clone.next_event().await {
-                            if matches!(
-                                event,
-                                kizuna_voice::audio::TrackEvent::Ended
-                                    | kizuna_voice::audio::TrackEvent::Error(_)
-                            ) {
-                                let _ = tx.send(guild_id.clone());
-                                break;
-                            }
-                        }
-                    });
-
-                    self.kizuna_track_handle = Some(k_handle);
-                }
-                Err(e) => {
-                    warn!(
-                        "Failed to recreate audio source on restart for guild {}: {}",
-                        self.guild_id, e
-                    );
-                    return;
-                }
+        // Build the replacement before stopping the current scheduler. A failed
+        // seek/filter restart must leave the existing track playable.
+        let k_source = match crate::dsp::pipeline::create_kizuna_source(
+            url.clone(),
+            Self::extension_hint(&url),
+            self.shared_chain.clone(),
+            skip_frames,
+        )
+        .await
+        {
+            Ok(source) => source,
+            Err(error) => {
+                warn!(
+                    "Failed to recreate audio source on restart for guild {}: {}",
+                    self.guild_id, error
+                );
+                return;
             }
-        }
+        };
+
+        let generation = self.next_playback_generation();
+        self.stop_handle_silently();
+        let k_src = Arc::new(Mutex::new(k_source));
+        let k_handle = {
+            let mut adapter = adapter_arc.lock().await;
+            adapter.play_source(k_src, self.user_id.clone())
+        };
+        self.spawn_track_end_notifier(&k_handle, generation);
+        self.kizuna_track_handle = Some(k_handle);
 
         let factor = self
             .shared_chain
@@ -329,7 +377,7 @@ impl GuildPlayer {
             .unwrap()
             .duration_factor()
             .max(1e-6);
-        let wall_offset_ms = (position_ms as f64 / factor) as u64;
+        let wall_offset_ms = ((position_ms as f64 / factor).max(0.0)).min(u64::MAX as f64) as u64;
 
         if was_paused {
             if let Some(k_handle) = &self.kizuna_track_handle {
@@ -342,13 +390,16 @@ impl GuildPlayer {
             self.paused_position = position_ms;
             self.play_started_at = None;
         } else {
-            self.play_started_at = Some(Instant::now() - Duration::from_millis(wall_offset_ms));
+            let now = Instant::now();
+            self.play_started_at = Some(
+                now.checked_sub(Duration::from_millis(wall_offset_ms))
+                    .unwrap_or(now),
+            );
             self.paused_at = None;
             self.paused_position = 0;
         }
 
         self.filtered_active = filtered;
-
         info!(
             "Restarted playback at ~{} ms for guild {} (filtered={})",
             position_ms, self.guild_id, filtered
@@ -356,87 +407,63 @@ impl GuildPlayer {
     }
 
     pub async fn play_track(&mut self, track: LavalinkTrack, stream_url: String) -> bool {
-        if let Some(old_handle) = &self.kizuna_track_handle {
-            let k = old_handle.clone();
-            tokio::spawn(async move {
-                let _ = k.stop().await;
-            });
-            if let Some(old_track) = self.queue.current.take() {
-                self.emit_event(
-                    "TrackEndEvent",
-                    serde_json::json!({
-                        "track": old_track,
-                        "reason": "replaced",
-                    }),
-                );
-            }
-        }
-
-        let filtered = self.shared_chain.lock().unwrap().is_active();
-
-        if let Some(adapter_arc) = &self.kizuna_voice_adapter {
-            match crate::dsp::pipeline::create_kizuna_source(
-                stream_url.clone(),
-                Self::extension_hint(&stream_url),
-                self.shared_chain.clone(),
-                0,
-            )
-            .await
-            {
-                Ok(k_source) => {
-                    let k_src = Arc::new(Mutex::new(k_source));
-                    let mut adapter = adapter_arc.lock().await;
-                    let k_handle = adapter.play_source(k_src, self.user_id.clone());
-
-                    let guild_id = self.guild_id.clone();
-                    let tx = self.track_end_tx.clone();
-                    let kh_clone = k_handle.clone();
-
-                    // TrackEndNotifier replacement loop
-                    tokio::spawn(async move {
-                        while let Ok(event) = kh_clone.next_event().await {
-                            if matches!(
-                                event,
-                                kizuna_voice::audio::TrackEvent::Ended
-                                    | kizuna_voice::audio::TrackEvent::Error(_)
-                            ) {
-                                let _ = tx.send(guild_id.clone());
-                                break;
-                            }
-                        }
-                    });
-
-                    self.kizuna_track_handle = Some(k_handle);
-                }
-                Err(e) => {
-                    warn!(
-                        "Failed to create audio source for guild {}: {}",
-                        self.guild_id, e
-                    );
-                    self.emit_track_load_failed(
-                        &track,
-                        &format!("Failed to open audio stream: {}", e),
-                    );
-                    return false;
-                }
-            }
-        } else {
+        let Some(adapter_arc) = self.kizuna_voice_adapter.clone() else {
             warn!(
                 "Cannot play track: voice not connected for guild {}",
                 self.guild_id
             );
             self.emit_track_load_failed(&track, "Voice connection not established");
             return false;
+        };
+
+        let filtered = self.shared_chain.lock().unwrap().is_active();
+
+        // Probe/open the replacement first. This avoids deleting the current
+        // track when the new URL is invalid, unavailable, or not decodable.
+        let k_source = match crate::dsp::pipeline::create_kizuna_source(
+            stream_url.clone(),
+            Self::extension_hint(&stream_url),
+            self.shared_chain.clone(),
+            0,
+        )
+        .await
+        {
+            Ok(source) => source,
+            Err(error) => {
+                warn!(
+                    "Failed to create audio source for guild {}: {}",
+                    self.guild_id, error
+                );
+                self.emit_track_load_failed(
+                    &track,
+                    &format!("Failed to open audio stream: {}", error),
+                );
+                return false;
+            }
+        };
+
+        let generation = self.next_playback_generation();
+        self.stop_handle_silently();
+        if let Some(old_track) = self.queue.current.take() {
+            self.emit_event(
+                "TrackEndEvent",
+                serde_json::json!({
+                    "track": old_track,
+                    "reason": "replaced",
+                }),
+            );
         }
 
-        if let Some(k_handle) = &self.kizuna_track_handle {
-            let k = k_handle.clone();
-            let vol = self.volume as f32 / 100.0;
-            tokio::spawn(async move {
-                let _ = k.set_volume(vol).await;
-            });
-        }
+        let k_src = Arc::new(Mutex::new(k_source));
+        let k_handle = {
+            let mut adapter = adapter_arc.lock().await;
+            adapter.play_source(k_src, self.user_id.clone())
+        };
+        self.spawn_track_end_notifier(&k_handle, generation);
+        self.kizuna_track_handle = Some(k_handle);
 
+        // Player volume is applied by the shared DSP chain in set_volume(); do
+        // not also send it to FrameScheduler, which would attenuate PCM twice.
         self.filtered_active = filtered;
         self.current_stream_url = Some(stream_url);
         self.queue.current = Some(track.clone());
@@ -467,6 +494,7 @@ impl GuildPlayer {
     }
 
     pub fn stop(&mut self) -> Option<LavalinkTrack> {
+        self.next_playback_generation();
         self.stop_handle_silently();
         let old_track = self.queue.current.take();
         self.is_playing = false;
@@ -510,8 +538,14 @@ impl GuildPlayer {
             } else {
                 1.0
             };
-            let wall_offset_ms = (self.paused_position as f64 / factor.max(1e-6)) as u64;
-            self.play_started_at = Some(Instant::now() - Duration::from_millis(wall_offset_ms));
+            let paused_position = self.safe_position(self.paused_position);
+            let wall_offset_ms =
+                (paused_position as f64 / factor.max(1e-6)).min(u64::MAX as f64) as u64;
+            let now = Instant::now();
+            self.play_started_at = Some(
+                now.checked_sub(Duration::from_millis(wall_offset_ms))
+                    .unwrap_or(now),
+            );
             self.paused_at = None;
             if let Some(ref handle) = self.kizuna_track_handle {
                 let _ = handle.resume().await;
@@ -526,20 +560,17 @@ impl GuildPlayer {
         self.volume = clamped;
         let vol_f32 = clamped as f32 / 100.0;
         self.shared_chain.lock().unwrap().set_volume(vol_f32);
-        if let Some(ref handle) = self.kizuna_track_handle {
-            let h = handle.clone();
-            tokio::spawn(async move {
-                let _ = h.set_volume(vol_f32).await;
-            });
-        }
+        // The DSP chain is the single volume stage for this player. Sending a
+        // second SetVolume command to FrameScheduler would apply the multiplier
+        // twice to PCM frames.
         self.last_update = util::current_timestamp();
         self.emit_player_update();
     }
 
-    pub async fn apply_filters(&mut self) {
+    pub async fn apply_filters(&mut self) -> Result<(), String> {
         let structural = {
             let mut chain = self.shared_chain.lock().unwrap();
-            chain.update_from_lavalink(&self.filters)
+            chain.update_from_lavalink(&self.filters)?
         };
 
         if structural && self.is_playing && self.queue.current.is_some() {
@@ -558,13 +589,21 @@ impl GuildPlayer {
 
         self.last_update = util::current_timestamp();
         self.emit_player_update();
+        Ok(())
     }
 
     pub async fn seek(&mut self, position: u64) {
+        let safe_position = self.safe_position(position);
+        if position != safe_position {
+            warn!(
+                "Clamped seek position from {} ms to {} ms for guild {}",
+                position, safe_position, self.guild_id
+            );
+        }
         if self.is_playing {
-            self.restart_at(position).await;
+            self.restart_at(safe_position).await;
         } else {
-            self.paused_position = position;
+            self.paused_position = safe_position;
         }
         self.last_update = util::current_timestamp();
         self.emit_player_update();

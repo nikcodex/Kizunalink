@@ -5,7 +5,7 @@ use std::io::{Cursor, Read};
 use std::sync::LazyLock;
 
 const TRACK_INFO_VERSIONED: i32 = 1;
-const TRACK_INFO_VERSION: i32 = 3;
+const TRACK_INFO_VERSION: i32 = 4;
 
 static TRACK_CACHE: LazyLock<DashMap<String, LavalinkTrack>> =
     LazyLock::new(|| DashMap::with_capacity(1024));
@@ -50,7 +50,7 @@ pub fn decode_track(encoded: &str) -> Result<LavalinkTrack, TrackDecodeError> {
         1
     };
 
-    if !(1..=3).contains(&version) {
+    if !(1..=4).contains(&version) {
         return Err(TrackDecodeError::UnsupportedVersion(version));
     }
 
@@ -109,6 +109,20 @@ pub fn decode_track(encoded: &str) -> Result<LavalinkTrack, TrackDecodeError> {
     if let Some(ref code) = isrc {
         plugin_info.insert("isrc".to_string(), serde_json::Value::String(code.clone()));
     }
+    let mut user_data = serde_json::Value::Object(Default::default());
+    if version >= 4 {
+        if let Some(encoded_plugin_info) = read_nullable_text(&mut cursor)? {
+            let decoded: serde_json::Value = serde_json::from_str(&encoded_plugin_info)
+                .map_err(|e| TrackDecodeError::IoError(format!("Invalid plugin info: {}", e)))?;
+            if let serde_json::Value::Object(object) = decoded {
+                plugin_info = object;
+            }
+        }
+        if let Some(encoded_user_data) = read_nullable_text(&mut cursor)? {
+            user_data = serde_json::from_str(&encoded_user_data)
+                .map_err(|e| TrackDecodeError::IoError(format!("Invalid user data: {}", e)))?;
+        }
+    }
 
     let track = LavalinkTrack {
         encoded: encoded.to_string(),
@@ -126,7 +140,7 @@ pub fn decode_track(encoded: &str) -> Result<LavalinkTrack, TrackDecodeError> {
             source_name,
         },
         plugin_info: serde_json::Value::Object(plugin_info),
-        user_data: serde_json::Value::Object(Default::default()),
+        user_data,
     };
 
     if TRACK_CACHE.len() < MAX_CACHE_ENTRIES {
@@ -173,6 +187,18 @@ pub fn encode_track(track: &LavalinkTrack) -> Result<String, TrackDecodeError> {
 
     // Position
     output.extend_from_slice(&track.info.position.to_be_bytes());
+
+    // Version 4 preserves source/plugin data that is required to reopen a
+    // playable stream after the client sends the encoded track back to us.
+    // Without this, Twitch/Vimeo lose their resolved media URL and fall back to
+    // an HTML page URL.
+    let plugin_info = serde_json::to_string(&track.plugin_info).map_err(|e| {
+        TrackDecodeError::IoError(format!("Plugin info serialization failed: {}", e))
+    })?;
+    let user_data = serde_json::to_string(&track.user_data)
+        .map_err(|e| TrackDecodeError::IoError(format!("User data serialization failed: {}", e)))?;
+    write_nullable_text(&mut output, Some(&plugin_info))?;
+    write_nullable_text(&mut output, Some(&user_data))?;
 
     // Calculate length & header prefix
     let payload_len = (output.len() - 4) as i32;
