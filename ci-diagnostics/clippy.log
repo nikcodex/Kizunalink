@@ -1,0 +1,187 @@
+[1m[92m    Updating[0m crates.io index
+[1m[92m     Locking[0m 422 packages to latest compatible versions
+[1m[92m      Adding[0m aes-gcm v0.10.3 [1m[33m(available: v0.11.1)[0m
+[1m[92m      Adding[0m axum v0.7.9 [1m[33m(available: v0.8.9)[0m
+[1m[92m      Adding[0m base64 v0.22.1 [1m[33m(available: v0.23.1)[0m
+[1m[92m      Adding[0m dashmap v5.5.3 [1m[33m(available: v6.2.1)[0m
+[1m[92m      Adding[0m generic-array v0.14.7 [1m[33m(available: v0.14.9)[0m
+[1m[92m      Adding[0m hkdf v0.12.4 [1m[33m(available: v0.13.0)[0m
+[1m[92m      Adding[0m hmac v0.12.1 [1m[33m(available: v0.13.0)[0m
+[1m[92m      Adding[0m prometheus v0.13.4 [1m[33m(available: v0.14.0)[0m
+[1m[92m      Adding[0m rand v0.8.8 [1m[33m(available: v0.10.2)[0m
+[1m[92m      Adding[0m reqwest v0.11.27 [1m[33m(available: v0.13.4)[0m
+[1m[92m      Adding[0m rubato v0.14.1 [1m[33m(available: v5.0.0)[0m
+[1m[92m      Adding[0m sha2 v0.10.9 [1m[33m(available: v0.11.0)[0m
+[1m[92m      Adding[0m symphonia v0.5.5 [1m[33m(available: v0.6.1)[0m
+[1m[92m      Adding[0m sysinfo v0.31.4 [1m[33m(available: v0.39.6)[0m
+[1m[92m      Adding[0m thiserror v1.0.69 [1m[33m(available: v2.0.20)[0m
+[1m[92m      Adding[0m tokio-tungstenite v0.21.0 [1m[33m(available: v0.30.0)[0m
+[1m[92m      Adding[0m toml v0.8.23 [1m[33m(available: v1.1.5+spec-1.1.0)[0m
+[1m[92m      Adding[0m tower-http v0.5.2 [1m[33m(available: v0.7.1)[0m
+[1m[92m Downloading[0m crates ...
+[1m[92m  Downloaded[0m core_detect v1.0.0
+[1m[92m  Downloaded[0m crossbeam-deque v0.8.8
+[1m[92m  Downloaded[0m cc v1.4.5
+[1m[92m  Downloaded[0m crossbeam-epoch v0.9.21
+[1m[92m  Downloaded[0m crossbeam-utils v0.8.23
+[1m[92m  Downloaded[0m der v0.8.2
+[1m[92m  Downloaded[0m find-msvc-tools v0.1.12
+[1m[92m  Downloaded[0m encoding_rs v0.8.40
+[1m[92m  Downloaded[0m indexmap v2.14.2
+[1m[92m  Downloaded[0m ipnet v2.12.2
+[1m[92m  Downloaded[0m multiversion v0.8.0
+[1m[92m  Downloaded[0m multiversion-macros v0.8.0
+[1m[92m  Downloaded[0m multiversion_no_op v1.0.0
+[1m[92m  Downloaded[0m simdutf8 v0.1.5
+[1m[92m  Downloaded[0m syn v3.0.5
+[1m[92m  Downloaded[0m target-features v0.1.6
+[1m[92m   Compiling[0m syn v3.0.5
+[1m[92m   Compiling[0m find-msvc-tools v0.1.12
+[1m[92m   Compiling[0m target-features v0.1.6
+[1m[92m   Compiling[0m encoding_rs v0.8.40
+[1m[92m   Compiling[0m cc v1.4.5
+[1m[92m    Checking[0m core_detect v1.0.0
+[1m[92m    Checking[0m simdutf8 v0.1.5
+[1m[92m   Compiling[0m multiversion_no_op v1.0.0
+[1m[92m   Compiling[0m crossbeam-utils v0.8.23
+[1m[92m   Compiling[0m multiversion-macros v0.8.0
+[1m[92m   Compiling[0m crossbeam-epoch v0.9.21
+[1m[92m   Compiling[0m crossbeam-deque v0.8.8
+[1m[92m    Checking[0m der v0.8.2
+[1m[92m    Checking[0m multiversion v0.8.0
+[1m[92m   Compiling[0m ring v0.17.14
+[1m[92m    Checking[0m indexmap v2.14.2
+[1m[92m    Checking[0m spki v0.8.0
+[1m[92m    Checking[0m symphonia-metadata v0.5.5
+[1m[92m    Checking[0m symphonia-utils-xiph v0.5.5
+[1m[92m   Compiling[0m cmake v0.1.58
+[1m[92m    Checking[0m rayon-core v1.13.0
+[1m[92m   Compiling[0m audiopus_sys v0.2.2
+[1m[92m    Checking[0m pkcs8 v0.11.0
+[1m[92m    Checking[0m rayon v1.12.0
+[1m[92m   Compiling[0m serde_derive v1.0.229
+[1m[92m   Compiling[0m zerovec-derive v0.11.6
+[1m[92m   Compiling[0m tokio-macros v2.7.2
+[1m[92m    Checking[0m tokio v1.53.1
+[1m[92m    Checking[0m serde v1.0.229
+[1m[92m    Checking[0m zerovec v0.11.8
+[1m[92m   Compiling[0m displaydoc v0.2.7
+[1m[92m    Checking[0m tinystr v0.8.4
+[1m[92m   Compiling[0m futures-macro v0.3.34
+[1m[92m    Checking[0m futures-util v0.3.34
+[1m[92m    Checking[0m icu_locale_core v2.3.0
+[1m[92m    Checking[0m zerotrie v0.2.5
+[1m[92m    Checking[0m potential_utf v0.1.6
+[1m[92m    Checking[0m icu_collections v2.3.0
+[1m[92m    Checking[0m icu_provider v2.3.1
+[1m[92m    Checking[0m tls_codec v0.5.0
+[1m[92m    Checking[0m icu_properties v2.3.0
+[1m[92m    Checking[0m icu_normalizer v2.3.0
+[1m[92m   Compiling[0m thiserror-impl v2.0.20
+[1m[92m    Checking[0m idna_adapter v1.2.2
+[1m[92m    Checking[0m idna v1.1.0
+[1m[92m    Checking[0m openmls_traits v0.6.0
+[1m[92m    Checking[0m url v2.5.8
+[1m[92m   Compiling[0m rustls v0.22.4
+[1m[92m   Compiling[0m rustls v0.21.12
+[1m[92m    Checking[0m tokio-util v0.7.19
+[1m[92m    Checking[0m thiserror v2.0.20
+[1m[92m   Compiling[0m async-trait v0.1.92
+[1m[92m    Checking[0m ml-dsa v0.1.1
+[1m[92m    Checking[0m rustls-webpki v0.102.8
+[1m[92m    Checking[0m sct v0.7.1
+[1m[92m    Checking[0m rustls-webpki v0.101.7
+[1m[92m    Checking[0m symphonia-format-riff v0.5.5
+[1m[92m    Checking[0m hpke-rs v0.7.0
+[1m[92m    Checking[0m h2 v0.3.27
+[1m[92m    Checking[0m tokio-rustls v0.25.0
+[1m[92m    Checking[0m tungstenite v0.21.0
+[1m[92m   Compiling[0m openmls_serialization_helpers v0.1.0
+[1m[92m    Checking[0m openmls_memory_storage v0.6.0
+[1m[92m    Checking[0m symphonia-codec-vorbis v0.5.5
+[1m[92m    Checking[0m symphonia-bundle-flac v0.5.5
+[1m[92m    Checking[0m symphonia-format-mkv v0.5.5
+[1m[92m    Checking[0m symphonia-format-isomp4 v0.5.5
+[1m[92m    Checking[0m symphonia-format-ogg v0.5.5
+[1m[92m    Checking[0m symphonia-format-caf v0.5.5
+[1m[92m    Checking[0m symphonia-bundle-mp3 v0.5.5
+[1m[92m    Checking[0m serde_urlencoded v0.7.1
+[1m[92m    Checking[0m hyper v1.11.1
+[1m[92m    Checking[0m symphonia v0.5.5
+[1m[92m    Checking[0m openmls_rust_crypto v0.6.0
+[1m[92m    Checking[0m openmls v0.9.0
+[1m[92m    Checking[0m tokio-tungstenite v0.21.0
+[1m[92m    Checking[0m hyper v0.14.32
+[1m[92m    Checking[0m tokio-rustls v0.24.1
+[1m[92m    Checking[0m openmls_basic_credential v0.6.0
+[1m[92m    Checking[0m serde_spanned v0.6.9
+[1m[92m    Checking[0m toml_datetime v0.6.11
+[1m[92m    Checking[0m toml_edit v0.22.27
+[1m[92m    Checking[0m audiopus v0.3.0-rc.0
+[1m[92m    Checking[0m tokio-tungstenite v0.24.0
+[1m[92m    Checking[0m hyper-util v0.1.20
+[1m[92m    Checking[0m axum-core v0.4.5
+[1m[92m    Checking[0m tower v0.5.3
+[1m[92m   Compiling[0m kizunalink v4.2.1 (/home/runner/work/Kizunalink/Kizunalink)
+[1m[92m    Checking[0m ipnet v2.12.2
+[1m[92m    Checking[0m hyper-rustls v0.24.2
+[1m[92m    Checking[0m toml v0.8.23
+[1m[92m    Checking[0m reqwest v0.11.27
+[1m[92m    Checking[0m sysinfo v0.31.4
+[1m[92m    Checking[0m axum v0.7.9
+[1m[92m    Checking[0m kizuna-voice v0.1.0 (/home/runner/work/Kizunalink/Kizunalink/kizuna-voice)
+[1m[91merror[0m[1m: unused variable: `generation`[0m
+   [1m[94m--> [0msrc/player/manager.rs:411:17
+    [1m[94m|[0m
+[1m[94m411[0m [1m[94m|[0m             let generation = player.end_time_generation;
+    [1m[94m|[0m                 [1m[91m^^^^^^^^^^[0m [1m[91mhelp: if this is intentional, prefix it with an underscore: `_generation`[0m
+    [1m[94m|[0m
+    [1m[94m= [0m[1mnote[0m: `-D unused-variables` implied by `-D warnings`
+    [1m[94m= [0m[1mhelp[0m: to override `-D warnings` add `#[allow(unused_variables)]`
+
+[1m[91merror[0m[1m: the loop variable `i` is only used to index `wave_out`[0m
+   [1m[94m--> [0msrc/dsp/decoder.rs:244:26
+    [1m[94m|[0m
+[1m[94m244[0m [1m[94m|[0m                 for i in 0..frames {
+    [1m[94m|[0m                          [1m[91m^^^^^^^^^[0m
+    [1m[94m|[0m
+    [1m[94m= [0m[1mhelp[0m: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.98.0/index.html#needless_range_loop
+    [1m[94m= [0m[1mnote[0m: `-D clippy::needless-range-loop` implied by `-D warnings`
+    [1m[94m= [0m[1mhelp[0m: to override `-D warnings` add `#[allow(clippy::needless_range_loop)]`
+[1m[96mhelp[0m: consider using an iterator
+    [1m[94m|[0m
+[1m[94m244[0m [91m- [0m                for [91mi[0m in [91m0..frames[0m {
+[1m[94m244[0m [92m+ [0m                for [92m<item>[0m in [92mwave_out.iter().take(frames)[0m {
+    [1m[94m|[0m
+
+[1m[91merror[0m[1m: this can be `std::io::Error::other(_)`[0m
+   [1m[94m--> [0msrc/dsp/decoder.rs:398:32
+    [1m[94m|[0m
+[1m[94m398[0m [1m[94m|[0m                     return Err(std::io::Error::new(std::io::ErrorKind::Other, error));
+    [1m[94m|[0m                                [1m[91m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+    [1m[94m|[0m
+    [1m[94m= [0m[1mhelp[0m: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.98.0/index.html#io_other_error
+    [1m[94m= [0m[1mnote[0m: `-D clippy::io-other-error` implied by `-D warnings`
+    [1m[94m= [0m[1mhelp[0m: to override `-D warnings` add `#[allow(clippy::io_other_error)]`
+[1m[96mhelp[0m: use `std::io::Error::other`
+    [1m[94m|[0m
+[1m[94m398[0m [91m- [0m                    return Err(std::io::Error::[91mnew[0m([91mstd::io::ErrorKind::Other, [0merror));
+[1m[94m398[0m [92m+ [0m                    return Err(std::io::Error::[92mother[0m(error));
+    [1m[94m|[0m
+
+[1m[91merror[0m[1m: this can be `std::io::Error::other(_)`[0m
+   [1m[94m--> [0msrc/dsp/pipeline.rs:121:36
+    [1m[94m|[0m
+[1m[94m121[0m [1m[94m|[0m                         return Err(std::io::Error::new(std::io::ErrorKind::Other, error));
+    [1m[94m|[0m                                    [1m[91m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+    [1m[94m|[0m
+    [1m[94m= [0m[1mhelp[0m: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.98.0/index.html#io_other_error
+[1m[96mhelp[0m: use `std::io::Error::other`
+    [1m[94m|[0m
+[1m[94m121[0m [91m- [0m                        return Err(std::io::Error::[91mnew[0m([91mstd::io::ErrorKind::Other, [0merror));
+[1m[94m121[0m [92m+ [0m                        return Err(std::io::Error::[92mother[0m(error));
+    [1m[94m|[0m
+
+[1m[91merror[0m: could not compile `kizunalink` (lib) due to 4 previous errors
+[1m[33mwarning[0m: build failed, waiting for other jobs to finish...
+[1m[91merror[0m: could not compile `kizunalink` (lib test) due to 4 previous errors
