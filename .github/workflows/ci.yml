@@ -11,6 +11,9 @@ on:
 env:
   CARGO_TERM_COLOR: always
 
+permissions:
+  contents: write
+
 jobs:
   check:
     name: Check
@@ -124,3 +127,30 @@ jobs:
         with:
           name: kizunalink-linux-amd64
           path: target/release/kizunalink
+
+  diagnostics:
+    name: Save CI diagnostics
+    if: always()
+    needs: [clippy, fmt, test]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: clippy-log
+          path: ci-diagnostics
+      - uses: actions/download-artifact@v4
+        with:
+          name: test-log
+          path: ci-diagnostics
+      - uses: actions/download-artifact@v4
+        with:
+          name: rustfmt-patch
+          path: ci-diagnostics
+      - name: Commit diagnostics for retrieval
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add ci-diagnostics
+          git commit -m 'CI diagnostics [skip ci]' || exit 0
+          git push origin "HEAD:${GITHUB_REF_NAME}"
