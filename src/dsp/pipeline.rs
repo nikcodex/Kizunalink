@@ -8,8 +8,10 @@
 /// it receives has already been through the DSP chain - true pre-mixer filtering.
 ///
 /// The same chain code path is exercised by offline verification tests.
+use std::collections::{HashSet, VecDeque};
 use std::io::{Read, Seek, SeekFrom};
 use std::sync::{Arc, Mutex};
+use url::Url;
 
 use super::decoder::{AudioDecoder, ChannelByteSource};
 use super::filters::FilterChain;
@@ -29,6 +31,7 @@ struct PipelineCore {
     shared_chain: SharedChain,
     out_fifo: Vec<f32>,
     eof: bool,
+    fatal_error: Option<String>,
     total_frames_out: u64,
 }
 
@@ -39,20 +42,28 @@ impl PipelineCore {
 
         while !decoder_eof && self.out_fifo.len() < 4096 * 2 {
             // Scoped borrow: release &mut self.decoder before filtering.
-            let decoded = {
+            let (decoded, reached_eof, decoder_error) = {
                 let Some(decoder) = self.decoder.as_mut() else {
                     decoder_eof = true;
                     break;
                 };
                 let decoded = decoder.read_frames(4096);
-                if decoded.is_empty() {
-                    if decoder.is_eof() {
-                        decoder_eof = true;
-                    }
-                    break;
-                }
-                decoded
+                let decoder_error = if decoded.is_empty() {
+                    decoder.take_error()
+                } else {
+                    None
+                };
+                (decoded, decoder.is_eof(), decoder_error)
             };
+            if let Some(error) = decoder_error {
+                self.fatal_error = Some(error);
+            }
+            if decoded.is_empty() {
+                if reached_eof {
+                    decoder_eof = true;
+                }
+                break;
+            }
 
             append_filtered(self, &decoded);
         }
@@ -105,6 +116,11 @@ fn read_pcm_core(core: &Arc<Mutex<PipelineCore>>, buf: &mut [u8]) -> std::io::Re
                 for (i, s) in core.out_fifo.drain(..take_samples).enumerate() {
                     buf[i * 4..i * 4 + 4].copy_from_slice(&s.to_le_bytes());
                 }
+                if take_bytes == 0 {
+                    if let Some(error) = core.fatal_error.take() {
+                        return Err(std::io::Error::new(std::io::ErrorKind::Other, error));
+                    }
+                }
                 return Ok(take_bytes);
             }
         }
@@ -130,6 +146,7 @@ impl FilteredAudioReader {
                 shared_chain,
                 out_fifo: Vec::with_capacity(8192),
                 eof: false,
+                fatal_error: None,
                 total_frames_out: 0,
             })),
             is_opus_source,
@@ -208,6 +225,155 @@ impl symphonia::core::io::MediaSource for FilteredAudioReader {
     }
 }
 
+fn is_hls_url(url: &str) -> bool {
+    Url::parse(url)
+        .map(|parsed| parsed.path().to_ascii_lowercase().ends_with(".m3u8"))
+        .unwrap_or(false)
+}
+
+fn resolve_hls_uri(base: &Url, line: &str) -> Result<Url, String> {
+    let mut resolved = base
+        .join(line)
+        .map_err(|error| format!("invalid HLS URI '{}': {}", line, error))?;
+    // Some live providers put the authorization query only on the master
+    // playlist URL. Preserve it for a relative variant that omitted it.
+    if resolved.query().is_none() {
+        if let Some(query) = base.query() {
+            resolved.set_query(Some(query));
+        }
+    }
+    crate::security::validate_url(resolved.as_str())?;
+    Ok(resolved)
+}
+
+async fn stream_hls(
+    client: reqwest::Client,
+    initial_url: String,
+    tx: tokio::sync::mpsc::Sender<Result<Vec<u8>, String>>,
+) {
+    let mut playlist_url = initial_url;
+    let mut seen = HashSet::new();
+    let mut seen_order = VecDeque::new();
+
+    loop {
+        let mut media_playlist = None;
+        for _ in 0..3 {
+            let response = match client.get(&playlist_url).send().await {
+                Ok(response) => response,
+                Err(error) => {
+                    let _ = tx.send(Err(format!("HLS playlist request failed: {}", error))).await;
+                    return;
+                }
+            };
+            if !response.status().is_success() {
+                let _ = tx
+                    .send(Err(format!("HLS playlist returned HTTP {}", response.status())))
+                    .await;
+                return;
+            }
+            let text = match response.text().await {
+                Ok(text) => text,
+                Err(error) => {
+                    let _ = tx.send(Err(format!("HLS playlist read failed: {}", error))).await;
+                    return;
+                }
+            };
+            let base = match Url::parse(&playlist_url) {
+                Ok(base) => base,
+                Err(error) => {
+                    let _ = tx.send(Err(format!("invalid HLS playlist URL: {}", error))).await;
+                    return;
+                }
+            };
+            let uris: Vec<&str> = text
+                .lines()
+                .map(str::trim)
+                .filter(|line| !line.is_empty() && !line.starts_with('#'))
+                .collect();
+            if let Some(variant) = uris.iter().find(|uri| {
+                uri.to_ascii_lowercase().contains(".m3u8")
+            }) {
+                match resolve_hls_uri(&base, variant) {
+                    Ok(next) => {
+                        playlist_url = next.to_string();
+                        continue;
+                    }
+                    Err(error) => {
+                        let _ = tx.send(Err(error)).await;
+                        return;
+                    }
+                }
+            }
+            media_playlist = Some((text, base));
+            break;
+        }
+
+        let Some((text, base)) = media_playlist else {
+            let _ = tx.send(Err("HLS master playlist nesting is too deep".into())).await;
+            return;
+        };
+        let end_list = text.lines().any(|line| line.trim() == "#EXT-X-ENDLIST");
+        let mut sent_segment = false;
+
+        for line in text.lines().map(str::trim) {
+            if line.is_empty() || line.starts_with('#') {
+                continue;
+            }
+            let segment = match resolve_hls_uri(&base, line) {
+                Ok(segment) => segment,
+                Err(error) => {
+                    let _ = tx.send(Err(error)).await;
+                    return;
+                }
+            };
+            let segment_url = segment.to_string();
+            if !seen.insert(segment_url.clone()) {
+                continue;
+            }
+            seen_order.push_back(segment_url.clone());
+            if seen_order.len() > 4096 {
+                if let Some(old) = seen_order.pop_front() {
+                    seen.remove(&old);
+                }
+            }
+
+            let response = match client.get(&segment_url).send().await {
+                Ok(response) => response,
+                Err(error) => {
+                    let _ = tx.send(Err(format!("HLS segment request failed: {}", error))).await;
+                    return;
+                }
+            };
+            if !response.status().is_success() {
+                let _ = tx
+                    .send(Err(format!("HLS segment returned HTTP {}", response.status())))
+                    .await;
+                return;
+            }
+            match response.bytes().await {
+                Ok(bytes) if !bytes.is_empty() => {
+                    sent_segment = true;
+                    if tx.send(Ok(bytes.to_vec())).await.is_err() {
+                        return;
+                    }
+                }
+                Ok(_) => {}
+                Err(error) => {
+                    let _ = tx.send(Err(format!("HLS segment read failed: {}", error))).await;
+                    return;
+                }
+            }
+        }
+
+        if end_list {
+            return;
+        }
+        if !sent_segment {
+            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+        }
+    }
+}
+
 /// Build the playback source for `stream_url`.
 ///
 /// Every playback fetch goes through this function, which makes it the chokepoint
@@ -228,7 +394,7 @@ pub async fn create_kizuna_source(
     let local_sources = crate::config::local_sources_enabled();
     let target = crate::security::resolve_stream_target(&stream_url, local_sources).await?;
 
-    let (tx, rx) = tokio::sync::mpsc::channel::<Vec<u8>>(128);
+    let (tx, rx) = tokio::sync::mpsc::channel::<Result<Vec<u8>, String>>(128);
     match target {
         crate::security::StreamTarget::LocalFile(path) => {
             tokio::spawn(async move {
@@ -236,18 +402,25 @@ pub async fn create_kizuna_source(
                 match tokio::fs::File::open(&path).await {
                     Ok(mut file) => {
                         let mut buf = [0u8; 8192];
-                        while let Ok(n) = file.read(&mut buf).await {
-                            if n == 0 {
-                                break;
-                            }
-                            if tx.send(buf[..n].to_vec()).await.is_err() {
-                                break;
+                        loop {
+                            match file.read(&mut buf).await {
+                                Ok(0) => break,
+                                Ok(n) => {
+                                    if tx.send(Ok(buf[..n].to_vec())).await.is_err() {
+                                        break;
+                                    }
+                                }
+                                Err(error) => {
+                                    let _ = tx.send(Err(error.to_string())).await;
+                                    break;
+                                }
                             }
                         }
                     }
-                    Err(e) => {
+                    Err(error) => {
                         let safe_path = crate::security::sanitize_for_log(&path);
-                        tracing::warn!("Cannot open local audio file '{}': {}", safe_path, e);
+                        tracing::warn!("Cannot open local audio file '{}': {}", safe_path, error);
+                        let _ = tx.send(Err(error.to_string())).await;
                     }
                 }
             });
@@ -264,18 +437,24 @@ pub async fn create_kizuna_source(
                 .build()
                 .map_err(|e| format!("Failed to build HTTP client: {}", e))?;
 
-            tokio::spawn(async move {
-                // Stream URLs carry signed query parameters for some sources, so
-                // only the host is logged.
-                let resp = match client.get(&url).send().await {
+            if is_hls_url(&url) {
+                tokio::spawn(stream_hls(client, url, tx));
+            } else {
+                tokio::spawn(async move {
+                    // Stream URLs carry signed query parameters for some sources, so
+                    // only the host is logged.
+                    let resp = match client.get(&url).send().await {
                     Ok(r) => r,
-                    Err(e) => {
-                        tracing::warn!("Stream request to '{}' failed: {}", host, e);
+                    Err(error) => {
+                        tracing::warn!("Stream request to '{}' failed: {}", host, error);
+                        let _ = tx.send(Err(error.to_string())).await;
                         return;
                     }
                 };
                 if !resp.status().is_success() {
-                    tracing::warn!("Stream '{}' returned HTTP {}", host, resp.status());
+                    let error = format!("stream returned HTTP {}", resp.status());
+                    tracing::warn!("Stream '{}' {}", host, error);
+                    let _ = tx.send(Err(error)).await;
                     return;
                 }
                 let mut stream = resp.bytes_stream();
@@ -283,14 +462,18 @@ pub async fn create_kizuna_source(
                 while let Some(chunk) = stream.next().await {
                     match chunk {
                         Ok(bytes) => {
-                            if tx.send(bytes.to_vec()).await.is_err() {
+                            if tx.send(Ok(bytes.to_vec())).await.is_err() {
                                 break;
                             }
                         }
-                        Err(_) => break,
+                        Err(error) => {
+                            let _ = tx.send(Err(error.to_string())).await;
+                            break;
+                        }
                     }
                 }
             });
+        }
         }
     }
 
@@ -342,11 +525,19 @@ impl AudioSource for KizunaFilteredSource {
 
         let usable = buf.len() - (buf.len() % 4);
         let num_samples = usable / 4;
-        let mut samples = Vec::with_capacity(num_samples);
+        let mut samples = Vec::with_capacity(960 * 2);
         for chunk in buf[..usable].as_chunks::<4>().0 {
             let f = f32::from_le_bytes(*chunk);
+            let f = if f.is_finite() { f } else { 0.0 };
             let s = (f * i16::MAX as f32).clamp(i16::MIN as f32, i16::MAX as f32) as i16;
             samples.push(s);
+        }
+
+        // Opus accepts exactly 20 ms at 48 kHz. The blocking reader returns a
+        // short buffer only at EOF; pad that final frame with silence rather
+        // than asking audiopus to encode an invalid frame length.
+        if num_samples < 960 * 2 {
+            samples.resize(960 * 2, 0);
         }
 
         Ok(Some(AudioFrame::Pcm(samples)))

@@ -54,21 +54,25 @@ impl Timescale {
     }
 
     pub fn set_speed(&mut self, v: f64) {
-        self.speed = v.clamp(0.25, 4.0);
+        self.speed = if v.is_finite() { v.clamp(0.25, 4.0) } else { 1.0 };
     }
 
     pub fn set_pitch(&mut self, v: f64) {
-        self.pitch = v.clamp(0.25, 4.0);
+        self.pitch = if v.is_finite() { v.clamp(0.25, 4.0) } else { 1.0 };
     }
 
     pub fn set_rate(&mut self, v: f64) {
-        self.rate = v.clamp(0.25, 4.0);
+        self.rate = if v.is_finite() { v.clamp(0.25, 4.0) } else { 1.0 };
     }
 
     /// Rebuild DSP graph after parameter changes. Must be called once after
     /// constructing/configuring, before processing.
-    pub fn prepare(&mut self) {
-        let ratio = 1.0 / (self.pitch * self.speed);
+    ///
+    /// The Rubato constructor is fallible. Never turn a client-supplied filter
+    /// update into a process-aborting panic; the combined speed/pitch ratio is
+    /// bounded to the range supported by the fixed-size resampler.
+    pub fn prepare(&mut self) -> Result<(), String> {
+        let ratio = (1.0 / (self.pitch * self.speed)).clamp(0.25, 4.0);
 
         self.resampler = if (ratio - 1.0).abs() > 1e-6 {
             let params = SincInterpolationParameters {
@@ -80,13 +84,14 @@ impl Timescale {
             };
             Some(
                 SincFixedIn::<f32>::new(ratio, 4.0, params, CHUNK_FRAMES, 2)
-                    .expect("valid resampler parameters"),
+                    .map_err(|error| format!("invalid timescale resampler parameters: {}", error))?,
             )
         } else {
             None
         };
 
         self.wsola.set_alpha(self.rate / self.pitch);
+        Ok(())
     }
 
     /// Reset all internal state (keeps parameters).
@@ -97,7 +102,12 @@ impl Timescale {
         self.wsola.reset();
         let prepared = self.resampler.is_some();
         if prepared {
-            self.prepare();
+            // Parameters were already validated when the graph was built. Keep
+            // reset infallible for the streaming caller, but never panic if a
+            // future resampler implementation rejects them.
+            if self.prepare().is_err() {
+                self.resampler = None;
+            }
         }
     }
 

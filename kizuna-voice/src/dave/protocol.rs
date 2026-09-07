@@ -233,23 +233,25 @@ pub struct DaveSession {
 }
 
 impl DaveSession {
-    pub fn new(guild_id: String) -> Self {
+    pub fn new(guild_id: String) -> Result<Self, String> {
         let provider = OpenMlsRustCrypto::default();
 
-        // Generate our MLS identity
+        // Generate our MLS identity. Voice setup must be fallible: crypto
+        // provider/entropy/storage errors are recoverable voice failures, not
+        // reasons to abort the whole server.
         let credential = BasicCredential::new(guild_id.as_bytes().to_vec());
         let signer = SignatureKeyPair::new(CIPHERSUITE.signature_algorithm())
-            .expect("Failed to generate signature key pair");
+            .map_err(|error| format!("Failed to generate signature key pair: {}", error))?;
         signer
             .store(provider.storage())
-            .expect("Failed to store signature keys");
+            .map_err(|error| format!("Failed to store signature keys: {}", error))?;
 
         let credential_with_key = CredentialWithKey {
             credential: credential.into(),
             signature_key: signer.public().into(),
         };
 
-        Self {
+        Ok(Self {
             guild_id,
             provider,
             credential_with_key,
@@ -261,7 +263,7 @@ impl DaveSession {
             active: false,
             pending_messages: Vec::new(),
             handshake_supported: false,
-        }
+        })
     }
 
     /// Process a DAVE message from the voice gateway.
@@ -671,12 +673,14 @@ impl DaveManager {
         Self::default()
     }
 
-    pub async fn get_or_create(&self, guild_id: &str) -> Arc<RwLock<DaveSession>> {
+    pub async fn get_or_create(&self, guild_id: &str) -> Result<Arc<RwLock<DaveSession>>, String> {
         let mut sessions = self.sessions.write().await;
-        sessions
-            .entry(guild_id.to_string())
-            .or_insert_with(|| Arc::new(RwLock::new(DaveSession::new(guild_id.to_string()))))
-            .clone()
+        if let Some(session) = sessions.get(guild_id) {
+            return Ok(session.clone());
+        }
+        let session = Arc::new(RwLock::new(DaveSession::new(guild_id.to_string())?));
+        sessions.insert(guild_id.to_string(), session.clone());
+        Ok(session)
     }
 
     pub async fn remove(&self, guild_id: &str) {
@@ -703,7 +707,7 @@ mod tests {
 
     #[test]
     fn frame_roundtrip() {
-        let mut session = DaveSession::new("123".to_string());
+        let mut session = DaveSession::new("123".to_string()).unwrap();
         let secret = vec![42u8; 32];
         session.exporter_secret = secret;
         session.active = true;
@@ -717,7 +721,7 @@ mod tests {
 
     #[test]
     fn different_nonces_produce_different_ciphertexts() {
-        let mut session = DaveSession::new("1".to_string());
+        let mut session = DaveSession::new("1".to_string()).unwrap();
         session.exporter_secret = vec![1u8; 32];
         session.active = true;
         session.add_sender("100");
@@ -730,7 +734,7 @@ mod tests {
 
     #[test]
     fn wrong_key_cannot_decrypt() {
-        let mut session = DaveSession::new("1".to_string());
+        let mut session = DaveSession::new("1".to_string()).unwrap();
         session.exporter_secret = vec![1u8; 32];
         session.active = true;
         session.add_sender("100");
@@ -739,7 +743,7 @@ mod tests {
         let encrypted = session.encrypt_frame("100", data, 0, &[]).unwrap();
 
         // Create a different session with different secret
-        let mut other = DaveSession::new("1".to_string());
+        let mut other = DaveSession::new("1".to_string()).unwrap();
         other.exporter_secret = vec![2u8; 32];
         other.active = true;
         other.add_sender("100");
@@ -750,7 +754,7 @@ mod tests {
 
     #[test]
     fn key_ratcheting_forward() {
-        let mut session = DaveSession::new("1".to_string());
+        let mut session = DaveSession::new("1".to_string()).unwrap();
         session.exporter_secret = vec![5u8; 32];
         session.active = true;
         session.add_sender("200");
@@ -774,7 +778,7 @@ mod tests {
     /// extension) and the resulting `active` flag silently broke audio.
     #[test]
     fn gateway_messages_are_ignored_while_dave_is_unsupported() {
-        let mut session = DaveSession::new("guild_42".to_string());
+        let mut session = DaveSession::new("guild_42".to_string()).unwrap();
         assert!(session.group.is_none());
 
         let msg = DaveGatewayMessage::MlsExternalSenderPackage {
@@ -808,7 +812,7 @@ mod tests {
     /// frames that no other participant can open.
     #[test]
     fn is_active_stays_false_even_with_internal_active_flag() {
-        let mut session = DaveSession::new("guild_7".to_string());
+        let mut session = DaveSession::new("guild_7".to_string()).unwrap();
         session.exporter_secret = vec![3u8; 32];
         session.active = true;
         session.add_sender("111");

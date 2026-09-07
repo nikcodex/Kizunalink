@@ -49,6 +49,7 @@ pub struct AudioDecoder {
     // converted interleaved stereo output ready for consumers
     out_fifo: Vec<f32>,
     eof: bool,
+    error: Option<String>,
 
     frames_to_skip: u64,
 }
@@ -80,7 +81,14 @@ impl AudioDecoder {
             .format
             .tracks()
             .iter()
-            .find(|t| t.codec_params.codec != CODEC_TYPE_NULL)
+            // Symphonia exposes video and audio tracks together. Audio tracks
+            // have a channel layout and sample rate; selecting the first
+            // non-null codec can accidentally instantiate a video decoder.
+            .find(|t| {
+                t.codec_params.codec != CODEC_TYPE_NULL
+                    && t.codec_params.channels.is_some()
+                    && t.codec_params.sample_rate.is_some()
+            })
             .ok_or("no audio track found")?
             .clone();
 
@@ -105,6 +113,7 @@ impl AudioDecoder {
             res_pending: [Vec::new(), Vec::new()],
             out_fifo: Vec::with_capacity(DECODE_CHUNK_FRAMES * 4),
             eof: false,
+            error: None,
             frames_to_skip: skip_frames,
         };
 
@@ -145,6 +154,10 @@ impl AudioDecoder {
         self.eof && self.out_fifo.is_empty()
     }
 
+    pub fn take_error(&mut self) -> Option<String> {
+        self.error.take()
+    }
+
     fn fill_fifo(&mut self) {
         while !self.eof && self.out_fifo.len() < DECODE_CHUNK_FRAMES * 2 {
             match self.decode_next_packet() {
@@ -152,11 +165,16 @@ impl AudioDecoder {
                     self.push_converted(&samples);
                 }
                 Ok(None) => {
-                    // No more packets
+                    // No more packets. Flush source-rate samples that did not
+                    // fill a complete resampler chunk before declaring EOF.
+                    self.flush_resampler();
                     self.eof = true;
                     break;
                 }
-                Err(_) => {
+                Err(error) => {
+                    tracing::warn!("audio decoder stopped while reading: {}", error);
+                    self.error = Some(error.to_string());
+                    self.flush_resampler();
                     self.eof = true;
                     break;
                 }
@@ -199,6 +217,38 @@ impl AudioDecoder {
 
             let samples = sample_buf.samples().to_vec();
             return Ok(Some(samples));
+        }
+    }
+
+    fn flush_resampler(&mut self) {
+        if self.resampler.is_none() || self.res_in[0].is_empty() {
+            return;
+        }
+
+        // Rubato's fixed-input resampler needs a complete chunk. Zero-pad only
+        // the decoder tail, then emit the real samples plus the short filter
+        // tail instead of silently dropping the final part of a track.
+        self.res_in[0].resize(DECODE_CHUNK_FRAMES, 0.0);
+        self.res_in[1].resize(DECODE_CHUNK_FRAMES, 0.0);
+        let wave_in = vec![
+            std::mem::take(&mut self.res_in[0]),
+            std::mem::take(&mut self.res_in[1]),
+        ];
+        let result = match self.resampler.as_mut() {
+            Some(resampler) => resampler.process(&wave_in, None),
+            None => return,
+        };
+        match result {
+            Ok(wave_out) => {
+                let frames = wave_out[0].len().min(wave_out[1].len());
+                for i in 0..frames {
+                    self.out_fifo.push(wave_out[0][i]);
+                    self.out_fifo.push(wave_out[1][i]);
+                }
+            }
+            Err(error) => {
+                tracing::warn!("audio resampler flush failed: {}", error);
+            }
         }
     }
 
@@ -286,13 +336,13 @@ impl AudioDecoder {
 /// Byte source backed by a channel fed from an async HTTP task.
 /// Implements Read+Send+Sync so it can be wrapped in a MediaSourceStream.
 pub struct ChannelByteSource {
-    rx: Mutex<tokio::sync::mpsc::Receiver<Vec<u8>>>,
+    rx: Mutex<tokio::sync::mpsc::Receiver<Result<Vec<u8>, String>>>,
     pending: Mutex<Vec<u8>>,
     eof: Mutex<bool>,
 }
 
 impl ChannelByteSource {
-    pub fn new(rx: tokio::sync::mpsc::Receiver<Vec<u8>>) -> Self {
+    pub fn new(rx: tokio::sync::mpsc::Receiver<Result<Vec<u8>, String>>) -> Self {
         Self {
             rx: Mutex::new(rx),
             pending: Mutex::new(Vec::new()),
@@ -340,8 +390,12 @@ impl Read for ChannelByteSource {
 
             let mut rx = self.rx.lock().unwrap();
             match rx.blocking_recv() {
-                Some(chunk) => {
+                Some(Ok(chunk)) => {
                     self.pending.lock().unwrap().extend_from_slice(&chunk);
+                }
+                Some(Err(error)) => {
+                    *self.eof.lock().unwrap() = true;
+                    return Err(std::io::Error::new(std::io::ErrorKind::Other, error));
                 }
                 None => {
                     *self.eof.lock().unwrap() = true;

@@ -13,7 +13,8 @@ use kizunalink::security::{
 };
 use kizunalink::sources::{
     apple_music::AppleMusicSource, deezer::DeezerSource, jiosaavn::JioSaavnSource,
-    soundcloud::SoundCloudSource, spotify::SpotifySource, youtube::YouTubeSource,
+    niconico::NicoNicoSource, soundcloud::SoundCloudSource, spotify::SpotifySource,
+    twitch::TwitchSource, vimeo::VimeoSource, youtube::YouTubeSource,
 };
 use kizunalink::ws::session::SessionManager;
 use std::sync::Arc;
@@ -34,6 +35,9 @@ fn mock_player_manager_with_limit(max_players: usize) -> PlayerManager {
             soundcloud: SoundCloudSource::new(),
             deezer: DeezerSource::new(),
             apple_music: AppleMusicSource::new(),
+            twitch: TwitchSource::new(),
+            vimeo: VimeoSource::new(),
+            niconico: NicoNicoSource::new(),
         },
         50,
         max_players,
@@ -741,6 +745,9 @@ fn manager_with_events() -> (PlayerManager, broadcast::Receiver<String>) {
             soundcloud: SoundCloudSource::new(),
             deezer: DeezerSource::new(),
             apple_music: AppleMusicSource::new(),
+            twitch: TwitchSource::new(),
+            vimeo: VimeoSource::new(),
+            niconico: NicoNicoSource::new(),
         },
         50,
         MAX_PLAYERS,

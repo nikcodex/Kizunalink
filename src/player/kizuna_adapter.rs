@@ -22,17 +22,22 @@ pub struct KizunaVoiceAdapter {
 }
 
 impl KizunaVoiceAdapter {
-    pub fn new(session_id: String, token: String, endpoint: String, guild_id: String) -> Self {
-        Self {
+    pub fn new(
+        session_id: String,
+        token: String,
+        endpoint: String,
+        guild_id: String,
+    ) -> Result<Self, String> {
+        Ok(Self {
             session: VoiceSession::new(session_id, token, endpoint),
             udp: Arc::new(RwLock::new(None)),
-            dave: Arc::new(Mutex::new(DaveSession::new(guild_id))),
+            dave: Arc::new(Mutex::new(DaveSession::new(guild_id)?)),
             transport_crypto: Arc::new(Mutex::new(None)),
             ssrc: Arc::new(std::sync::atomic::AtomicU32::new(0)),
             sequence: Arc::new(std::sync::atomic::AtomicU16::new(0)),
             timestamp: Arc::new(std::sync::atomic::AtomicU32::new(0)),
             manager: None,
-        }
+        })
     }
 
     /// Shared handle to the voice-gateway RTT measurement, so the synchronous
@@ -110,6 +115,28 @@ impl KizunaVoiceAdapter {
 
         match connect_result {
             Ok(Ok(())) => {
+                // ConnectionState::Connected is published by the gateway
+                // handshake before the async UDP callback and SessionDescription
+                // handler necessarily finish. Do not let playback start until
+                // both pieces of media transport are ready.
+                let transport_ready = tokio::time::timeout(
+                    std::time::Duration::from_secs(5),
+                    async {
+                        loop {
+                            let udp_ready = self.udp.read().await.is_some();
+                            if udp_ready && manager.transport_ready().await {
+                                break true;
+                            }
+                            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+                        }
+                    },
+                )
+                .await
+                .unwrap_or(false);
+                if !transport_ready {
+                    manager.shutdown().await;
+                    return Err("Voice transport did not become ready".into());
+                }
                 info!("KizunaVoice Adapter fully connected!");
                 Ok(())
             }
@@ -225,13 +252,11 @@ impl KizunaVoiceAdapter {
                                     }
                                 }
                             } else {
-                                let mut packet = header_buf;
-                                packet.extend(packet_payload);
-                                if current_udp.send_packet(&packet).await.is_ok() {
-                                    crate::stats::FrameCounters::global().record_sent(1);
-                                } else {
-                                    crate::stats::FrameCounters::global().record_deficit(1);
-                                }
+                                // The negotiated mode is AEAD. Dropping while
+                                // waiting for SessionDescription is safer than
+                                // sending plaintext RTP that Discord cannot
+                                // decrypt.
+                                crate::stats::FrameCounters::global().record_deficit(1);
                             }
                         }
                     }
@@ -279,11 +304,9 @@ impl KizunaVoiceAdapter {
                                 }
                             }
                         } else {
-                            let mut packet = header_buf;
-                            packet.extend(silence_payload);
-                            if current_udp.send_packet(&packet).await.is_ok() {
-                                crate::stats::FrameCounters::global().record_nulled(1);
-                            }
+                            // Do not emit plaintext silence while the new voice
+                            // cycle is still waiting for its transport key.
+                            crate::stats::FrameCounters::global().record_deficit(1);
                         }
                     }
                     tokio::time::sleep(std::time::Duration::from_millis(20)).await;

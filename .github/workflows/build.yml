@@ -2,7 +2,9 @@ name: Build KizunaLink Engine
 
 on:
   push:
-    branches: [ "main" ]
+    branches:
+      - "main"
+      - "arena/**"
   pull_request:
     branches: [ "main" ]
   workflow_dispatch:
