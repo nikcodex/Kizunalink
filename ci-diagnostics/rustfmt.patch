@@ -1,0 +1,408 @@
+diff --git a/kizuna-voice/src/connection/manager.rs b/kizuna-voice/src/connection/manager.rs
+index 9b48dc6..350b429 100644
+--- a/kizuna-voice/src/connection/manager.rs
++++ b/kizuna-voice/src/connection/manager.rs
+@@ -599,7 +599,9 @@ mod tests {
+             session_id: "session".to_string(),
+             token: "token".to_string(),
+         };
+-        let dave = Arc::new(Mutex::new(DaveSession::new("111222333444555".to_string()).unwrap()));
++        let dave = Arc::new(Mutex::new(
++            DaveSession::new("111222333444555".to_string()).unwrap(),
++        ));
+         let crypto = Arc::new(Mutex::new(None));
+         VoiceConnectionManager::new(credentials, dave, crypto)
+     }
+diff --git a/src/config.rs b/src/config.rs
+index acc88c8..b0208cf 100644
+--- a/src/config.rs
++++ b/src/config.rs
+@@ -274,7 +274,10 @@ pub fn http_client() -> reqwest::Client {
+     {
+         Ok(client) => client,
+         Err(error) => {
+-            tracing::error!("Failed to build configured HTTP client: {}; using defaults", error);
++            tracing::error!(
++                "Failed to build configured HTTP client: {}; using defaults",
++                error
++            );
+             reqwest::Client::new()
+         }
+     }
+diff --git a/src/dsp/pipeline.rs b/src/dsp/pipeline.rs
+index 030f101..e7ed149 100644
+--- a/src/dsp/pipeline.rs
++++ b/src/dsp/pipeline.rs
+@@ -261,27 +261,36 @@ async fn stream_hls(
+             let response = match client.get(&playlist_url).send().await {
+                 Ok(response) => response,
+                 Err(error) => {
+-                    let _ = tx.send(Err(format!("HLS playlist request failed: {}", error))).await;
++                    let _ = tx
++                        .send(Err(format!("HLS playlist request failed: {}", error)))
++                        .await;
+                     return;
+                 }
+             };
+             if !response.status().is_success() {
+                 let _ = tx
+-                    .send(Err(format!("HLS playlist returned HTTP {}", response.status())))
++                    .send(Err(format!(
++                        "HLS playlist returned HTTP {}",
++                        response.status()
++                    )))
+                     .await;
+                 return;
+             }
+             let text = match response.text().await {
+                 Ok(text) => text,
+                 Err(error) => {
+-                    let _ = tx.send(Err(format!("HLS playlist read failed: {}", error))).await;
++                    let _ = tx
++                        .send(Err(format!("HLS playlist read failed: {}", error)))
++                        .await;
+                     return;
+                 }
+             };
+             let base = match Url::parse(&playlist_url) {
+                 Ok(base) => base,
+                 Err(error) => {
+-                    let _ = tx.send(Err(format!("invalid HLS playlist URL: {}", error))).await;
++                    let _ = tx
++                        .send(Err(format!("invalid HLS playlist URL: {}", error)))
++                        .await;
+                     return;
+                 }
+             };
+@@ -290,9 +299,10 @@ async fn stream_hls(
+                 .map(str::trim)
+                 .filter(|line| !line.is_empty() && !line.starts_with('#'))
+                 .collect();
+-            if let Some(variant) = uris.iter().find(|uri| {
+-                uri.to_ascii_lowercase().contains(".m3u8")
+-            }) {
++            if let Some(variant) = uris
++                .iter()
++                .find(|uri| uri.to_ascii_lowercase().contains(".m3u8"))
++            {
+                 match resolve_hls_uri(&base, variant) {
+                     Ok(next) => {
+                         playlist_url = next.to_string();
+@@ -309,7 +319,9 @@ async fn stream_hls(
+         }
+ 
+         let Some((text, base)) = media_playlist else {
+-            let _ = tx.send(Err("HLS master playlist nesting is too deep".into())).await;
++            let _ = tx
++                .send(Err("HLS master playlist nesting is too deep".into()))
++                .await;
+             return;
+         };
+         let end_list = text.lines().any(|line| line.trim() == "#EXT-X-ENDLIST");
+@@ -340,13 +352,18 @@ async fn stream_hls(
+             let response = match client.get(&segment_url).send().await {
+                 Ok(response) => response,
+                 Err(error) => {
+-                    let _ = tx.send(Err(format!("HLS segment request failed: {}", error))).await;
++                    let _ = tx
++                        .send(Err(format!("HLS segment request failed: {}", error)))
++                        .await;
+                     return;
+                 }
+             };
+             if !response.status().is_success() {
+                 let _ = tx
+-                    .send(Err(format!("HLS segment returned HTTP {}", response.status())))
++                    .send(Err(format!(
++                        "HLS segment returned HTTP {}",
++                        response.status()
++                    )))
+                     .await;
+                 return;
+             }
+@@ -359,7 +376,9 @@ async fn stream_hls(
+                 }
+                 Ok(_) => {}
+                 Err(error) => {
+-                    let _ = tx.send(Err(format!("HLS segment read failed: {}", error))).await;
++                    let _ = tx
++                        .send(Err(format!("HLS segment read failed: {}", error)))
++                        .await;
+                     return;
+                 }
+             }
+@@ -444,36 +463,36 @@ pub async fn create_kizuna_source(
+                     // Stream URLs carry signed query parameters for some sources, so
+                     // only the host is logged.
+                     let resp = match client.get(&url).send().await {
+-                    Ok(r) => r,
+-                    Err(error) => {
+-                        tracing::warn!("Stream request to '{}' failed: {}", host, error);
+-                        let _ = tx.send(Err(error.to_string())).await;
++                        Ok(r) => r,
++                        Err(error) => {
++                            tracing::warn!("Stream request to '{}' failed: {}", host, error);
++                            let _ = tx.send(Err(error.to_string())).await;
++                            return;
++                        }
++                    };
++                    if !resp.status().is_success() {
++                        let error = format!("stream returned HTTP {}", resp.status());
++                        tracing::warn!("Stream '{}' {}", host, error);
++                        let _ = tx.send(Err(error)).await;
+                         return;
+                     }
+-                };
+-                if !resp.status().is_success() {
+-                    let error = format!("stream returned HTTP {}", resp.status());
+-                    tracing::warn!("Stream '{}' {}", host, error);
+-                    let _ = tx.send(Err(error)).await;
+-                    return;
+-                }
+-                let mut stream = resp.bytes_stream();
+-                use futures_util::StreamExt;
+-                while let Some(chunk) = stream.next().await {
+-                    match chunk {
+-                        Ok(bytes) => {
+-                            if tx.send(Ok(bytes.to_vec())).await.is_err() {
++                    let mut stream = resp.bytes_stream();
++                    use futures_util::StreamExt;
++                    while let Some(chunk) = stream.next().await {
++                        match chunk {
++                            Ok(bytes) => {
++                                if tx.send(Ok(bytes.to_vec())).await.is_err() {
++                                    break;
++                                }
++                            }
++                            Err(error) => {
++                                let _ = tx.send(Err(error.to_string())).await;
+                                 break;
+                             }
+                         }
+-                        Err(error) => {
+-                            let _ = tx.send(Err(error.to_string())).await;
+-                            break;
+-                        }
+                     }
+-                }
+-            });
+-        }
++                });
++            }
+         }
+     }
+ 
+diff --git a/src/dsp/timescale.rs b/src/dsp/timescale.rs
+index 3d66500..2563e7d 100644
+--- a/src/dsp/timescale.rs
++++ b/src/dsp/timescale.rs
+@@ -54,15 +54,27 @@ impl Timescale {
+     }
+ 
+     pub fn set_speed(&mut self, v: f64) {
+-        self.speed = if v.is_finite() { v.clamp(0.25, 4.0) } else { 1.0 };
++        self.speed = if v.is_finite() {
++            v.clamp(0.25, 4.0)
++        } else {
++            1.0
++        };
+     }
+ 
+     pub fn set_pitch(&mut self, v: f64) {
+-        self.pitch = if v.is_finite() { v.clamp(0.25, 4.0) } else { 1.0 };
++        self.pitch = if v.is_finite() {
++            v.clamp(0.25, 4.0)
++        } else {
++            1.0
++        };
+     }
+ 
+     pub fn set_rate(&mut self, v: f64) {
+-        self.rate = if v.is_finite() { v.clamp(0.25, 4.0) } else { 1.0 };
++        self.rate = if v.is_finite() {
++            v.clamp(0.25, 4.0)
++        } else {
++            1.0
++        };
+     }
+ 
+     /// Rebuild DSP graph after parameter changes. Must be called once after
+@@ -83,8 +95,9 @@ impl Timescale {
+                 window: WindowFunction::BlackmanHarris,
+             };
+             Some(
+-                SincFixedIn::<f32>::new(ratio, 4.0, params, CHUNK_FRAMES, 2)
+-                    .map_err(|error| format!("invalid timescale resampler parameters: {}", error))?,
++                SincFixedIn::<f32>::new(ratio, 4.0, params, CHUNK_FRAMES, 2).map_err(|error| {
++                    format!("invalid timescale resampler parameters: {}", error)
++                })?,
+             )
+         } else {
+             None
+diff --git a/src/player/guild_player.rs b/src/player/guild_player.rs
+index a14f248..b136c7c 100644
+--- a/src/player/guild_player.rs
++++ b/src/player/guild_player.rs
+@@ -229,7 +229,10 @@ impl GuildPlayer {
+         ) {
+             Ok(adapter) => adapter,
+             Err(error) => {
+-                warn!("Voice crypto initialization failed for guild {}: {}", self.guild_id, error);
++                warn!(
++                    "Voice crypto initialization failed for guild {}: {}",
++                    self.guild_id, error
++                );
+                 self.voice = Some(merged);
+                 return Err(error);
+             }
+@@ -294,7 +297,11 @@ impl GuildPlayer {
+         self.playback_generation
+     }
+ 
+-    fn spawn_track_end_notifier(&self, handle: &kizuna_voice::audio::KizunaTrackHandle, generation: u64) {
++    fn spawn_track_end_notifier(
++        &self,
++        handle: &kizuna_voice::audio::KizunaTrackHandle,
++        generation: u64,
++    ) {
+         let guild_id = self.guild_id.clone();
+         let tx = self.track_end_tx.clone();
+         let handle = handle.clone();
+@@ -323,7 +330,10 @@ impl GuildPlayer {
+             return;
+         }
+         let Some(adapter_arc) = self.kizuna_voice_adapter.clone() else {
+-            warn!("Cannot restart playback without voice for guild {}", self.guild_id);
++            warn!(
++                "Cannot restart playback without voice for guild {}",
++                self.guild_id
++            );
+             return;
+         };
+         let position_ms = self.safe_position(requested_position_ms);
+@@ -367,8 +377,7 @@ impl GuildPlayer {
+             .unwrap()
+             .duration_factor()
+             .max(1e-6);
+-        let wall_offset_ms = ((position_ms as f64 / factor).max(0.0))
+-            .min(u64::MAX as f64) as u64;
++        let wall_offset_ms = ((position_ms as f64 / factor).max(0.0)).min(u64::MAX as f64) as u64;
+ 
+         if was_paused {
+             if let Some(k_handle) = &self.kizuna_track_handle {
+@@ -530,8 +539,8 @@ impl GuildPlayer {
+                 1.0
+             };
+             let paused_position = self.safe_position(self.paused_position);
+-            let wall_offset_ms = (paused_position as f64 / factor.max(1e-6))
+-                .min(u64::MAX as f64) as u64;
++            let wall_offset_ms =
++                (paused_position as f64 / factor.max(1e-6)).min(u64::MAX as f64) as u64;
+             let now = Instant::now();
+             self.play_started_at = Some(
+                 now.checked_sub(Duration::from_millis(wall_offset_ms))
+diff --git a/src/player/kizuna_adapter.rs b/src/player/kizuna_adapter.rs
+index ba9950d..207b0b9 100644
+--- a/src/player/kizuna_adapter.rs
++++ b/src/player/kizuna_adapter.rs
+@@ -119,9 +119,8 @@ impl KizunaVoiceAdapter {
+                 // handshake before the async UDP callback and SessionDescription
+                 // handler necessarily finish. Do not let playback start until
+                 // both pieces of media transport are ready.
+-                let transport_ready = tokio::time::timeout(
+-                    std::time::Duration::from_secs(5),
+-                    async {
++                let transport_ready =
++                    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+                         loop {
+                             let udp_ready = self.udp.read().await.is_some();
+                             if udp_ready && manager.transport_ready().await {
+@@ -129,10 +128,9 @@ impl KizunaVoiceAdapter {
+                             }
+                             tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+                         }
+-                    },
+-                )
+-                .await
+-                .unwrap_or(false);
++                    })
++                    .await
++                    .unwrap_or(false);
+                 if !transport_ready {
+                     manager.shutdown().await;
+                     return Err("Voice transport did not become ready".into());
+diff --git a/src/player/manager.rs b/src/player/manager.rs
+index a2a6c22..d1e07e4 100644
+--- a/src/player/manager.rs
++++ b/src/player/manager.rs
+@@ -600,14 +600,18 @@ impl PlayerManager {
+             }
+             "soundcloud" => self.soundcloud.resolve_stream(identifier).await.ok(),
+             "twitch" => {
+-                if let Some(stream_url) = track.plugin_info.get("streamUrl").and_then(|u| u.as_str()) {
++                if let Some(stream_url) =
++                    track.plugin_info.get("streamUrl").and_then(|u| u.as_str())
++                {
+                     Some(stream_url.to_string())
+                 } else {
+                     self.twitch.resolve_stream(identifier).await.ok().flatten()
+                 }
+             }
+             "vimeo" => {
+-                if let Some(stream_url) = track.plugin_info.get("streamUrl").and_then(|u| u.as_str()) {
++                if let Some(stream_url) =
++                    track.plugin_info.get("streamUrl").and_then(|u| u.as_str())
++                {
+                     Some(stream_url.to_string())
+                 } else {
+                     self.vimeo
+@@ -616,7 +620,9 @@ impl PlayerManager {
+                         .ok()
+                         .flatten()
+                         .and_then(|resolved| {
+-                            resolved.plugin_info.get("streamUrl")
++                            resolved
++                                .plugin_info
++                                .get("streamUrl")
+                                 .and_then(|u| u.as_str())
+                                 .map(str::to_string)
+                         })
+@@ -636,7 +642,7 @@ impl PlayerManager {
+                 .get("streamUrl")
+                 .and_then(|u| u.as_str())
+                 .map(str::to_string)
+-                .or_else(|| track.info.uri.clone())
++                .or_else(|| track.info.uri.clone()),
+         }
+     }
+ 
+@@ -998,12 +1004,7 @@ impl PlayerManager {
+         }
+     }
+ 
+-    pub async fn handle_track_end(
+-        &self,
+-        guild_id: &str,
+-        generation: u64,
+-        error: Option<String>,
+-    ) {
++    pub async fn handle_track_end(&self, guild_id: &str, generation: u64, error: Option<String>) {
+         let player_arc = match self.players.get(guild_id).map(|r| r.value().player.clone()) {
+             Some(p) => p,
+             None => return,
+diff --git a/src/track_encoding.rs b/src/track_encoding.rs
+index 4469569..e316b60 100644
+--- a/src/track_encoding.rs
++++ b/src/track_encoding.rs
+@@ -192,8 +192,9 @@ pub fn encode_track(track: &LavalinkTrack) -> Result<String, TrackDecodeError> {
+     // playable stream after the client sends the encoded track back to us.
+     // Without this, Twitch/Vimeo lose their resolved media URL and fall back to
+     // an HTML page URL.
+-    let plugin_info = serde_json::to_string(&track.plugin_info)
+-        .map_err(|e| TrackDecodeError::IoError(format!("Plugin info serialization failed: {}", e)))?;
++    let plugin_info = serde_json::to_string(&track.plugin_info).map_err(|e| {
++        TrackDecodeError::IoError(format!("Plugin info serialization failed: {}", e))
++    })?;
+     let user_data = serde_json::to_string(&track.user_data)
+         .map_err(|e| TrackDecodeError::IoError(format!("User data serialization failed: {}", e)))?;
+     write_nullable_text(&mut output, Some(&plugin_info))?;
