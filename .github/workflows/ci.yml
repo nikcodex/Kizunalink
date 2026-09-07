@@ -11,9 +11,6 @@ on:
 env:
   CARGO_TERM_COLOR: always
 
-permissions:
-  contents: write
-
 jobs:
   check:
     name: Check
@@ -37,23 +34,7 @@ jobs:
           components: clippy
       - uses: Swatinem/rust-cache@v2
       - run: sudo apt-get update && sudo apt-get install -y cmake
-      - name: Run Clippy
-        run: |
-          set -o pipefail
-          cargo clippy --workspace --all-targets --all-features -- -D warnings 2>&1 | tee clippy.log
-      - if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: clippy-log
-          path: clippy.log
-      - if: always()
-        name: Publish Clippy diagnostics
-        run: |
-          if [[ -s clippy.log ]]; then
-            base64 -w0 clippy.log | fold -w 60000 | while IFS= read -r chunk; do
-              echo "::error file=clippy.log,title=Clippy diagnostics::$chunk"
-            done
-          fi
+      - run: cargo clippy --workspace --all-targets --all-features -- -D warnings
 
   fmt:
     name: Format
@@ -66,24 +47,7 @@ jobs:
           components: rustfmt
       # --all covers every workspace member (kizunalink + kizuna-voice);
       # without it only the root package is checked.
-      - name: Generate formatting patch
-        run: cargo fmt --all
-      - if: always()
-        run: git diff --binary > rustfmt.patch
-      - if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: rustfmt-patch
-          path: rustfmt.patch
-      - if: always()
-        name: Publish formatting patch
-        run: |
-          if [[ -s rustfmt.patch ]]; then
-            base64 -w0 rustfmt.patch | fold -w 60000 | while IFS= read -r chunk; do
-              echo "::error file=rustfmt.patch,title=Rustfmt patch::$chunk"
-            done
-          fi
-      - run: git diff --exit-code
+      - run: cargo fmt --all --check
 
   test:
     name: Test
@@ -94,23 +58,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: sudo apt-get update && sudo apt-get install -y cmake
-      - name: Run tests
-        run: |
-          set -o pipefail
-          cargo test --workspace --all-targets --all-features 2>&1 | tee test.log
-      - if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: test-log
-          path: test.log
-      - if: always()
-        name: Publish test diagnostics
-        run: |
-          if [[ -s test.log ]]; then
-            base64 -w0 test.log | fold -w 60000 | while IFS= read -r chunk; do
-              echo "::error file=test.log,title=Test diagnostics::$chunk"
-            done
-          fi
+      - run: cargo test --workspace --all-targets --all-features
 
   build-release:
     name: Build Release
@@ -127,30 +75,3 @@ jobs:
         with:
           name: kizunalink-linux-amd64
           path: target/release/kizunalink
-
-  diagnostics:
-    name: Save CI diagnostics
-    if: always()
-    needs: [clippy, fmt, test]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
-        with:
-          name: clippy-log
-          path: ci-diagnostics
-      - uses: actions/download-artifact@v4
-        with:
-          name: test-log
-          path: ci-diagnostics
-      - uses: actions/download-artifact@v4
-        with:
-          name: rustfmt-patch
-          path: ci-diagnostics
-      - name: Commit diagnostics for retrieval
-        run: |
-          git config user.name github-actions[bot]
-          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add -f ci-diagnostics
-          git commit -m 'CI diagnostics [skip ci]' || exit 0
-          git push origin "HEAD:${GITHUB_REF_NAME}"
