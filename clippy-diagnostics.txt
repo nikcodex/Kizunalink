@@ -1,0 +1,175 @@
+    Updating crates.io index
+     Locking 421 packages to latest compatible versions
+      Adding aes-gcm v0.10.3 (available: v0.11.1)
+      Adding axum v0.7.9 (available: v0.8.9)
+      Adding base64 v0.22.1 (available: v0.23.1)
+      Adding dashmap v5.5.3 (available: v6.2.1)
+      Adding generic-array v0.14.7 (available: v0.14.9)
+      Adding hkdf v0.12.4 (available: v0.13.0)
+      Adding hmac v0.12.1 (available: v0.13.0)
+      Adding prometheus v0.13.4 (available: v0.14.0)
+      Adding rand v0.8.8 (available: v0.10.2)
+      Adding reqwest v0.11.27 (available: v0.13.5)
+      Adding rubato v0.14.1 (available: v5.0.0)
+      Adding sha2 v0.10.9 (available: v0.11.0)
+      Adding symphonia v0.5.5 (available: v0.6.1)
+      Adding sysinfo v0.31.4 (available: v0.39.6)
+      Adding thiserror v1.0.69 (available: v2.0.20)
+      Adding tokio-tungstenite v0.21.0 (available: v0.30.0)
+      Adding toml v0.8.23 (available: v1.1.6+spec-1.1.0)
+      Adding tower-http v0.5.2 (available: v0.7.1)
+ Downloading crates ...
+  Downloaded core_detect v1.0.0
+  Downloaded bitflags v2.13.2
+  Downloaded crossbeam-deque v0.8.8
+  Downloaded find-msvc-tools v0.1.12
+  Downloaded crossbeam-epoch v0.9.21
+  Downloaded crossbeam-utils v0.8.23
+  Downloaded cc v1.4.5
+  Downloaded der v0.8.2
+  Downloaded hybrid-array v0.4.15
+  Downloaded encoding_rs v0.8.41
+  Downloaded ipnet v2.12.2
+  Downloaded indexmap v2.14.2
+  Downloaded multiversion v0.9.0
+  Downloaded multiversion-macros v0.9.0
+  Downloaded multiversion_no_op v1.0.0
+  Downloaded simdutf8 v0.1.5
+  Downloaded syn v3.0.5
+  Downloaded zerocopy v0.8.57
+   Compiling syn v3.0.5
+   Compiling find-msvc-tools v0.1.12
+    Checking hybrid-array v0.4.15
+   Compiling encoding_rs v0.8.41
+    Checking crypto-common v0.2.2
+    Checking block-buffer v0.12.1
+    Checking digest v0.11.3
+   Compiling multiversion_no_op v1.0.0
+    Checking core_detect v1.0.0
+   Compiling cc v1.4.5
+   Compiling zerocopy v0.8.57
+    Checking simdutf8 v0.1.5
+   Compiling crossbeam-utils v0.8.23
+   Compiling crossbeam-epoch v0.9.21
+    Checking module-lattice v0.2.3
+   Compiling ring v0.17.14
+   Compiling crossbeam-deque v0.8.8
+   Compiling serde_derive v1.0.229
+   Compiling tokio-macros v2.7.2
+   Compiling zerovec-derive v0.11.6
+   Compiling multiversion-macros v0.9.0
+    Checking zerovec v0.11.8
+    Checking multiversion v0.9.0
+    Checking tokio v1.53.1
+   Compiling displaydoc v0.2.7
+    Checking serde v1.0.229
+    Checking tinystr v0.8.4
+    Checking ppv-lite86 v0.2.21
+    Checking symphonia-metadata v0.5.5
+   Compiling futures-macro v0.3.34
+    Checking icu_locale_core v2.3.0
+    Checking futures-util v0.3.34
+    Checking zerotrie v0.2.5
+    Checking potential_utf v0.1.6
+    Checking icu_collections v2.3.0
+    Checking icu_provider v2.3.1
+    Checking rand_chacha v0.3.1
+    Checking icu_properties v2.3.0
+    Checking icu_normalizer v2.3.0
+    Checking symphonia-utils-xiph v0.5.5
+    Checking tls_codec v0.5.0
+   Compiling thiserror-impl v2.0.20
+    Checking idna_adapter v1.2.2
+    Checking rand v0.8.8
+    Checking shake v0.1.0
+    Checking der v0.8.2
+    Checking bitflags v2.13.2
+    Checking indexmap v2.14.2
+    Checking idna v1.1.0
+    Checking openmls_traits v0.6.0
+    Checking spki v0.8.0
+    Checking sha3 v0.11.0
+   Compiling cmake v0.1.58
+    Checking kem v0.3.0
+    Checking rayon-core v1.13.0
+    Checking ml-kem v0.3.2
+   Compiling audiopus_sys v0.2.2
+    Checking pkcs8 v0.11.0
+    Checking url v2.5.8
+    Checking thiserror v2.0.20
+    Checking sha3 v0.12.0
+    Checking hmac v0.13.0
+    Checking signature v3.0.0
+    Checking rayon v1.12.0
+    Checking x-wing v0.1.0
+    Checking ml-dsa v0.1.1
+    Checking hkdf v0.13.0
+    Checking tokio-util v0.7.19
+    Checking rand_chacha v0.10.0
+   Compiling async-trait v0.1.92
+    Checking sha2 v0.11.0
+    Checking symphonia-format-riff v0.5.5
+    Checking h2 v0.3.27
+    Checking hpke-rs-rust-crypto v0.7.0
+   Compiling openmls_serialization_helpers v0.1.0
+   Compiling rustls v0.22.4
+   Compiling rustls v0.21.12
+    Checking hpke-rs v0.7.0
+    Checking openmls_memory_storage v0.6.0
+    Checking symphonia-format-mkv v0.5.5
+    Checking symphonia-bundle-flac v0.5.5
+    Checking rustls-webpki v0.102.8
+    Checking rustls-webpki v0.101.7
+    Checking sct v0.7.1
+    Checking symphonia-codec-vorbis v0.5.5
+    Checking symphonia-format-isomp4 v0.5.5
+    Checking symphonia-format-ogg v0.5.5
+    Checking symphonia-format-caf v0.5.5
+    Checking symphonia-bundle-mp3 v0.5.5
+    Checking tokio-rustls v0.25.0
+    Checking tungstenite v0.21.0
+    Checking serde_urlencoded v0.7.1
+    Checking hyper v1.11.1
+    Checking tokio-tungstenite v0.21.0
+    Checking symphonia v0.5.5
+    Checking rustix v0.38.44
+    Checking procfs-core v0.16.0
+    Checking hyper v0.14.32
+    Checking tokio-rustls v0.24.1
+    Checking openmls_rust_crypto v0.6.0
+    Checking openmls v0.9.0
+    Checking openmls_basic_credential v0.6.0
+    Checking tungstenite v0.24.0
+    Checking serde_spanned v0.6.9
+    Checking toml_datetime v0.6.11
+    Checking toml_edit v0.22.27
+    Checking tokio-tungstenite v0.24.0
+    Checking procfs v0.16.0
+    Checking nix v0.31.3
+    Checking hyper-rustls v0.24.2
+    Checking hyper-util v0.1.20
+    Checking axum-core v0.4.5
+    Checking tower v0.5.3
+   Compiling kizunalink v4.2.1 (/home/runner/work/Kizunalink/Kizunalink)
+    Checking ipnet v2.12.2
+    Checking axum v0.7.9
+    Checking reqwest v0.11.27
+    Checking toml v0.8.23
+    Checking prometheus v0.13.4
+    Checking ctrlc v3.5.2
+    Checking tower-http v0.5.2
+    Checking sysinfo v0.31.4
+    Checking audiopus v0.3.0-rc.0
+    Checking kizuna-voice v0.1.0 (/home/runner/work/Kizunalink/Kizunalink/kizuna-voice)
+error: redundant closure
+   --> src/dsp/decoder.rs:516:48
+    |
+516 |         let samples: Vec<i16> = (0..total).map(|i| pattern(i)).collect();
+    |                                                ^^^^^^^^^^^^^^ help: replace the closure with the function itself: `pattern`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.98.0/index.html#redundant_closure
+    = note: `-D clippy::redundant-closure` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::redundant_closure)]`
+
+error: could not compile `kizunalink` (lib test) due to 1 previous error
+warning: build failed, waiting for other jobs to finish...
