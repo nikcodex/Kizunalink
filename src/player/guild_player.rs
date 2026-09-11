@@ -339,6 +339,8 @@ impl GuildPlayer {
         let position_ms = self.safe_position(requested_position_ms);
         let was_paused = self.paused;
         let filtered = self.shared_chain.lock().unwrap().is_active();
+        // 48 kHz frames (48 per ms); the decoder converts the count to the
+        // stream's actual sample rate before applying it.
         let skip_frames = position_ms.saturating_mul(48);
 
         // Build the replacement before stopping the current scheduler. A failed

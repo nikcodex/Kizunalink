@@ -404,6 +404,11 @@ async fn stream_hls(
 /// `sources.local`), and remote hosts are resolved and **pinned** to a verified
 /// public address so a hostname cannot be re-resolved to an internal address
 /// between validation and connect.
+///
+/// `skip_frames` is the number of 48 kHz frames (48 per millisecond) to drop at
+/// the start of the stream; the decoder converts the count to the stream's
+/// actual sample rate, so a seek lands at the requested position regardless of
+/// the source's native rate.
 pub async fn create_kizuna_source(
     stream_url: String,
     extension_hint: Option<String>,

@@ -22,6 +22,25 @@ pub const TARGET_SAMPLE_RATE: u32 = 48000;
 
 const DECODE_CHUNK_FRAMES: usize = 4096;
 
+/// Convert a frame skip expressed in 48 kHz frames (the pipeline's target rate,
+/// e.g. `position_ms * 48`) into the equivalent number of frames at the
+/// *source* sample rate, rounding to nearest.
+///
+/// The skip is applied in [`AudioDecoder::push_converted`] before resampling, so
+/// feeding it 48 kHz-unit counts for a 44.1 kHz source (most MP3/AAC content,
+/// including every JioSaavn stream) skipped ~8.8% too much audio and a seek
+/// landed past the requested position (a 2:00 seek played from ~2:10).
+fn scale_skip_frames(skip_frames_48k: u64, src_rate: u32) -> u64 {
+    if src_rate == TARGET_SAMPLE_RATE || skip_frames_48k == 0 {
+        return skip_frames_48k;
+    }
+    // Bounds: skip_frames_48k is position_ms * 48 with position clamped to a
+    // track length (<= 24 h by MAX_UNBOUNDED_POSITION_MS), so the product stays
+    // far below u64::MAX; u128 makes the intermediate overflow impossible.
+    let scaled = skip_frames_48k as u128 * src_rate as u128 + (TARGET_SAMPLE_RATE as u128) / 2;
+    (scaled / TARGET_SAMPLE_RATE as u128) as u64
+}
+
 /// Detect if a codec type is Opus
 fn is_opus_codec(codec: CodecType) -> bool {
     // Symphonia's OPUS codec identifier
@@ -114,7 +133,7 @@ impl AudioDecoder {
             out_fifo: Vec::with_capacity(DECODE_CHUNK_FRAMES * 4),
             eof: false,
             error: None,
-            frames_to_skip: skip_frames,
+            frames_to_skip: scale_skip_frames(skip_frames, src_sample_rate),
         };
 
         if src_sample_rate != TARGET_SAMPLE_RATE {
@@ -408,6 +427,9 @@ impl Read for ChannelByteSource {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use std::io::{Read, Seek};
+    use symphonia::core::io::MediaSource;
 
     #[test]
     fn opus_detection_via_string() {
@@ -416,5 +438,104 @@ mod tests {
         assert!("Opus".to_string().to_uppercase().contains("OPUS"));
         assert!("Aac".to_string().to_uppercase().contains("AAC"));
         assert!("Mp3".to_string().to_uppercase().contains("MP3"));
+    }
+
+    #[test]
+    fn skip_scaling_converts_48k_frames_to_source_rate() {
+        assert_eq!(scale_skip_frames(0, 44_100), 0);
+        // A 48 kHz source needs no scaling.
+        assert_eq!(scale_skip_frames(48_000, 48_000), 48_000);
+        // One second of audio is 44 100 frames at 44.1 kHz, not 48 000.
+        assert_eq!(scale_skip_frames(48_000, 44_100), 44_100);
+        // 8000 Hz telephony: half a second is 4 000 frames.
+        assert_eq!(scale_skip_frames(24_000, 8_000), 4_000);
+        // Rounding to nearest frame: 48 frames (1 ms) at 22 050 Hz is 22.05.
+        assert_eq!(scale_skip_frames(48, 22_050), 22);
+        assert_eq!(scale_skip_frames(96, 22_050), 44);
+    }
+
+    /// Minimal PCM16 mono WAV container for decoder tests.
+    fn wav_pcm16_mono(sample_rate: u32, samples: &[i16]) -> Vec<u8> {
+        let data_len = (samples.len() * 2) as u32;
+        let mut out = Vec::with_capacity(44 + samples.len() * 2);
+        out.extend_from_slice(b"RIFF");
+        out.extend_from_slice(&(36 + data_len).to_le_bytes());
+        out.extend_from_slice(b"WAVE");
+        out.extend_from_slice(b"fmt ");
+        out.extend_from_slice(&16u32.to_le_bytes()); // fmt chunk size
+        out.extend_from_slice(&1u16.to_le_bytes()); // PCM
+        out.extend_from_slice(&1u16.to_le_bytes()); // mono
+        out.extend_from_slice(&sample_rate.to_le_bytes());
+        out.extend_from_slice(&(sample_rate * 2).to_le_bytes()); // byte rate
+        out.extend_from_slice(&2u16.to_le_bytes()); // block align
+        out.extend_from_slice(&16u16.to_le_bytes()); // bits per sample
+        out.extend_from_slice(b"data");
+        out.extend_from_slice(&data_len.to_le_bytes());
+        for s in samples {
+            out.extend_from_slice(&s.to_le_bytes());
+        }
+        out
+    }
+
+    /// In-memory seekable source so the probe can open the WAV without a file.
+    struct MemSource(std::io::Cursor<Vec<u8>>);
+
+    impl Read for MemSource {
+        fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+            self.0.read(buf)
+        }
+    }
+
+    impl Seek for MemSource {
+        fn seek(&mut self, pos: std::io::SeekFrom) -> std::io::Result<u64> {
+            self.0.seek(pos)
+        }
+    }
+
+    impl MediaSource for MemSource {
+        fn is_seekable(&self) -> bool {
+            true
+        }
+        fn byte_len(&self) -> Option<u64> {
+            Some(self.0.get_ref().len() as u64)
+        }
+    }
+
+    /// Distinguishable sample pattern: sample `i` carries a unique value.
+    fn pattern(i: usize) -> i16 {
+        (i % 32768) as i16
+    }
+
+    /// End-to-end skip check: opening a known WAV with `skip_frames` must make
+    /// the first decoded frame the one at the requested offset. This used to be
+    /// broken for non-48 kHz sources because the count was applied at the source
+    /// rate without conversion; this 48 kHz case pins the exact-position path.
+    #[test]
+    fn skip_positions_a_48khz_source_exactly() {
+        let total = 96_000; // 2 seconds at 48 kHz
+        let samples: Vec<i16> = (0..total).map(|i| pattern(i)).collect();
+        let src = MemSource(std::io::Cursor::new(wav_pcm16_mono(48_000, &samples)));
+        let mut dec = AudioDecoder::open(Box::new(src), Some("wav"), 48_000).expect("open wav");
+
+        let frames = dec.read_frames(16);
+        assert_eq!(frames.len(), 32, "16 stereo frames expected");
+
+        // The mono source is dual-channelled, so L == R == source sample.
+        // Symphonia's S16 -> f32 conversion divides by exactly 32768.
+        for j in 0..16 {
+            let expected = pattern(48_000 + j) as f32 / 32768.0;
+            assert!(
+                (frames[j * 2] - expected).abs() < 1e-9,
+                "left sample {j}: got {}, want {}",
+                frames[j * 2],
+                expected
+            );
+            assert!(
+                (frames[j * 2 + 1] - expected).abs() < 1e-9,
+                "right sample {j}: got {}, want {}",
+                frames[j * 2 + 1],
+                expected
+            );
+        }
     }
 }
