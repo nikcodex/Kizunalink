@@ -34,7 +34,7 @@ impl PlayableTrack for TidalTrack {
             debug!("TidalTrack: starting playback for {}", identifier);
 
             let setup_res = tokio::task::spawn_blocking(move || {
-                let client_clone = (*tidal.inner).clone();
+                let client_clone = http_client.clone();
                 match HttpSource::new(client_clone, &stream_url) {
                     Ok(reader) => AudioProcessor::new(
                         Box::new(reader),
