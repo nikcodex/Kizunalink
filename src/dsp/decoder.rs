@@ -513,7 +513,7 @@ mod tests {
     #[test]
     fn skip_positions_a_48khz_source_exactly() {
         let total = 96_000; // 2 seconds at 48 kHz
-        let samples: Vec<i16> = (0..total).map(|i| pattern(i)).collect();
+        let samples: Vec<i16> = (0..total).map(pattern).collect();
         let src = MemSource(std::io::Cursor::new(wav_pcm16_mono(48_000, &samples)));
         let mut dec = AudioDecoder::open(Box::new(src), Some("wav"), 48_000).expect("open wav");
 
