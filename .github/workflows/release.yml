@@ -283,7 +283,7 @@ jobs:
   # Publish GitHub Release Assets
   publish:
     name: 📦 Publish Release Assets
-        needs: [build-linux, build-other, build-termux]
+    needs: [build-linux, build-other, build-termux]
     runs-on: ubuntu-latest
 
     steps:
