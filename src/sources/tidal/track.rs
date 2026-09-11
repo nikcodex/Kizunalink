@@ -30,12 +30,11 @@ impl PlayableTrack for TidalTrack {
         let http_client = (*self.http_client).clone();
 
         let err_tx_for_setup = err_tx.clone();
-        let identifier_for_setup = identifier.clone();
         tokio::spawn(async move {
             debug!("TidalTrack: starting playback for {}", identifier);
 
             let setup_res = tokio::task::spawn_blocking(move || {
-                let client_clone = http_client.clone();
+                let client_clone = (*tidal.inner).clone();
                 match HttpSource::new(client_clone, &stream_url) {
                     Ok(reader) => AudioProcessor::new(
                         Box::new(reader),
@@ -47,7 +46,7 @@ impl PlayableTrack for TidalTrack {
                     )
                     .map_err(|e| e.to_string()),
                     Err(e) => {
-                        error!("TidalTrack: HttpSource init failed for {}: {}", identifier_for_setup, e);
+                        error!("TidalTrack: HttpSource init failed for {}: {}", identifier, e);
                         Err(format!("Failed to initialize source: {}", e))
                     }
                 }
