@@ -34,7 +34,36 @@ jobs:
           components: clippy
       - uses: Swatinem/rust-cache@v2
       - run: sudo apt-get update && sudo apt-get install -y cmake
-      - run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+      - name: Clippy
+        id: clippy
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          cargo clippy --workspace --all-targets --all-features -- -D warnings 2>&1 | tee /tmp/clippy.log
+      - name: Post clippy diagnostics to commit
+        if: steps.clippy.outcome == 'failure'
+        env:
+          TOKEN: ${{ github.token }}
+        run: |
+          python3 - <<'PY' > /tmp/body.json
+          import json, re, subprocess
+          log = open('/tmp/clippy.log', errors='replace').read()
+          log = re.sub(r'\x1b\[[0-9;]*m', '', log)
+          keep = []
+          for i, line in enumerate(log.splitlines()):
+              if line.startswith('error') or line.startswith('warning') or '-->' in line:
+                  keep.extend(log.splitlines()[max(0, i - 1):i + 6])
+          text = '\n'.join(dict.fromkeys(keep))[:60000] or 'no diagnostics captured'
+          print(json.dumps({'body': '```\n' + text + '\n```'}))
+          PY
+          curl -s -X POST \
+            -H "Authorization: Bearer $TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${{ github.repository }}/commits/${{ github.sha }}/comments" \
+            -d @/tmp/body.json
+      - name: Fail on clippy diagnostics
+        if: steps.clippy.outcome == 'failure'
+        run: exit 1
 
   fmt:
     name: Format
