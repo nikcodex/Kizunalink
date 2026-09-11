@@ -1,0 +1,20 @@
+// Copyright (c) 2026 nikcodex (KizunaLink)
+// Licensed under the MIT License
+
+use serde::{Deserialize, Serialize};
+
+/// Request body for PATCH /v4/sessions/{sessionId}.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionUpdate {
+    pub resuming: Option<bool>,
+    pub timeout: Option<u64>,
+}
+
+/// Response from PATCH /v4/sessions/{sessionId}.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionInfo {
+    pub resuming: bool,
+    pub timeout: u64,
+}

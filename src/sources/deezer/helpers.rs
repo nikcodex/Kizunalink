@@ -1,0 +1,31 @@
+// Copyright (c) 2026 nikcodex (KizunaLink)
+// Licensed under the MIT License
+
+use serde_json::Value;
+
+use super::{DeezerSource, PUBLIC_API_BASE};
+
+impl DeezerSource {
+    pub(crate) async fn get_json_public(&self, path: &str) -> Option<Value> {
+        let url = format!("{PUBLIC_API_BASE}/{path}");
+        match self.client.get(&url).send().await {
+            Ok(res) => {
+                if res.status().is_success() {
+                    res.json().await.ok()
+                } else {
+                    tracing::warn!(
+                        "Deezer public API request failed: {url} (Status: {})",
+                        res.status()
+                    );
+                    None
+                }
+            }
+            Err(e) => {
+                tracing::error!(
+                    "Deezer public API request error: {url} (Error: {e}). If this is a connectivity error, check your proxy settings.",
+                );
+                None
+            }
+        }
+    }
+}

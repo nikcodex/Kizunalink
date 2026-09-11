@@ -1,0 +1,128 @@
+// Copyright (c) 2026 nikcodex (KizunaLink)
+// Licensed under the MIT License
+
+use std::sync::{Arc, atomic::Ordering};
+
+use crate::{
+    common::types::GuildId,
+    protocol::{
+        self,
+        events::KizunaLinkEvent,
+        models::{LyricsData, KizunaLinkLyrics, KizunaLinkLyricsLine},
+        tracks::TrackInfo,
+    },
+    server::Session,
+};
+
+/// Spawn a non-blocking task that fetches lyrics and sends the result.
+pub fn spawn_lyrics_fetch(
+    subscribed: Arc<std::sync::atomic::AtomicBool>,
+    lyrics_data: Arc<tokio::sync::Mutex<Option<LyricsData>>>,
+    track_info: TrackInfo,
+    lyrics_manager: Arc<crate::lyrics::LyricsManager>,
+    session: Arc<Session>,
+    guild_id: GuildId,
+) {
+    tokio::spawn(async move {
+        if !subscribed.load(Ordering::Relaxed) {
+            return;
+        }
+
+        let event = if let Some(lyrics) = lyrics_manager.load_lyrics(&track_info).await {
+            let mut lock = lyrics_data.lock().await;
+            *lock = Some(lyrics.clone());
+
+            protocol::OutgoingMessage::Event {
+                event: Box::new(KizunaLinkEvent::LyricsFound {
+                    guild_id,
+                    lyrics: KizunaLinkLyrics {
+                        source_name: track_info.source_name,
+                        provider: Some(lyrics.provider),
+                        text: Some(lyrics.text),
+                        lines: lyrics.lines.map(|lines| {
+                            lines
+                                .into_iter()
+                                .map(|l| KizunaLinkLyricsLine {
+                                    timestamp: l.timestamp,
+                                    duration: Some(l.duration),
+                                    line: l.text,
+                                    plugin: serde_json::json!({}),
+                                })
+                                .collect()
+                        }),
+                        plugin: serde_json::json!({}),
+                    },
+                }),
+            }
+        } else {
+            protocol::OutgoingMessage::Event {
+                event: Box::new(KizunaLinkEvent::LyricsNotFound { guild_id }),
+            }
+        };
+
+        session.send_message(&event);
+    });
+}
+
+/// Emit the current lyrics line(s) based on playback position.
+pub async fn sync_lyrics(
+    guild_id: &GuildId,
+    pos_ms: u64,
+    last_idx: &Arc<std::sync::atomic::AtomicI64>,
+    lyrics_data: &Arc<tokio::sync::Mutex<Option<LyricsData>>>,
+    session: &Session,
+) {
+    let Ok(lock) = lyrics_data.try_lock() else {
+        return;
+    };
+
+    let Some(lyrics) = &*lock else { return };
+    let Some(lines) = &lyrics.lines else { return };
+
+    let target = lines
+        .iter()
+        .rposition(|l| pos_ms >= l.timestamp)
+        .map(|i| i as i64)
+        .unwrap_or(-1);
+
+    let last = last_idx.load(Ordering::Relaxed);
+    if target == last {
+        return;
+    }
+
+    if target > last {
+        for i in (last + 1)..=target {
+            let line = &lines[i as usize];
+            session.send_message(&protocol::OutgoingMessage::Event {
+                event: Box::new(KizunaLinkEvent::LyricsLine {
+                    guild_id: guild_id.clone(),
+                    line_index: i as i32,
+                    line: KizunaLinkLyricsLine {
+                        line: line.text.clone(),
+                        timestamp: line.timestamp,
+                        duration: Some(line.duration),
+                        plugin: serde_json::json!({}),
+                    },
+                    skipped: i != target,
+                }),
+            });
+        }
+    } else if target >= 0 {
+        let line = &lines[target as usize];
+        session.send_message(&protocol::OutgoingMessage::Event {
+            event: Box::new(KizunaLinkEvent::LyricsLine {
+                guild_id: guild_id.clone(),
+                line_index: target as i32,
+                line: KizunaLinkLyricsLine {
+                    line: line.text.clone(),
+                    timestamp: line.timestamp,
+                    duration: Some(line.duration),
+                    plugin: serde_json::json!({}),
+                },
+                skipped: false,
+            }),
+        });
+    }
+
+    last_idx.store(target, Ordering::Release);
+}
