@@ -139,3 +139,76 @@ pub fn get_byte_pool() -> Arc<BufferPool> {
         .get_or_init(|| Arc::new(BufferPool::new()))
         .clone()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn aligned_size_rounds_to_power_of_two() {
+        assert_eq!(PoolInner::aligned_size(0), 1024);
+        assert_eq!(PoolInner::aligned_size(1), 1024);
+        assert_eq!(PoolInner::aligned_size(1024), 1024);
+        assert_eq!(PoolInner::aligned_size(1025), 2048);
+        assert_eq!(PoolInner::aligned_size(4096), 4096);
+        assert_eq!(PoolInner::aligned_size(4097), 8192);
+    }
+
+    #[test]
+    fn acquire_returns_buffer_with_sufficient_capacity() {
+        let pool = BufferPool::new();
+        let buf = pool.acquire(500);
+        assert!(buf.capacity() >= 1024);
+        assert!(buf.is_empty());
+
+        let buf2 = pool.acquire(5000);
+        assert!(buf2.capacity() >= 5000);
+    }
+
+    #[test]
+    fn release_and_reuse() {
+        let pool = BufferPool::new();
+        let buf = pool.acquire(2048);
+        let cap = buf.capacity();
+        pool.release(buf);
+
+        let stats = pool.stats();
+        assert_eq!(stats.entries, 1);
+        assert_eq!(stats.buckets, 1);
+
+        let buf2 = pool.acquire(2048);
+        assert!(buf2.capacity() >= cap);
+    }
+
+    #[test]
+    fn release_small_buffer_not_pooled() {
+        let pool = BufferPool::new();
+        // Acquire a tiny buffer (will get 1024-aligned)
+        let buf = pool.acquire(10);
+        pool.release(buf);
+        let stats = pool.stats();
+        // 1024 is in range, so it should be pooled
+        assert_eq!(stats.entries, 1);
+    }
+
+    #[test]
+    fn pool_respects_max_entries() {
+        let pool = BufferPool::new();
+        let mut bufs = Vec::new();
+        for _ in 0..MAX_BUCKET_ENTRIES + 5 {
+            bufs.push(pool.acquire(1024));
+        }
+        for buf in bufs {
+            pool.release(buf);
+        }
+        let stats = pool.stats();
+        assert!(stats.entries <= MAX_BUCKET_ENTRIES);
+    }
+
+    #[test]
+    fn acquire_with_zero_size_uses_minimum() {
+        let pool = BufferPool::new();
+        let buf = pool.acquire(0);
+        assert!(buf.capacity() >= 1024);
+    }
+}
