@@ -105,18 +105,18 @@ impl BufferPool {
     }
 
     pub fn acquire(&self, size: usize) -> Vec<u8> {
-        let mut g = self.inner.lock().unwrap();
+        let mut g = self.inner.lock().unwrap_or_else(|e| e.into_inner());
         g.cleanup();
         g.acquire(size)
     }
 
     pub fn release(&self, buf: Vec<u8>) {
-        let mut g = self.inner.lock().unwrap();
+        let mut g = self.inner.lock().unwrap_or_else(|e| e.into_inner());
         g.release(buf);
     }
 
     pub fn stats(&self) -> PoolStats {
-        let g = self.inner.lock().unwrap();
+        let g = self.inner.lock().unwrap_or_else(|e| e.into_inner());
         PoolStats {
             total_bytes: g.total_bytes,
             buckets: g.buckets.len(),

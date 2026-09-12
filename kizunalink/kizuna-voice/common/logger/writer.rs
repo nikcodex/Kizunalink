@@ -149,6 +149,7 @@ impl CircularFileWriter {
 
         std::thread::spawn(move || {
             if let Err(e) = Self::do_prune(&path, max_lines) {
+                // B11: Use eprintln! (not tracing) since this IS the tracing sink — tracing would recurse.
                 eprintln!("Failed to prune log file '{}': {}", path, e);
             }
             let mut state = state_arc.lock();
