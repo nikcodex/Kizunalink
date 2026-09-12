@@ -21,7 +21,7 @@ pub mod track;
 fn url_regex() -> &'static Regex {
     static REGEX: OnceLock<Regex> = OnceLock::new();
     REGEX.get_or_init(|| {
-        Regex::new(r"https?://(?:www\.)?(?:jiosaavn|saavn)\.com/(?:(?<type>p/album|s/featured|s/artist|s/song|album|featured|song|s/playlist|artist)/)(?:[^/]+/)+(?<id>[A-Za-z0-9_,-]+)").unwrap()
+        Regex::new(r"https?://(?:www\.)?(?:jiosaavn|saavn)\.com/(?:(?<type>p/album|s/featured|s/artist|s/song|album|featured|song|s/playlist|artist)/)(?:[^/]+/)+(?<id>[A-Za-z0-9_,-]+)").expect("valid regex")
     })
 }
 

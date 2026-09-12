@@ -64,17 +64,17 @@ impl BandcampSource {
         };
 
         let result_blocks_re = RESULT_BLOCKS_PATTERN.get_or_init(|| {
-            Regex::new(r"(?s)<li class=.searchresult data-search.[\s\S]*?</li>").unwrap()
+            Regex::new(r"(?s)<li class=.searchresult data-search.[\s\S]*?</li>").expect("valid regex")
         });
         let url_re = ART_URL_PATTERN
-            .get_or_init(|| Regex::new(r#"<a class="artcont" href="([^"]+)">"#).unwrap());
+            .get_or_init(|| Regex::new(r#"<a class="artcont" href="([^"]+)">"#).expect("valid regex"));
         let title_re = TITLE_PATTERN.get_or_init(|| {
-            Regex::new(r#"(?s)<div class="heading">\s*<a[^>]*>\s*(.+?)\s*</a>"#).unwrap()
+            Regex::new(r#"(?s)<div class="heading">\s*<a[^>]*>\s*(.+?)\s*</a>"#).expect("valid regex")
         });
         let subhead_re = SUBHEAD_PATTERN
-            .get_or_init(|| Regex::new(r#"(?s)<div class="subhead">([\s\S]*?)</div>"#).unwrap());
+            .get_or_init(|| Regex::new(r#"(?s)<div class="subhead">([\s\S]*?)</div>"#).expect("valid regex"));
         let artwork_re = ARTWORK_PATTERN
-            .get_or_init(|| Regex::new(r#"(?s)<div class="art">\s*<img src="([^"]+)""#).unwrap());
+            .get_or_init(|| Regex::new(r#"(?s)<div class="art">\s*<img src="([^"]+)""#).expect("valid regex"));
 
         let mut tracks = Vec::new();
         for block in result_blocks_re.find_iter(&body) {
@@ -229,7 +229,7 @@ impl BandcampSource {
         let body = resp.text().await.ok()?;
 
         let tralbum_re =
-            TRALBUM_PATTERN.get_or_init(|| Regex::new(r#"data-tralbum=["'](.+?)["']"#).unwrap());
+            TRALBUM_PATTERN.get_or_init(|| Regex::new(r#"data-tralbum=["'](.+?)["']"#).expect("valid regex"));
         let tralbum_data = if let Some(match_cap) = tralbum_re.captures(&body) {
             let decoded = match_cap[1].replace("&quot;", "\"");
             serde_json::from_str(&decoded).ok()?
@@ -243,7 +243,7 @@ impl BandcampSource {
     }
 
     fn get_identifier_from_url(&self, url: &str) -> String {
-        let url_re = URL_PATTERN.get_or_init(|| Regex::new(r"(?i)^https?://(?P<subdomain>[^/]+)\.bandcamp\.com/(?P<type>track|album)/(?P<slug>[^/?]+)").unwrap());
+        let url_re = URL_PATTERN.get_or_init(|| Regex::new(r"(?i)^https?://(?P<subdomain>[^/]+)\.bandcamp\.com/(?P<type>track|album)/(?P<slug>[^/?]+)").expect("valid regex"));
         if let Some(caps) = url_re.captures(url) {
             return format!("{}:{}", &caps["subdomain"], &caps["slug"]);
         }
@@ -262,7 +262,7 @@ impl SourcePlugin for BandcampSource {
     }
 
     fn can_handle(&self, identifier: &str) -> bool {
-        let url_re = URL_PATTERN.get_or_init(|| Regex::new(r"(?i)^https?://(?P<subdomain>[^/]+)\.bandcamp\.com/(?P<type>track|album)/(?P<slug>[^/?]+)").unwrap());
+        let url_re = URL_PATTERN.get_or_init(|| Regex::new(r"(?i)^https?://(?P<subdomain>[^/]+)\.bandcamp\.com/(?P<type>track|album)/(?P<slug>[^/?]+)").expect("valid regex"));
         self.search_prefixes()
             .iter()
             .any(|p| identifier.starts_with(p))
@@ -286,7 +286,7 @@ impl SourcePlugin for BandcampSource {
             return self.search(&identifier[prefix.len()..]).await;
         }
 
-        let url_re = URL_PATTERN.get_or_init(|| Regex::new(r"(?i)^https?://(?P<subdomain>[^/]+)\.bandcamp\.com/(?P<type>track|album)/(?P<slug>[^/?]+)").unwrap());
+        let url_re = URL_PATTERN.get_or_init(|| Regex::new(r"(?i)^https?://(?P<subdomain>[^/]+)\.bandcamp\.com/(?P<type>track|album)/(?P<slug>[^/?]+)").expect("valid regex"));
         if url_re.is_match(identifier) {
             return self.resolve(identifier).await;
         }
@@ -300,7 +300,7 @@ impl SourcePlugin for BandcampSource {
         routeplanner: Option<Arc<dyn crate::lavalink::routeplanner::RoutePlanner>>,
     ) -> Option<BoxedTrack> {
         let id_re = IDENTIFIER_PATTERN.get_or_init(|| {
-            Regex::new(r"^(?P<subdomain>[a-zA-Z0-9\-]+):(?P<slug>[a-zA-Z0-9\-]+)$").unwrap()
+            Regex::new(r"^(?P<subdomain>[a-zA-Z0-9\-]+):(?P<slug>[a-zA-Z0-9\-]+)$").expect("valid regex")
         });
         let url = if identifier.starts_with("http") {
             identifier.to_owned()

@@ -186,7 +186,7 @@ impl YouTubeSource {
         Self {
             search_prefixes: vec!["ytsearch:".to_string(), "ytmsearch:".to_string()],
             rec_prefixes: vec!["ytrec:".to_string()],
-            url_regex: Regex::new(r"(?:youtube\.com|youtu\.be)").unwrap(),
+            url_regex: Regex::new(r"(?:youtube\.com|youtu\.be)").expect("valid regex"),
             search_clients,
             music_search_clients,
             playback_clients,

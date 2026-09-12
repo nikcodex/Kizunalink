@@ -87,19 +87,19 @@ impl AudiusSource {
 
     async fn resolve_url(&self, url: &str) -> LoadResult {
         if PLAYLIST_PATTERN
-            .get_or_init(|| Regex::new(r"(?i)^https?://(?:www\.)?audius\.co/(?P<artist>[^/]+)/playlist/(?P<slug>[^/?#]+)(?:\?.*)?$").unwrap())
+            .get_or_init(|| Regex::new(r"(?i)^https?://(?:www\.)?audius\.co/(?P<artist>[^/]+)/playlist/(?P<slug>[^/?#]+)(?:\?.*)?$").expect("valid regex"))
             .is_match(url)
         {
             return self.resolve_playlist_or_album(url, "playlist").await;
         }
         if ALBUM_PATTERN
-            .get_or_init(|| Regex::new(r"(?i)^https?://(?:www\.)?audius\.co/(?P<artist>[^/]+)/album/(?P<slug>[^/?#]+)(?:\?.*)?$").unwrap())
+            .get_or_init(|| Regex::new(r"(?i)^https?://(?:www\.)?audius\.co/(?P<artist>[^/]+)/album/(?P<slug>[^/?#]+)(?:\?.*)?$").expect("valid regex"))
             .is_match(url)
         {
             return self.resolve_playlist_or_album(url, "album").await;
         }
         if TRACK_PATTERN
-            .get_or_init(|| Regex::new(r"(?i)^https?://(?:www\.)?audius\.co/(?P<artist>[^/]+)/(?P<slug>[^/?#]+)(?:\?.*)?$").unwrap())
+            .get_or_init(|| Regex::new(r"(?i)^https?://(?:www\.)?audius\.co/(?P<artist>[^/]+)/(?P<slug>[^/?#]+)(?:\?.*)?$").expect("valid regex"))
             .is_match(url)
         {
             return self.resolve_track(url).await;
@@ -306,16 +306,16 @@ impl SourcePlugin for AudiusSource {
             .iter()
             .any(|p| identifier.starts_with(p))
             || TRACK_PATTERN
-                .get_or_init(|| Regex::new(r"(?i)^https?://(?:www\.)?audius\.co/(?P<artist>[^/]+)/(?P<slug>[^/?#]+)(?:\?.*)?$").unwrap())
+                .get_or_init(|| Regex::new(r"(?i)^https?://(?:www\.)?audius\.co/(?P<artist>[^/]+)/(?P<slug>[^/?#]+)(?:\?.*)?$").expect("valid regex"))
                 .is_match(identifier)
             || PLAYLIST_PATTERN
-                .get_or_init(|| Regex::new(r"(?i)^https?://(?:www\.)?audius\.co/(?P<artist>[^/]+)/playlist/(?P<slug>[^/?#]+)(?:\?.*)?$").unwrap())
+                .get_or_init(|| Regex::new(r"(?i)^https?://(?:www\.)?audius\.co/(?P<artist>[^/]+)/playlist/(?P<slug>[^/?#]+)(?:\?.*)?$").expect("valid regex"))
                 .is_match(identifier)
             || ALBUM_PATTERN
-                .get_or_init(|| Regex::new(r"(?i)^https?://(?:www\.)?audius\.co/(?P<artist>[^/]+)/album/(?P<slug>[^/?#]+)(?:\?.*)?$").unwrap())
+                .get_or_init(|| Regex::new(r"(?i)^https?://(?:www\.)?audius\.co/(?P<artist>[^/]+)/album/(?P<slug>[^/?#]+)(?:\?.*)?$").expect("valid regex"))
                 .is_match(identifier)
             || USER_PATTERN
-                .get_or_init(|| Regex::new(r"(?i)^https?://(?:www\.)?audius\.co/(?P<user>[^/?#]+)(?:\?.*)?$").unwrap())
+                .get_or_init(|| Regex::new(r"(?i)^https?://(?:www\.)?audius\.co/(?P<user>[^/?#]+)(?:\?.*)?$").expect("valid regex"))
                 .is_match(identifier)
     }
 

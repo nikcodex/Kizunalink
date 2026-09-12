@@ -27,7 +27,7 @@ impl FlowerySource {
         Self {
             config,
             search_prefixes: vec!["ftts:".to_string()],
-            url_pattern: Regex::new(r"(?i)^ftts://").unwrap(),
+            url_pattern: Regex::new(r"(?i)^ftts://").expect("valid regex"),
         }
     }
 

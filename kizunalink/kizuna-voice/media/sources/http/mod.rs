@@ -30,7 +30,7 @@ use crate::{
 
 fn url_regex() -> &'static Regex {
     static REGEX: OnceLock<Regex> = OnceLock::new();
-    REGEX.get_or_init(|| Regex::new(r"^(?:https?|icy)://").unwrap())
+    REGEX.get_or_init(|| Regex::new(r"^(?:https?|icy)://").expect("valid regex"))
 }
 
 pub struct HttpSource;

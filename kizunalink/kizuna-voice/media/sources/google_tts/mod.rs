@@ -27,7 +27,7 @@ impl GoogleTtsSource {
         Self {
             config,
             search_prefixes: vec!["gtts:".to_string(), "speak:".to_string()],
-            url_pattern: Regex::new(r"(?i)^(gtts://|speak://)").unwrap(),
+            url_pattern: Regex::new(r"(?i)^(gtts://|speak://)").expect("valid regex"),
         }
     }
 

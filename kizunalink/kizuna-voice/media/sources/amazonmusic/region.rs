@@ -182,7 +182,7 @@ fn get_region_config(domain: &str) -> Option<&'static RegionConfig> {
 }
 
 static DOMAIN_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?i)^https?://(?:www\.)?(music\.amazon\.[a-z.]+)").unwrap());
+    LazyLock::new(|| Regex::new(r"(?i)^https?://(?:www\.)?(music\.amazon\.[a-z.]+)").expect("valid regex"));
 
 pub fn extract_domain(url: &str) -> Option<String> {
     let caps = DOMAIN_RE.captures(url)?;

@@ -46,9 +46,9 @@ impl YandexMusicSource {
         Ok(Self {
             client,
             access_token,
-            url_pattern: Regex::new(r"(?i)^https?://music\.yandex\.(ru|com|kz|by)/(artist|album|track)/(?P<id1>[0-9]+)(/(track)/(?P<id2>[0-9]+))?/?").unwrap(),
-            playlist_pattern: Regex::new(r"(?i)^https?://music\.yandex\.(ru|com|kz|by)/users/(?P<user>[^/]+)/playlists/(?P<id>[0-9]+)/?").unwrap(),
-            playlist_uuid_pattern: Regex::new(r"(?i)^https?://music\.yandex\.(ru|com|kz|by)/playlists/(?P<uuid>[0-9a-z-]+)").unwrap(),
+            url_pattern: Regex::new(r"(?i)^https?://music\.yandex\.(ru|com|kz|by)/(artist|album|track)/(?P<id1>[0-9]+)(/(track)/(?P<id2>[0-9]+))?/?").expect("valid regex"),
+            playlist_pattern: Regex::new(r"(?i)^https?://music\.yandex\.(ru|com|kz|by)/users/(?P<user>[^/]+)/playlists/(?P<id>[0-9]+)/?").expect("valid regex"),
+            playlist_uuid_pattern: Regex::new(r"(?i)^https?://music\.yandex\.(ru|com|kz|by)/playlists/(?P<uuid>[0-9a-z-]+)").expect("valid regex"),
             search_limit: config.search_limit,
             playlist_load_limit: config.playlist_load_limit,
             album_load_limit: config.album_load_limit,

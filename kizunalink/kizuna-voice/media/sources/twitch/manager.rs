@@ -31,8 +31,8 @@ impl TwitchSource {
         Self {
             gql: Arc::new(TwitchGqlClient::new(client, config.client_id)),
             proxy: config.proxy,
-            stream_name_regex: Regex::new(STREAM_NAME_REGEX).unwrap(),
-            twitch_domain_regex: Regex::new(TWITCH_DOMAIN_REGEX).unwrap(),
+            stream_name_regex: Regex::new(STREAM_NAME_REGEX).expect("valid regex"),
+            twitch_domain_regex: Regex::new(TWITCH_DOMAIN_REGEX).expect("valid regex"),
         }
     }
 

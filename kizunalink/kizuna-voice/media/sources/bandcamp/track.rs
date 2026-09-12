@@ -109,7 +109,7 @@ pub async fn fetch_stream_url(client: &Arc<reqwest::Client>, uri: &str) -> Optio
 
 pub fn extract_stream_url(body: &str) -> Option<String> {
     STREAM_PATTERN
-        .get_or_init(|| Regex::new(r"https?://t4\.bcbits\.com/stream/[a-zA-Z0-9]+/mp3-128/\d+\?p=\d+&amp;ts=\d+&amp;t=[a-zA-Z0-9]+&amp;token=\d+_[a-zA-Z0-9]+").unwrap())
+        .get_or_init(|| Regex::new(r"https?://t4\.bcbits\.com/stream/[a-zA-Z0-9]+/mp3-128/\d+\?p=\d+&amp;ts=\d+&amp;t=[a-zA-Z0-9]+&amp;token=\d+_[a-zA-Z0-9]+").expect("valid regex"))
         .find(body)
         .map(|m| m.as_str().replace("&amp;", "&"))
 }

@@ -20,7 +20,7 @@ pub mod track;
 fn url_regex() -> &'static Regex {
     static REGEX: OnceLock<Regex> = OnceLock::new();
     REGEX.get_or_init(|| {
-        Regex::new(r"https?://music\.163\.com/(?:(?:#|m)/)?(?P<type>song|album|playlist|artist)(?:\?id=|\/)(?P<id>\d+)").unwrap()
+        Regex::new(r"https?://music\.163\.com/(?:(?:#|m)/)?(?P<type>song|album|playlist|artist)(?:\?id=|\/)(?P<id>\d+)").expect("valid regex")
     })
 }
 

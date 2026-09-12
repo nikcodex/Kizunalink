@@ -58,7 +58,7 @@ impl AppleMusicSource {
             album_load_limit: a_limit,
             playlist_page_load_concurrency: p_conc,
             album_page_load_concurrency: a_conc,
-            url_regex: Regex::new(r"https?://(?:www\.)?music\.apple\.com/(?:[a-zA-Z]{2}/)?(album|playlist|artist|song)/[^/]+/([a-zA-Z0-9\-.]+)(?:\?i=(\d+))?").unwrap(),
+            url_regex: Regex::new(r"https?://(?:www\.)?music\.apple\.com/(?:[a-zA-Z]{2}/)?(album|playlist|artist|song)/[^/]+/([a-zA-Z0-9\-.]+)(?:\?i=(\d+))?").expect("valid regex"),
         })
     }
 }

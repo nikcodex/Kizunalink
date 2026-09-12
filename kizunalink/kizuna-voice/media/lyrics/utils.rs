@@ -26,7 +26,7 @@ static CLEAN_PATTERNS: LazyLock<Vec<Regex>> = LazyLock::new(|| {
 });
 
 static LRC_REGEX: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r#"\[(\d+):(\d{2})(?:\.(\d{2,3}))?\]"#).unwrap());
+    LazyLock::new(|| Regex::new(r#"\[(\d+):(\d{2})(?:\.(\d{2,3}))?\]"#).expect("valid regex"));
 
 pub fn clean_text(text: &str) -> String {
     let mut result = text.to_string();

@@ -31,14 +31,14 @@ pub(crate) const REC_TRACK_PREFIX: &str = "track=";
 fn url_regex() -> &'static Regex {
     static REGEX: OnceLock<Regex> = OnceLock::new();
     REGEX.get_or_init(|| {
-        Regex::new(r"https?://(?:www\.)?deezer\.com/(?:[a-z]+(?:-[a-z]+)?/)?(?<type>track|album|playlist|artist)/(?<id>\d+)").unwrap()
+        Regex::new(r"https?://(?:www\.)?deezer\.com/(?:[a-z]+(?:-[a-z]+)?/)?(?<type>track|album|playlist|artist)/(?<id>\d+)").expect("valid regex")
     })
 }
 
 fn share_url_regex() -> &'static Regex {
     static REGEX: OnceLock<Regex> = OnceLock::new();
     REGEX.get_or_init(|| {
-        Regex::new(r"https?://(?:deezer\.page\.link|link\.deezer\.com)/\S*").unwrap()
+        Regex::new(r"https?://(?:deezer\.page\.link|link\.deezer\.com)/\S*").expect("valid regex")
     })
 }
 

@@ -88,7 +88,7 @@ impl AppleMusicTokenTracker {
             Some(caps) => caps.get(1).map(|m| m.as_str()),
             None => {
                 let index_re =
-                    INDEX_REGEX.get_or_init(|| Regex::new(r#"/assets/index[^"]+\.js"#).unwrap());
+                    INDEX_REGEX.get_or_init(|| Regex::new(r#"/assets/index[^"]+\.js"#).expect("valid regex"));
                 index_re.find(&html).map(|m| m.as_str())
             }
         };
@@ -119,7 +119,7 @@ impl AppleMusicTokenTracker {
 
         static TOKEN_REGEX: OnceLock<Regex> = OnceLock::new();
         let token_re =
-            TOKEN_REGEX.get_or_init(|| Regex::new(r#"(ey[\w-]+\.[\w-]+\.[\w-]+)"#).unwrap());
+            TOKEN_REGEX.get_or_init(|| Regex::new(r#"(ey[\w-]+\.[\w-]+\.[\w-]+)"#).expect("valid regex"));
 
         let token_str = match token_re.find(&js_content) {
             Some(m) => m.as_str().to_owned(),

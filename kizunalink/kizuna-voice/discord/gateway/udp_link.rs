@@ -223,7 +223,7 @@ mod tests {
             nonce: 555,
         };
 
-        let json = serde_json::to_string(&state).unwrap();
+        let json = serde_json::to_string(&state).expect("RtpState serialization is infallible");
         let deserialized: RtpState = serde_json::from_str(&json).unwrap();
 
         assert_eq!(state.sequence, deserialized.sequence);
