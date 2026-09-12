@@ -32,7 +32,7 @@ jobs:
       - name: cargo check
         run: |
           set -o pipefail
-          cargo check --workspace --all-targets 2>&1 | tee /tmp/check.log | perl -e '
+          cargo check --workspace --all-targets --color=never 2>&1 | tee /tmp/check.log | perl -e '
             my $m = "";
             while (<STDIN>) {
               if (/^error(?:\[[^\]]+\])?:\s*(.*)$/) { $m = $1; }
