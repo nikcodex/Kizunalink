@@ -48,3 +48,39 @@ impl SourceError {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn load_failed_message_not_found() {
+        let err = SourceError::NotFound("test query".into());
+        assert!(err.load_failed_message().contains("test query"));
+    }
+
+    #[test]
+    fn load_failed_message_rate_limited() {
+        let err = SourceError::RateLimited;
+        assert!(err.load_failed_message().contains("rate limited"));
+    }
+
+    #[test]
+    fn load_failed_message_unavailable() {
+        let err = SourceError::Unavailable("server down".into());
+        assert!(err.load_failed_message().contains("server down"));
+    }
+
+    #[test]
+    fn error_display() {
+        let err = SourceError::Cipher("decrypt failed".into());
+        assert!(err.to_string().contains("decrypt failed"));
+    }
+
+    #[test]
+    fn http_error_conversion() {
+        let http_err = reqwest::StatusCode::NOT_FOUND;
+        let err: SourceError = http_err.into();
+        assert!(err.to_string().contains("404"));
+    }
+}
