@@ -1,0 +1,118 @@
+[package]
+name = "kizunalink"
+version = "1.1.0"
+edition = "2024"
+license = "MIT"
+authors = [ "Nikhil",]
+repository = "https://github.com/nikcodex/Kizunalink"
+
+[lib]
+path = "kizuna-voice/lib.rs"
+
+[dependencies]
+aes-gcm = "0.10.3"
+davey = "0.1.4"
+xsalsa20poly1305 = "0.9.1"
+aes = "0.8"
+des = "0.8.1"
+cipher = "0.5.0"
+block-padding = "0.4.2"
+hex = "0.4.3"
+blowfish = "0.9"
+md-5 = "0.10"
+cbc = "0.1"
+urlencoding = "2.1.3"
+hmac = "0.12"
+sha1 = "0.10"
+sha2 = "0.10"
+perf_monitor = "0.2.1"
+
+[build-dependencies]
+pkg-config = "0.3.30"
+
+[dependencies.base64]
+workspace = true
+
+[dependencies.bytes]
+workspace = true
+
+[dependencies.flume]
+workspace = true
+
+[dependencies.dashmap]
+workspace = true
+
+[dependencies.tracing]
+workspace = true
+
+[dependencies.futures]
+workspace = true
+
+[dependencies.async-trait]
+workspace = true
+
+[dependencies.serde_json]
+workspace = true
+
+[dependencies.byteorder]
+workspace = true
+
+[dependencies.regex]
+workspace = true
+
+[dependencies.ipnet]
+workspace = true
+
+[dependencies.rand]
+workspace = true
+
+[dependencies.toml]
+workspace = true
+
+[dependencies.parking_lot]
+workspace = true
+
+[dependencies.thiserror]
+workspace = true
+
+[dependencies.sysinfo]
+workspace = true
+
+[dependencies.prometheus]
+workspace = true
+
+[dependencies.tracing-subscriber]
+workspace = true
+
+[dependencies.serde]
+workspace = true
+
+[dependencies.time]
+workspace = true
+
+[dependencies.symphonia]
+version = "0.5.5"
+features = [ "aac", "mp3", "ogg", "flac", "wav", "isomp4", "mkv", "alac",]
+
+[dependencies.tokio-tungstenite]
+version = "0.26.2"
+features = [ "rustls-tls-native-roots",]
+
+[dependencies.tokio-util]
+version = "0.7.13"
+features = [ "codec",]
+
+[dependencies.uuid]
+workspace = true
+
+[dependencies.reqwest]
+workspace = true
+
+[dependencies.tokio]
+workspace = true
+
+[dependencies.axum]
+workspace = true
+
+[dependencies.tower-http]
+workspace = true

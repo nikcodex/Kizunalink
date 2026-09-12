@@ -1,0 +1,23 @@
+// Copyright (c) 2026 nikcodex (KizunaLink)
+// Licensed under the MIT License
+
+use flume::Sender;
+
+use super::Engine;
+use crate::engine::AudioFrame;
+
+pub struct StandardEngine {
+    frame_tx: Sender<AudioFrame>,
+}
+
+impl StandardEngine {
+    pub fn new(frame_tx: Sender<AudioFrame>) -> Self {
+        Self { frame_tx }
+    }
+}
+
+impl Engine for StandardEngine {
+    fn push(&mut self, frame: AudioFrame) -> bool {
+        self.frame_tx.send(frame).is_ok()
+    }
+}

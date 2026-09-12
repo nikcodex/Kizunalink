@@ -1,0 +1,115 @@
+// Copyright (c) 2026 nikcodex (KizunaLink)
+// Licensed under the MIT License
+
+use std::{
+    net::IpAddr,
+    sync::{Arc, OnceLock},
+};
+
+use regex::Regex;
+use tracing::{debug, error};
+
+use crate::{
+    engine::{AudioFrame, processor::DecoderCommand},
+    media::sources::{
+        http::HttpTrack,
+        plugin::{DecoderOutput, PlayableTrack},
+    },
+};
+
+pub struct BandcampTrack {
+    pub client: Arc<reqwest::Client>,
+    pub uri: String,
+    pub stream_url: Option<String>,
+    pub local_addr: Option<IpAddr>,
+}
+
+pub static STREAM_PATTERN: OnceLock<Regex> = OnceLock::new();
+
+impl PlayableTrack for BandcampTrack {
+    fn start_decoding(&self, config: crate::discord::player::PlayerConfig) -> DecoderOutput {
+        let (tx, rx) = flume::bounded::<AudioFrame>((config.buffer_duration_ms / 20) as usize);
+        let (cmd_tx, cmd_rx) = flume::unbounded::<DecoderCommand>();
+        let (err_tx, err_rx) = flume::bounded::<String>(1);
+
+        let uri = self.uri.clone();
+        let client = self.client.clone();
+        let stream_url = self.stream_url.clone();
+        let local_addr = self.local_addr;
+
+        tokio::spawn(async move {
+            let final_stream_url = if let Some(url) = stream_url {
+                Some(url)
+            } else {
+                fetch_stream_url(&client, &uri).await
+            };
+
+            match final_stream_url {
+                Some(url) => {
+                    debug!("Bandcamp stream URL: {url}");
+                    let http_track = HttpTrack {
+                        url,
+                        local_addr,
+                        proxy: None,
+                    };
+                    let (inner_rx, inner_cmd_tx, inner_err_rx) =
+                        http_track.start_decoding(config.clone());
+
+                    // Proxy commands
+                    let inner_cmd_tx_clone = inner_cmd_tx.clone();
+                    tokio::spawn(async move {
+                        while let Ok(cmd) = cmd_rx.recv_async().await {
+                            if inner_cmd_tx_clone.send(cmd).is_err() {
+                                break;
+                            }
+                        }
+                    });
+
+                    // Proxy errors
+                    let err_tx_clone = err_tx.clone();
+                    tokio::spawn(async move {
+                        while let Ok(err) = inner_err_rx.recv_async().await {
+                            let _ = err_tx_clone.send(err);
+                        }
+                    });
+
+                    // Proxy samples
+                    while let Ok(sample) = inner_rx.recv_async().await {
+                        if tx.send(sample).is_err() {
+                            break;
+                        }
+                    }
+                }
+                None => {
+                    error!("Failed to fetch Bandcamp stream URL for {uri}");
+                    let _ = err_tx.send("Failed to fetch stream URL".to_owned());
+                }
+            }
+        });
+
+        (rx, cmd_tx, err_rx)
+    }
+}
+
+pub async fn fetch_stream_url(client: &Arc<reqwest::Client>, uri: &str) -> Option<String> {
+    let resp = client
+        .get(uri)
+        .header(reqwest::header::USER_AGENT, "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+        .send()
+        .await
+        .ok()?;
+
+    if !resp.status().is_success() {
+        return None;
+    }
+
+    let body = resp.text().await.ok()?;
+    extract_stream_url(&body)
+}
+
+pub fn extract_stream_url(body: &str) -> Option<String> {
+    STREAM_PATTERN
+        .get_or_init(|| Regex::new(r"https?://t4\.bcbits\.com/stream/[a-zA-Z0-9]+/mp3-128/\d+\?p=\d+&amp;ts=\d+&amp;t=[a-zA-Z0-9]+&amp;token=\d+_[a-zA-Z0-9]+").unwrap())
+        .find(body)
+        .map(|m| m.as_str().replace("&amp;", "&"))
+}

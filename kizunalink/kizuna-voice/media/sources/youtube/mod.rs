@@ -1,0 +1,688 @@
+// Copyright (c) 2026 nikcodex (KizunaLink)
+// Licensed under the MIT License
+
+use std::sync::Arc;
+
+use async_trait::async_trait;
+use regex::Regex;
+use serde_json::{Value, json};
+use tokio::sync::RwLock;
+use tracing::{debug, warn};
+
+use crate::{
+    common::types::SharedRw,
+    config::sources::YouTubeConfig,
+    lavalink::protocol::tracks::*,
+    media::sources::{SourcePlugin, plugin::BoxedTrack},
+};
+
+pub mod cipher;
+pub mod clients;
+pub mod extractor;
+pub mod hls;
+pub mod oauth;
+pub mod reader;
+pub mod ua;
+pub mod utils;
+
+pub mod track;
+
+use cipher::YouTubeCipherManager;
+use clients::{
+    YouTubeClient, android::AndroidClient, android_vr::AndroidVrClient, ios::IosClient,
+    music_android::MusicAndroidClient, tv::TvClient, tv_cast::TvCastClient,
+    tv_embedded::TvEmbeddedClient, web::WebClient, web_embedded::WebEmbeddedClient,
+    web_parent_tools::WebParentToolsClient, web_remix::WebRemixClient,
+};
+use oauth::YouTubeOAuth;
+
+pub struct YouTubeSource {
+    search_prefixes: Vec<String>,
+    rec_prefixes: Vec<String>,
+    url_regex: Regex,
+    search_clients: Vec<Arc<dyn YouTubeClient>>,
+    music_search_clients: Vec<Arc<dyn YouTubeClient>>,
+    playback_clients: Vec<Arc<dyn YouTubeClient>>,
+    resolve_clients: Vec<Arc<dyn YouTubeClient>>,
+    oauth: Arc<YouTubeOAuth>,
+    cipher_manager: Arc<YouTubeCipherManager>,
+    visitor_data: SharedRw<Option<String>>,
+    #[allow(dead_code)]
+    http: Arc<reqwest::Client>,
+}
+
+pub struct YoutubeStreamContext {
+    pub clients: Vec<Arc<dyn YouTubeClient>>,
+    pub oauth: Arc<YouTubeOAuth>,
+    pub cipher_manager: Arc<YouTubeCipherManager>,
+    pub visitor_data: SharedRw<Option<String>>,
+    pub http: Arc<reqwest::Client>,
+}
+
+impl YouTubeSource {
+    pub fn new(config: Option<YouTubeConfig>, http: Arc<reqwest::Client>) -> Self {
+        let config = config.unwrap_or_default();
+        let oauth = Arc::new(YouTubeOAuth::new(config.refresh_tokens.clone()));
+        let cipher_manager = Arc::new(YouTubeCipherManager::new(config.cipher.clone()));
+
+        // Call initialization in background if no tokens provided and enabled in config
+        if config.get_oauth_token && config.refresh_tokens.is_empty() {
+            let oauth_clone = oauth.clone();
+            tokio::spawn(async move {
+                oauth_clone.initialize_access_token().await;
+            });
+        }
+
+        // Warm the cipher cache on startup (Issue #21)
+        let cm_clone = cipher_manager.clone();
+        tokio::spawn(async move {
+            debug!("YouTubeSource: Warming cipher cache...");
+            if let Err(e) = cm_clone.get_cached_player_script().await {
+                warn!("YouTubeSource: Failed to warm cipher cache: {}", e);
+            } else {
+                debug!("YouTubeSource: Cipher cache warmed.");
+            }
+        });
+
+        let visitor_data = Arc::new(RwLock::new(None));
+
+        let vd_clone = visitor_data.clone();
+        let http_clone = http.clone();
+        tokio::spawn(async move {
+            loop {
+                if let Some(vd) = Self::refresh_visitor_data(&http_clone).await {
+                    let mut lock = vd_clone.write().await;
+                    *lock = Some(vd);
+                    tracing::debug!("YouTube visitorData refreshed.");
+                } else {
+                    tracing::warn!("Failed to refresh YouTube visitorData.");
+                }
+                tokio::time::sleep(std::time::Duration::from_secs(3600)).await;
+            }
+        });
+
+        let cipher_url = config.cipher.url.clone();
+        let cipher_token = config.cipher.token.clone();
+        let create_client = |name: &str| -> Option<Arc<dyn YouTubeClient>> {
+            match name.to_uppercase().as_str() {
+                "WEB" => Some(Arc::new(WebClient::with_cipher_url(
+                    http.clone(),
+                    cipher_url.clone(),
+                    cipher_token.clone(),
+                ))),
+                "MWEB" | "MUSIC_WEB" | "WEB_REMIX" | "REMIX" => {
+                    Some(Arc::new(WebRemixClient::new(http.clone())))
+                }
+                "ANDROID" => Some(Arc::new(AndroidClient::new(http.clone()))),
+                "IOS" => Some(Arc::new(IosClient::new(http.clone()))),
+                "TV" | "TVHTML5" => Some(Arc::new(TvClient::new(http.clone()))),
+                "TV_CAST" | "TVHTML5_CAST" => Some(Arc::new(TvCastClient::new(http.clone()))),
+                "TVHTML5_SIMPLY" | "TVHTML5_SIMPLY_EMBEDDED_PLAYER" | "TV_EMBEDDED" => {
+                    Some(Arc::new(TvEmbeddedClient::new(http.clone())))
+                }
+                "MUSIC" | "MUSIC_ANDROID" | "ANDROID_MUSIC" => {
+                    Some(Arc::new(MusicAndroidClient::new(http.clone())))
+                }
+                "ANDROID_VR" | "ANDROIDVR" => Some(Arc::new(AndroidVrClient::new(http.clone()))),
+                "WEB_EMBEDDED" | "WEBEMBEDDED" => {
+                    Some(Arc::new(WebEmbeddedClient::new(http.clone())))
+                }
+                "WEB_PARENT_TOOLS" | "WEBPARENTTOOLS" => {
+                    Some(Arc::new(WebParentToolsClient::new(http.clone())))
+                }
+                _ => {
+                    tracing::warn!("Unknown YouTube client: {}", name);
+                    None
+                }
+            }
+        };
+
+        let mut search_clients = Vec::new();
+        for name in &config.clients.search {
+            if let Some(client) = create_client(name) {
+                search_clients.push(client);
+            }
+        }
+        if search_clients.is_empty() {
+            tracing::warn!("No valid YouTube search clients configured! Fallback to Web.");
+            search_clients.push(Arc::new(WebClient::new(http.clone())));
+        }
+
+        let mut playback_clients = Vec::new();
+        for name in &config.clients.playback {
+            if let Some(client) = create_client(name) {
+                playback_clients.push(client);
+            }
+        }
+
+        if playback_clients.is_empty() {
+            tracing::warn!("No valid YouTube playback clients configured! Fallback to Web.");
+            playback_clients.push(Arc::new(WebClient::new(http.clone())));
+        }
+
+        let mut resolve_clients = Vec::new();
+        for name in &config.clients.resolve {
+            if let Some(client) = create_client(name) {
+                resolve_clients.push(client);
+            }
+        }
+        if resolve_clients.is_empty() {
+            tracing::warn!("No valid YouTube resolve clients configured! Fallback to Web.");
+            resolve_clients.push(Arc::new(WebClient::new(http.clone())));
+        }
+
+        let music_search_clients: Vec<Arc<dyn YouTubeClient>> = vec![
+            Arc::new(MusicAndroidClient::new(http.clone())),
+            Arc::new(WebRemixClient::new(http.clone())),
+        ];
+
+        tracing::info!(
+            "YouTube source initialized with {} search, {} playback, and {} resolve clients.",
+            search_clients.len(),
+            playback_clients.len(),
+            resolve_clients.len()
+        );
+
+        Self {
+            search_prefixes: vec!["ytsearch:".to_string(), "ytmsearch:".to_string()],
+            rec_prefixes: vec!["ytrec:".to_string()],
+            url_regex: Regex::new(r"(?:youtube\.com|youtu\.be)").unwrap(),
+            search_clients,
+            music_search_clients,
+            playback_clients,
+            resolve_clients,
+            oauth,
+            cipher_manager,
+            visitor_data,
+            http,
+        }
+    }
+
+    pub fn stream_context(&self) -> Arc<YoutubeStreamContext> {
+        Arc::new(YoutubeStreamContext {
+            clients: self.playback_clients.clone(),
+            oauth: self.oauth.clone(),
+            cipher_manager: self.cipher_manager.clone(),
+            visitor_data: self.visitor_data.clone(),
+            http: self.http.clone(),
+        })
+    }
+
+    async fn refresh_visitor_data(http: &reqwest::Client) -> Option<String> {
+        match http
+            .get("https://www.youtube.com/embed")
+            .header("Cookie", "YSC=cz5kYp3ZuIE; VISITOR_INFO1_LIVE=U-0T5oUyzf8;")
+            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36")
+            .send()
+            .await
+        {
+            Ok(res) if res.status().is_success() => {
+                if let Ok(text) = res.text().await {
+                    let re = regex::Regex::new(r#""VISITOR_DATA":"([^"]+)""#).ok();
+                    if let Some(vd) = re.as_ref().and_then(|r| r.captures(&text)).and_then(|c| c.get(1)) {
+                        let raw = vd.as_str();
+                        let decoded = urlencoding::decode(raw)
+                            .map(|s| s.into_owned())
+                            .unwrap_or_else(|_| raw.to_string());
+                        tracing::debug!("YouTube: visitorData refreshed from embed page.");
+                        return Some(decoded);
+                    }
+                }
+            }
+            Ok(res) => {
+                tracing::warn!("YouTube embed page returned status {}; falling back to guide API.", res.status());
+            }
+            Err(e) => {
+                tracing::warn!("YouTube embed page request failed: {}; falling back to guide API.", e);
+            }
+        }
+
+        let body = json!({
+            "context": {
+                "client": {
+                    "clientName": "WEB",
+                    "clientVersion": "2.20260114.01.00",
+                    "hl": "en",
+                    "gl": "US"
+                }
+            }
+        });
+        match http
+            .post("https://www.youtube.com/youtubei/v1/guide")
+            .json(&body)
+            .send()
+            .await
+        {
+            Ok(res) => {
+                if let Ok(json) = res.json::<Value>().await
+                    && let Some(vd) = json
+                        .get("responseContext")
+                        .and_then(|rc| rc.get("visitorData"))
+                        .and_then(|vd| vd.as_str())
+                {
+                    let decoded = urlencoding::decode(vd)
+                        .map(|s| s.into_owned())
+                        .unwrap_or_else(|_| vd.to_string());
+                    tracing::debug!("YouTube: visitorData refreshed via guide API fallback.");
+                    return Some(decoded);
+                }
+            }
+            Err(e) => {
+                tracing::warn!("Failed to fetch visitor data via guide API: {}", e);
+            }
+        }
+        None
+    }
+
+    fn extract_playlist_id(&self, identifier: &str) -> Option<String> {
+        if identifier.contains("list=") {
+            return Some(
+                identifier
+                    .split("list=")
+                    .nth(1)
+                    .unwrap_or(identifier)
+                    .split('&')
+                    .next()
+                    .unwrap_or(identifier)
+                    .to_string(),
+            );
+        }
+        None
+    }
+
+    fn extract_id(&self, identifier: &str) -> String {
+        if identifier.contains("v=") {
+            identifier
+                .split("v=")
+                .nth(1)
+                .unwrap_or(identifier)
+                .split('&')
+                .next()
+                .unwrap_or(identifier)
+                .to_string()
+        } else if identifier.contains("youtu.be/") {
+            identifier
+                .split("youtu.be/")
+                .nth(1)
+                .unwrap_or(identifier)
+                .split('?')
+                .next()
+                .unwrap_or(identifier)
+                .to_string()
+        } else if identifier.contains("/live/") {
+            identifier
+                .split("/live/")
+                .nth(1)
+                .unwrap_or(identifier)
+                .split('?')
+                .next()
+                .unwrap_or(identifier)
+                .to_string()
+        } else if identifier.contains("/shorts/") {
+            identifier
+                .split("/shorts/")
+                .nth(1)
+                .unwrap_or(identifier)
+                .split('?')
+                .next()
+                .unwrap_or(identifier)
+                .to_string()
+        } else {
+            identifier.to_string()
+        }
+    }
+
+    fn prioritize_clients<'a>(
+        &'a self,
+        clients: &'a [Arc<dyn YouTubeClient>],
+        prefer_music: bool,
+    ) -> Vec<&'a Arc<dyn YouTubeClient>> {
+        let is_music =
+            |c: &&Arc<dyn YouTubeClient>| c.name().contains("Music") || c.name().contains("Remix");
+        let mut ordered = Vec::with_capacity(clients.len());
+        if prefer_music {
+            ordered.extend(clients.iter().filter(|c| is_music(c)));
+            ordered.extend(clients.iter().filter(|c| !is_music(c)));
+        } else {
+            ordered.extend(clients.iter().filter(|c| !is_music(c)));
+            ordered.extend(clients.iter().filter(|c| is_music(c)));
+        }
+        ordered
+    }
+
+    fn fallback_clients<'a>(
+        &'a self,
+        tried: &[&Arc<dyn YouTubeClient>],
+        prefer_music: bool,
+    ) -> Vec<&'a Arc<dyn YouTubeClient>> {
+        let tried_names: std::collections::HashSet<&str> = tried.iter().map(|c| c.name()).collect();
+
+        let all_pools: &[&[Arc<dyn YouTubeClient>]] = &[
+            &self.resolve_clients,
+            &self.playback_clients,
+            &self.search_clients,
+        ];
+
+        let mut seen = tried_names.clone();
+        let mut fallback: Vec<&Arc<dyn YouTubeClient>> = Vec::new();
+        for pool in all_pools {
+            for client in pool.iter() {
+                if seen.insert(client.name()) {
+                    fallback.push(client);
+                }
+            }
+        }
+
+        self.prioritize_clients_slice(&fallback, prefer_music)
+    }
+
+    fn prioritize_clients_slice<'a>(
+        &self,
+        clients: &[&'a Arc<dyn YouTubeClient>],
+        prefer_music: bool,
+    ) -> Vec<&'a Arc<dyn YouTubeClient>> {
+        let is_music =
+            |c: &&&Arc<dyn YouTubeClient>| c.name().contains("Music") || c.name().contains("Remix");
+        let mut ordered = Vec::with_capacity(clients.len());
+        if prefer_music {
+            ordered.extend(clients.iter().filter(|c| is_music(c)).copied());
+            ordered.extend(clients.iter().filter(|c| !is_music(c)).copied());
+        } else {
+            ordered.extend(clients.iter().filter(|c| !is_music(c)).copied());
+            ordered.extend(clients.iter().filter(|c| is_music(c)).copied());
+        }
+        ordered
+    }
+
+    pub fn cipher_manager(&self) -> Arc<YouTubeCipherManager> {
+        self.cipher_manager.clone()
+    }
+}
+
+#[async_trait]
+impl SourcePlugin for YouTubeSource {
+    fn name(&self) -> &str {
+        "youtube"
+    }
+
+    fn can_handle(&self, identifier: &str) -> bool {
+        self.search_prefixes
+            .iter()
+            .any(|p| identifier.starts_with(p))
+            || self.rec_prefixes.iter().any(|p| identifier.starts_with(p))
+            || self.url_regex.is_match(identifier)
+    }
+
+    fn search_prefixes(&self) -> Vec<&str> {
+        self.search_prefixes.iter().map(|s| s.as_str()).collect()
+    }
+
+    async fn load(
+        &self,
+        identifier: &str,
+        _routeplanner: Option<Arc<dyn crate::crate::lavalink::protocol::routeplanner::RoutePlanner>>,
+    ) -> LoadResult {
+        let visitor_data = self.visitor_data.read().await.clone();
+        let context = if let Some(vd) = visitor_data {
+            json!({ "visitorData": vd })
+        } else {
+            json!({})
+        };
+
+        if let Some(prefix) = self
+            .search_prefixes
+            .iter()
+            .find(|p| identifier.starts_with(*p))
+        {
+            return self.handle_search(identifier, prefix, &context).await;
+        }
+
+        if let Some(prefix) = self
+            .rec_prefixes
+            .iter()
+            .find(|p| identifier.starts_with(*p))
+        {
+            return self
+                .handle_recommendations(identifier, prefix, &context)
+                .await;
+        }
+
+        if self.url_regex.is_match(identifier) {
+            return self.handle_url(identifier, &context).await;
+        }
+
+        LoadResult::Empty {}
+    }
+
+    async fn get_track(
+        &self,
+        identifier: &str,
+        routeplanner: Option<Arc<dyn crate::crate::lavalink::protocol::routeplanner::RoutePlanner>>,
+    ) -> Option<BoxedTrack> {
+        let visitor_data = self.visitor_data.read().await.clone();
+        let id = self.extract_id(identifier);
+        let is_music_url = identifier.contains("music.youtube.com");
+
+        let clients_to_try = self.prioritize_clients(&self.playback_clients, is_music_url);
+        let clients = clients_to_try.into_iter().cloned().collect();
+
+        Some(Box::new(track::YoutubeTrack {
+            identifier: id,
+            clients,
+            oauth: self.oauth.clone(),
+            cipher_manager: self.cipher_manager.clone(),
+            visitor_data,
+            local_addr: routeplanner.and_then(|rp| rp.get_address()),
+            proxy: None,
+        }))
+    }
+}
+
+impl YouTubeSource {
+    async fn handle_search(&self, identifier: &str, prefix: &str, context: &Value) -> LoadResult {
+        let prefer_music = prefix == "ytmsearch:";
+        let query = &identifier[prefix.len()..];
+
+        let is_music =
+            |c: &Arc<dyn YouTubeClient>| c.name().contains("Music") || c.name().contains("Remix");
+
+        if prefer_music {
+            let mut seen: std::collections::HashSet<&str> = std::collections::HashSet::new();
+            let mut music_clients: Vec<&Arc<dyn YouTubeClient>> = Vec::new();
+
+            for c in &self.music_search_clients {
+                if seen.insert(c.name()) {
+                    music_clients.push(c);
+                }
+            }
+            for pool in [
+                &self.search_clients[..],
+                &self.resolve_clients[..],
+                &self.playback_clients[..],
+            ] {
+                for c in pool {
+                    if is_music(c) && seen.insert(c.name()) {
+                        music_clients.push(c);
+                    }
+                }
+            }
+
+            for client in &music_clients {
+                tracing::debug!("Searching '{}' with {}", query, client.name());
+                match client.search(query, context, self.oauth.clone()).await {
+                    Ok(tracks) if !tracks.is_empty() => return LoadResult::Search(tracks),
+                    Ok(_) => continue,
+                    Err(e) => tracing::warn!("Music search error with {}: {}", client.name(), e),
+                }
+            }
+
+            tracing::debug!(
+                "All music clients returned empty for '{}', falling back to regular search",
+                query
+            );
+        }
+
+        let primary: Vec<&Arc<dyn YouTubeClient>> = self
+            .search_clients
+            .iter()
+            .filter(|c| !is_music(c))
+            .collect();
+        for client in &primary {
+            tracing::debug!("Searching '{}' with {}", query, client.name());
+            match client.search(query, context, self.oauth.clone()).await {
+                Ok(tracks) if !tracks.is_empty() => return LoadResult::Search(tracks),
+                Ok(_) => continue,
+                Err(e) => tracing::warn!("Search error with {}: {}", client.name(), e),
+            }
+        }
+
+        let fallback = self.fallback_clients(&primary, false);
+        if !fallback.is_empty() {
+            tracing::debug!(
+                "All search clients failed for '{}', trying fallback clients",
+                query
+            );
+        }
+        for client in fallback {
+            tracing::debug!("Fallback search '{}' with {}", query, client.name());
+            match client.search(query, context, self.oauth.clone()).await {
+                Ok(tracks) if !tracks.is_empty() => return LoadResult::Search(tracks),
+                Ok(_) => continue,
+                Err(e) => tracing::warn!("Fallback search error with {}: {}", client.name(), e),
+            }
+        }
+
+        LoadResult::Empty {}
+    }
+
+    async fn handle_recommendations(
+        &self,
+        identifier: &str,
+        prefix: &str,
+        context: &Value,
+    ) -> LoadResult {
+        let seed_id = &identifier[prefix.len()..];
+        let playlist_id = format!("RD{}", seed_id);
+
+        let clients = self.prioritize_clients(&self.resolve_clients, true);
+        for client in clients {
+            match client
+                .get_playlist(&playlist_id, context, self.oauth.clone())
+                .await
+            {
+                Ok(Some((tracks, title))) => {
+                    let filtered: Vec<Track> = tracks
+                        .into_iter()
+                        .filter(|t| t.info.identifier != seed_id)
+                        .collect();
+                    return LoadResult::Playlist(PlaylistData {
+                        info: PlaylistInfo {
+                            name: format!("Recommendations: {}", title),
+                            selected_track: -1,
+                        },
+                        plugin_info: json!({
+                          "type": "recommendations",
+                          "totalTracks": filtered.len()
+                        }),
+                        tracks: filtered,
+                    });
+                }
+                _ => continue,
+            }
+        }
+        LoadResult::Empty {}
+    }
+
+    async fn handle_url(&self, identifier: &str, context: &Value) -> LoadResult {
+        let is_music_url = identifier.contains("music.youtube.com");
+
+        // Playlist handling
+        if let Some(playlist_id) = self.extract_playlist_id(identifier) {
+            // Prioritize resolve clients; prefer Android first for reliability.
+            let mut playlist_clients: Vec<&Arc<dyn YouTubeClient>> = Vec::new();
+            if let Some(android) = self.resolve_clients.iter().find(|c| c.name() == "Android") {
+                playlist_clients.push(android);
+            }
+            for c in self.prioritize_clients(&self.resolve_clients, is_music_url) {
+                if !playlist_clients.iter().any(|x| x.name() == c.name()) {
+                    playlist_clients.push(c);
+                }
+            }
+            // Fallback: include remaining clients not yet in the list.
+            for c in self.fallback_clients(&playlist_clients, is_music_url) {
+                if !playlist_clients.iter().any(|x| x.name() == c.name()) {
+                    playlist_clients.push(c);
+                }
+            }
+
+            for client in &playlist_clients {
+                tracing::debug!("Fetching playlist '{}' with {}", playlist_id, client.name());
+                match client
+                    .get_playlist(&playlist_id, context, self.oauth.clone())
+                    .await
+                {
+                    Ok(Some((tracks, title))) => {
+                        return LoadResult::Playlist(PlaylistData {
+                            info: PlaylistInfo {
+                                name: title,
+                                selected_track: -1,
+                            },
+                            plugin_info: json!({
+                                "type": "playlist",
+                                "url": format!("https://www.youtube.com/playlist?list={}", playlist_id),
+                                "artworkUrl": tracks.first().and_then(|t| t.info.artwork_url.clone()),
+                                "totalTracks": tracks.len()
+                            }),
+                            tracks,
+                        });
+                    }
+                    _ => continue,
+                }
+            }
+        }
+
+        let id = self.extract_id(identifier);
+        let resolve_clients: Vec<&Arc<dyn YouTubeClient>> = self.resolve_clients.iter().collect();
+
+        for client in &resolve_clients {
+            tracing::debug!("Resolving track '{}' with {}", id, client.name());
+            match client
+                .get_track_info(&id, context, self.oauth.clone())
+                .await
+            {
+                Ok(Some(mut track)) => {
+                    if is_music_url {
+                        track.info.uri = Some(format!("https://music.youtube.com/watch?v={}", id));
+                    }
+                    return LoadResult::Track(track);
+                }
+                Ok(None) => continue,
+                Err(e) => tracing::warn!("Resolve error with {}: {}", client.name(), e),
+            }
+        }
+
+        // All resolve clients failed — fall back to all remaining clients.
+        let fallback = self.fallback_clients(&resolve_clients, false);
+        if !fallback.is_empty() {
+            tracing::debug!(
+                "All resolve clients failed for '{}', trying {} fallback client(s)",
+                id,
+                fallback.len()
+            );
+        }
+        for client in fallback {
+            tracing::debug!("Fallback resolve '{}' with {}", id, client.name());
+            if let Ok(Some(mut track)) = client
+                .get_track_info(&id, context, self.oauth.clone())
+                .await
+            {
+                if is_music_url {
+                    track.info.uri = Some(format!("https://music.youtube.com/watch?v={}", id));
+                }
+                return LoadResult::Track(track);
+            }
+        }
+
+        LoadResult::Empty {}
+    }
+}

@@ -1,0 +1,58 @@
+// Copyright (c) 2026 nikcodex (KizunaLink)
+// Licensed under the MIT License
+
+use std::io::{Read, Seek, SeekFrom};
+
+use symphonia::core::io::MediaSource;
+
+use crate::{
+    engine::source::{AudioSource, HttpSource, create_client},
+    common::types::AnyResult,
+};
+
+pub struct DeezerRemoteReader {
+    inner: HttpSource,
+}
+
+const USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36";
+
+impl DeezerRemoteReader {
+    pub fn new(
+        url: &str,
+        local_addr: Option<std::net::IpAddr>,
+        proxy: Option<crate::config::sources::HttpProxyConfig>,
+    ) -> AnyResult<Self> {
+        let client = create_client(USER_AGENT.to_owned(), local_addr, proxy, None)?;
+        let inner = HttpSource::new(client, url)?;
+
+        Ok(Self { inner })
+    }
+}
+
+impl Read for DeezerRemoteReader {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        self.inner.read(buf)
+    }
+}
+
+impl Seek for DeezerRemoteReader {
+    fn seek(&mut self, pos: SeekFrom) -> std::io::Result<u64> {
+        self.inner.seek(pos)
+    }
+}
+
+impl MediaSource for DeezerRemoteReader {
+    fn is_seekable(&self) -> bool {
+        self.inner.is_seekable()
+    }
+
+    fn byte_len(&self) -> Option<u64> {
+        self.inner.byte_len()
+    }
+}
+
+impl DeezerRemoteReader {
+    pub fn content_type(&self) -> Option<String> {
+        self.inner.content_type()
+    }
+}
