@@ -61,7 +61,7 @@ static RESOURCE_CACHE: StdMutex<Option<(String, Instant)>> = StdMutex::new(None)
 
 /// Queries the program's current memory profile.
 pub fn memory_usage_report() -> String {
-    let mut guard = RESOURCE_CACHE.lock().unwrap();
+    let mut guard = RESOURCE_CACHE.lock().unwrap_or_else(|e| e.into_inner());
 
     if let Some((report, timestamp)) = guard.as_ref()
         && timestamp.elapsed().as_secs() < 1

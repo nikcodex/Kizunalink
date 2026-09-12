@@ -186,7 +186,7 @@ impl YouTubeSource {
         Self {
             search_prefixes: vec!["ytsearch:".to_string(), "ytmsearch:".to_string()],
             rec_prefixes: vec!["ytrec:".to_string()],
-            url_regex: Regex::new(r"(?:youtube\.com|youtu\.be)").unwrap(),
+            url_regex: Regex::new(r"(?:youtube\.com|youtu\.be)").expect("valid regex"),
             search_clients,
             music_search_clients,
             playback_clients,
@@ -420,7 +420,7 @@ impl SourcePlugin for YouTubeSource {
     async fn load(
         &self,
         identifier: &str,
-        _routeplanner: Option<Arc<dyn crate::crate::lavalink::protocol::routeplanner::RoutePlanner>>,
+        _routeplanner: Option<Arc<dyn crate::lavalink::routeplanner::RoutePlanner>>,
     ) -> LoadResult {
         let visitor_data = self.visitor_data.read().await.clone();
         let context = if let Some(vd) = visitor_data {
@@ -457,7 +457,7 @@ impl SourcePlugin for YouTubeSource {
     async fn get_track(
         &self,
         identifier: &str,
-        routeplanner: Option<Arc<dyn crate::crate::lavalink::protocol::routeplanner::RoutePlanner>>,
+        routeplanner: Option<Arc<dyn crate::lavalink::routeplanner::RoutePlanner>>,
     ) -> Option<BoxedTrack> {
         let visitor_data = self.visitor_data.read().await.clone();
         let id = self.extract_id(identifier);

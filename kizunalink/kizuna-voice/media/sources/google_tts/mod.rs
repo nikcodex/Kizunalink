@@ -27,7 +27,7 @@ impl GoogleTtsSource {
         Self {
             config,
             search_prefixes: vec!["gtts:".to_string(), "speak:".to_string()],
-            url_pattern: Regex::new(r"(?i)^(gtts://|speak://)").unwrap(),
+            url_pattern: Regex::new(r"(?i)^(gtts://|speak://)").expect("valid regex"),
         }
     }
 
@@ -106,7 +106,7 @@ impl SourcePlugin for GoogleTtsSource {
     async fn load(
         &self,
         identifier: &str,
-        _routeplanner: Option<Arc<dyn crate::crate::lavalink::protocol::routeplanner::RoutePlanner>>,
+        _routeplanner: Option<Arc<dyn crate::lavalink::routeplanner::RoutePlanner>>,
     ) -> LoadResult {
         debug!("Google TTS loading: {}", identifier);
 
@@ -123,7 +123,7 @@ impl SourcePlugin for GoogleTtsSource {
     async fn get_track(
         &self,
         identifier: &str,
-        routeplanner: Option<Arc<dyn crate::crate::lavalink::protocol::routeplanner::RoutePlanner>>,
+        routeplanner: Option<Arc<dyn crate::lavalink::routeplanner::RoutePlanner>>,
     ) -> Option<BoxedTrack> {
         let (language, text) = self.parse_query(identifier);
         let url = self.build_url(&language, &text);

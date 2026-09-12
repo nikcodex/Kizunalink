@@ -5,7 +5,6 @@ use serde::Serialize;
 
 #[derive(Debug, Serialize, Clone)]
 #[serde(tag = "class", content = "details")]
-#[allow(dead_code)]
 pub enum RoutePlannerStatus {
     RotatingIpRoutePlanner(RotatingIpDetails),
     NanoIpRoutePlanner(NanoIpDetails),
@@ -15,7 +14,6 @@ pub enum RoutePlannerStatus {
 
 #[derive(Debug, Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
-#[allow(dead_code)]
 pub struct RotatingIpDetails {
     pub ip_block: IpBlock,
     pub failing_addresses: Vec<FailingAddress>,
@@ -26,7 +24,6 @@ pub struct RotatingIpDetails {
 
 #[derive(Debug, Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
-#[allow(dead_code)]
 pub struct NanoIpDetails {
     pub ip_block: IpBlock,
     pub failing_addresses: Vec<FailingAddress>,
@@ -35,7 +32,6 @@ pub struct NanoIpDetails {
 
 #[derive(Debug, Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
-#[allow(dead_code)]
 pub struct RotatingNanoIpDetails {
     pub ip_block: IpBlock,
     pub failing_addresses: Vec<FailingAddress>,
@@ -45,7 +41,6 @@ pub struct RotatingNanoIpDetails {
 
 #[derive(Debug, Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
-#[allow(dead_code)]
 pub struct BalancingIpDetails {
     pub ip_block: IpBlock,
     pub failing_addresses: Vec<FailingAddress>,
@@ -53,7 +48,6 @@ pub struct BalancingIpDetails {
 
 #[derive(Debug, Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
-#[allow(dead_code)]
 pub struct IpBlock {
     #[serde(rename = "type")]
     pub block_type: String,
@@ -62,7 +56,6 @@ pub struct IpBlock {
 
 #[derive(Debug, Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
-#[allow(dead_code)]
 pub struct FailingAddress {
     pub failing_address: String,
     pub failing_timestamp: u64,
@@ -70,7 +63,6 @@ pub struct FailingAddress {
 }
 
 #[derive(Debug, serde::Deserialize)]
-#[allow(dead_code)]
 pub struct FreeAddressRequest {
     pub address: String,
 }

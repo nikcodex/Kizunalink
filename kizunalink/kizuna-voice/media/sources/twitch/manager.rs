@@ -31,8 +31,8 @@ impl TwitchSource {
         Self {
             gql: Arc::new(TwitchGqlClient::new(client, config.client_id)),
             proxy: config.proxy,
-            stream_name_regex: Regex::new(STREAM_NAME_REGEX).unwrap(),
-            twitch_domain_regex: Regex::new(TWITCH_DOMAIN_REGEX).unwrap(),
+            stream_name_regex: Regex::new(STREAM_NAME_REGEX).expect("valid regex"),
+            twitch_domain_regex: Regex::new(TWITCH_DOMAIN_REGEX).expect("valid regex"),
         }
     }
 
@@ -131,7 +131,7 @@ impl SourcePlugin for TwitchSource {
     async fn load(
         &self,
         identifier: &str,
-        _routeplanner: Option<Arc<dyn crate::crate::lavalink::protocol::routeplanner::RoutePlanner>>,
+        _routeplanner: Option<Arc<dyn crate::lavalink::routeplanner::RoutePlanner>>,
     ) -> LoadResult {
         let stream_name = match self.get_channel_identifier_from_url(identifier) {
             Some(n) => n,
@@ -185,7 +185,7 @@ impl SourcePlugin for TwitchSource {
     async fn get_track(
         &self,
         identifier: &str,
-        routeplanner: Option<Arc<dyn crate::crate::lavalink::protocol::routeplanner::RoutePlanner>>,
+        routeplanner: Option<Arc<dyn crate::lavalink::routeplanner::RoutePlanner>>,
     ) -> Option<BoxedTrack> {
         let stream_name = self.get_channel_identifier_from_url(identifier)?;
 

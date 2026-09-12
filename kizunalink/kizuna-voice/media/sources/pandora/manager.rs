@@ -25,7 +25,7 @@ const ENDPOINT_ARTIST_ALL_TRACKS: &str = "/api/v4/catalog/getAllArtistTracksWith
 fn url_regex() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     RE.get_or_init(|| {
-        Regex::new(r"https?://(?:www\.)?pandora\.com/(?:playlist/(?P<id>PL:[\d:]+)|artist/(?:[\w\-]+/)*(?P<id2>(?:TR|AL|AR)[A-Za-z0-9]+))").unwrap()
+        Regex::new(r"https?://(?:www\.)?pandora\.com/(?:playlist/(?P<id>PL:[\d:]+)|artist/(?:[\w\-]+/)*(?P<id2>(?:TR|AL|AR)[A-Za-z0-9]+))").expect("valid regex")
     })
 }
 
@@ -821,7 +821,7 @@ impl SourcePlugin for PandoraSource {
     async fn load(
         &self,
         identifier: &str,
-        _routeplanner: Option<Arc<dyn crate::crate::lavalink::protocol::routeplanner::RoutePlanner>>,
+        _routeplanner: Option<Arc<dyn crate::lavalink::routeplanner::RoutePlanner>>,
     ) -> LoadResult {
         if let Some(prefix) = self
             .search_prefixes()
@@ -888,7 +888,7 @@ impl SourcePlugin for PandoraSource {
         &self,
         query: &str,
         types: &[String],
-        _routeplanner: Option<Arc<dyn crate::crate::lavalink::protocol::routeplanner::RoutePlanner>>,
+        _routeplanner: Option<Arc<dyn crate::lavalink::routeplanner::RoutePlanner>>,
     ) -> Option<SearchResult> {
         self.get_autocomplete(query, types).await
     }
@@ -896,7 +896,7 @@ impl SourcePlugin for PandoraSource {
     async fn get_track(
         &self,
         _identifier: &str,
-        _routeplanner: Option<Arc<dyn crate::crate::lavalink::protocol::routeplanner::RoutePlanner>>,
+        _routeplanner: Option<Arc<dyn crate::lavalink::routeplanner::RoutePlanner>>,
     ) -> Option<crate::media::sources::plugin::BoxedTrack> {
         None
     }

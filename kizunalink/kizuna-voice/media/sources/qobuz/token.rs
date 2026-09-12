@@ -27,19 +27,19 @@ pub struct QobuzTokenTracker {
 fn bundle_regex() -> &'static Regex {
     static REGEX: std::sync::OnceLock<Regex> = std::sync::OnceLock::new();
     REGEX.get_or_init(|| {
-        Regex::new(r#"<script src="(/resources/\d+\.\d+\.\d+-[a-z]\d{3}/bundle\.js)""#).unwrap()
+        Regex::new(r#"<script src="(/resources/\d+\.\d+\.\d+-[a-z]\d{3}/bundle\.js)""#).expect("valid regex")
     })
 }
 
 fn app_id_regex() -> &'static Regex {
     static REGEX: std::sync::OnceLock<Regex> = std::sync::OnceLock::new();
-    REGEX.get_or_init(|| Regex::new(r#"production:\{api:\{appId:"(.*?)""#).unwrap())
+    REGEX.get_or_init(|| Regex::new(r#"production:\{api:\{appId:"(.*?)""#).expect("valid regex"))
 }
 
 fn seed_regex() -> &'static Regex {
     static REGEX: std::sync::OnceLock<Regex> = std::sync::OnceLock::new();
     REGEX.get_or_init(|| {
-        Regex::new(r#"\):[a-z]\.initialSeed\("(.*?)",window\.utimezone\.(.*?)\)"#).unwrap()
+        Regex::new(r#"\):[a-z]\.initialSeed\("(.*?)",window\.utimezone\.(.*?)\)"#).expect("valid regex")
     })
 }
 

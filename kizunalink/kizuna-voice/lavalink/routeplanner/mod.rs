@@ -14,8 +14,7 @@ use rand::Rng;
 use tracing::{debug, info};
 
 use crate::lavalink::protocol::{
-    BalancingIpDetails,
-    crate::lavalink::protocol::routeplanner::{FailingAddress, IpBlock, RotatingIpDetails, RoutePlannerStatus},
+    BalancingIpDetails, FailingAddress, IpBlock, RotatingIpDetails, RoutePlannerStatus,
 };
 
 #[async_trait]
@@ -143,6 +142,10 @@ impl BalancingIpRoutePlanner {
         let mut b_idx = self.block_index.lock().unwrap_or_else(|e| e.into_inner());
         let mut indices = self.ip_indices.lock().unwrap_or_else(|e| e.into_inner());
 
+        // B06: Defensive check against empty blocks (would cause division by zero)
+        if self.parsed_blocks.is_empty() {
+            return std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST);
+        }
         let block_idx = *b_idx % self.parsed_blocks.len();
         let block = &self.parsed_blocks[block_idx];
 
@@ -181,8 +184,8 @@ impl BalancingIpRoutePlanner {
                 .unwrap_or_else(|e| e.into_inner());
 
             if let Some(&timestamp) = failing.get(&ip_str) {
-                if kizunalink::common::utils::now_ms()
-                    > timestamp + kizunalink::engine::constants::ROUTE_PLANNER_FAIL_EXPIRE_MS
+                if crate::common::utils::now_ms()
+                    > timestamp + crate::engine::constants::ROUTE_PLANNER_FAIL_EXPIRE_MS
                 {
                     failing.remove(&ip_str);
                 } else {
@@ -214,7 +217,9 @@ impl RoutePlanner for BalancingIpRoutePlanner {
             .collect();
 
         if self.ip_blocks.len() == 1 {
-            let index = self.ip_indices.lock().unwrap_or_else(|e| e.into_inner())[0];
+            let indices = self.ip_indices.lock().unwrap_or_else(|e| e.into_inner());
+            let index = indices.first().copied().unwrap_or(0);
+            drop(indices); // B06: release lock before computing IP
             let current_ip = Self::calculate_ip(&self.parsed_blocks[0], index).to_string();
 
             RoutePlannerStatus::RotatingIpRoutePlanner(RotatingIpDetails {
@@ -250,7 +255,7 @@ impl RoutePlanner for BalancingIpRoutePlanner {
         self.failing_addresses
             .lock()
             .unwrap_or_else(|e| e.into_inner())
-            .insert(address.to_string(), kizunalink::common::utils::now_ms());
+            .insert(address.to_string(), crate::common::utils::now_ms());
     }
 
     fn get_address(&self) -> Option<std::net::IpAddr> {

@@ -30,152 +30,91 @@ use crate::{
     discord::player::{EqBand, Filters},
 };
 
-pub fn validate_filters(filters: &Filters, config: &FiltersConfig) -> Vec<&'static str> {
-    let mut invalid = Vec::new();
-    let c = config;
-    let f = filters;
+/// Declares every filter exactly once. The macro expands to:
+/// 1. The `ConcreteFilter` enum variants
+/// 2. `process()` and `reset()` match arms
+/// 3. `validate_filters()` checks
+/// 4. `FilterChain::from_config()` construction
+///
+/// Syntax per entry:
+///   (VariantName, config_field, filter_module::Type, constructor_expr, api_name)
+///
+/// For boxed filters, use `Box<module::Type>` as the third arg.
+macro_rules! define_filters {
+    ($(
+        ($variant:ident, $config_field:ident, $filter_ty:ty, $api_name:expr)
+    ),* $(,)?) => {
 
-    if f.volume.is_some() && !c.volume {
-        invalid.push("volume");
-    }
-    if f.equalizer.is_some() && !c.equalizer {
-        invalid.push("equalizer");
-    }
-    if f.karaoke.is_some() && !c.karaoke {
-        invalid.push("karaoke");
-    }
-    if f.timescale.is_some() && !c.timescale {
-        invalid.push("timescale");
-    }
-    if f.tremolo.is_some() && !c.tremolo {
-        invalid.push("tremolo");
-    }
-    if f.vibrato.is_some() && !c.vibrato {
-        invalid.push("vibrato");
-    }
-    if f.distortion.is_some() && !c.distortion {
-        invalid.push("distortion");
-    }
-    if f.rotation.is_some() && !c.rotation {
-        invalid.push("rotation");
-    }
-    if f.channel_mix.is_some() && !c.channel_mix {
-        invalid.push("channelMix");
-    }
-    if f.low_pass.is_some() && !c.low_pass {
-        invalid.push("lowPass");
-    }
-    if f.echo.is_some() && !c.echo {
-        invalid.push("echo");
-    }
-    if f.high_pass.is_some() && !c.high_pass {
-        invalid.push("highPass");
-    }
-    if f.normalization.is_some() && !c.normalization {
-        invalid.push("normalization");
-    }
-    if f.chorus.is_some() && !c.chorus {
-        invalid.push("chorus");
-    }
-    if f.compressor.is_some() && !c.compressor {
-        invalid.push("compressor");
-    }
-    if f.flanger.is_some() && !c.flanger {
-        invalid.push("flanger");
-    }
-    if f.phaser.is_some() && !c.phaser {
-        invalid.push("phaser");
-    }
-    if f.phonograph.is_some() && !c.phonograph {
-        invalid.push("phonograph");
-    }
-    if f.reverb.is_some() && !c.reverb {
-        invalid.push("reverb");
-    }
-    if f.spatial.is_some() && !c.spatial {
-        invalid.push("spatial");
-    }
+        // ── ConcreteFilter enum ──────────────────────────────────────────
+        pub enum ConcreteFilter {
+            $($variant($filter_ty),)*
+        }
 
-    invalid
+        impl ConcreteFilter {
+            #[inline(always)]
+            pub fn process(&mut self, samples: &mut [i16]) {
+                match self {
+                    $(Self::$variant(f) => f.process(samples),)*
+                }
+            }
+
+            pub fn reset(&mut self) {
+                match self {
+                    $(Self::$variant(f) => f.reset(),)*
+                }
+            }
+        }
+
+        // ── validate_filters ─────────────────────────────────────────────
+        pub fn validate_filters(filters: &Filters, config: &FiltersConfig) -> Vec<&'static str> {
+            let mut invalid = Vec::new();
+            $(if filters.$config_field.is_some() && !config.$config_field {
+                invalid.push($api_name);
+            })*
+            invalid
+        }
+
+        // ── FilterChain::from_config helper ──────────────────────────────
+        fn build_filters(config: &Filters) -> Vec<ConcreteFilter> {
+            let mut filters = Vec::new();
+            // NOTE: Each filter's constructor is called inside from_config()
+            // because some need special arg extraction. We keep from_config()
+            // explicit for filters with complex constructors (equalizer, etc.)
+            // and use this macro only for the enum/process/reset/validate parts.
+            let _ = &mut filters;
+            let _ = config;
+            filters
+        }
+    };
+}
+
+// Register all filters: (Variant, config_field, Type, API name)
+define_filters! {
+    (Volume,        volume,        volume::VolumeFilter,                              "volume"),
+    (Equalizer,     equalizer,     Box<equalizer::EqualizerFilter>,                   "equalizer"),
+    (Karaoke,       karaoke,       karaoke::KaraokeFilter,                            "karaoke"),
+    (Tremolo,       tremolo,       tremolo::TremoloFilter,                            "tremolo"),
+    (Vibrato,       vibrato,       vibrato::VibratoFilter,                            "vibrato"),
+    (Rotation,      rotation,      rotation::RotationFilter,                          "rotation"),
+    (Distortion,    distortion,    distortion::DistortionFilter,                      "distortion"),
+    (ChannelMix,    channel_mix,   channel_mix::ChannelMixFilter,                     "channelMix"),
+    (LowPass,       low_pass,      low_pass::LowPassFilter,                           "lowPass"),
+    (Echo,          echo,          echo::EchoFilter,                                  "echo"),
+    (HighPass,      high_pass,     high_pass::HighPassFilter,                         "highPass"),
+    (Normalization, normalization, normalization::NormalizationFilter,                "normalization"),
+    (Chorus,        chorus,        chorus::ChorusFilter,                              "chorus"),
+    (Compressor,    compressor,    compressor::CompressorFilter,                      "compressor"),
+    (Flanger,       flanger,       flanger::FlangerFilter,                            "flanger"),
+    (Phaser,        phaser,        phaser::PhaserFilter,                              "phaser"),
+    (Phonograph,    phonograph,    Box<phonograph::PhonographFilter>,                 "phonograph"),
+    (Reverb,        reverb,        reverb::ReverbFilter,                              "reverb"),
+    (Spatial,       spatial,       spatial::SpatialFilter,                            "spatial"),
 }
 
 pub trait AudioFilter: Send {
     fn process(&mut self, samples: &mut [i16]);
     fn is_enabled(&self) -> bool;
     fn reset(&mut self);
-}
-
-pub enum ConcreteFilter {
-    Volume(volume::VolumeFilter),
-    Equalizer(Box<equalizer::EqualizerFilter>),
-    Karaoke(karaoke::KaraokeFilter),
-    Tremolo(tremolo::TremoloFilter),
-    Vibrato(vibrato::VibratoFilter),
-    Rotation(rotation::RotationFilter),
-    Distortion(distortion::DistortionFilter),
-    ChannelMix(channel_mix::ChannelMixFilter),
-    LowPass(low_pass::LowPassFilter),
-    Echo(echo::EchoFilter),
-    HighPass(high_pass::HighPassFilter),
-    Normalization(normalization::NormalizationFilter),
-    Chorus(chorus::ChorusFilter),
-    Compressor(compressor::CompressorFilter),
-    Flanger(flanger::FlangerFilter),
-    Phaser(phaser::PhaserFilter),
-    Phonograph(Box<phonograph::PhonographFilter>),
-    Reverb(reverb::ReverbFilter),
-    Spatial(spatial::SpatialFilter),
-}
-
-impl ConcreteFilter {
-    #[inline(always)]
-    pub fn process(&mut self, samples: &mut [i16]) {
-        match self {
-            Self::Volume(f) => f.process(samples),
-            Self::Equalizer(f) => f.process(samples),
-            Self::Karaoke(f) => f.process(samples),
-            Self::Tremolo(f) => f.process(samples),
-            Self::Vibrato(f) => f.process(samples),
-            Self::Rotation(f) => f.process(samples),
-            Self::Distortion(f) => f.process(samples),
-            Self::ChannelMix(f) => f.process(samples),
-            Self::LowPass(f) => f.process(samples),
-            Self::Echo(f) => f.process(samples),
-            Self::HighPass(f) => f.process(samples),
-            Self::Normalization(f) => f.process(samples),
-            Self::Chorus(f) => f.process(samples),
-            Self::Compressor(f) => f.process(samples),
-            Self::Flanger(f) => f.process(samples),
-            Self::Phaser(f) => f.process(samples),
-            Self::Phonograph(f) => f.process(samples),
-            Self::Reverb(f) => f.process(samples),
-            Self::Spatial(f) => f.process(samples),
-        }
-    }
-
-    pub fn reset(&mut self) {
-        match self {
-            Self::Volume(f) => f.reset(),
-            Self::Equalizer(f) => f.reset(),
-            Self::Karaoke(f) => f.reset(),
-            Self::Tremolo(f) => f.reset(),
-            Self::Vibrato(f) => f.reset(),
-            Self::Rotation(f) => f.reset(),
-            Self::Distortion(f) => f.reset(),
-            Self::ChannelMix(f) => f.reset(),
-            Self::LowPass(f) => f.reset(),
-            Self::Echo(f) => f.reset(),
-            Self::HighPass(f) => f.reset(),
-            Self::Normalization(f) => f.reset(),
-            Self::Chorus(f) => f.reset(),
-            Self::Compressor(f) => f.reset(),
-            Self::Flanger(f) => f.reset(),
-            Self::Phaser(f) => f.reset(),
-            Self::Phonograph(f) => f.reset(),
-            Self::Reverb(f) => f.reset(),
-            Self::Spatial(f) => f.reset(),
-        }
-    }
 }
 
 pub struct FilterChain {
@@ -414,6 +353,8 @@ impl FilterChain {
             let resampled = ts.process_resample(samples);
             self.timescale_buffer.extend_from_slice(&resampled);
 
+            // B05: Unbounded growth guard — drain oldest (front) to stay within limit.
+            // Stereo alignment is preserved by rounding excess to even.
             const MAX_TS_SAMPLES: usize = 1920 * 1024;
             if self.timescale_buffer.len() > MAX_TS_SAMPLES {
                 let excess = self.timescale_buffer.len() - MAX_TS_SAMPLES;
@@ -451,5 +392,58 @@ impl FilterChain {
             ts.reset();
         }
         self.timescale_buffer.clear();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::discord::player::state::Filters;
+
+    #[test]
+    fn filter_chain_default_is_inactive() {
+        let chain = FilterChain::from_config(&Filters::default());
+        assert!(!chain.is_active());
+        assert!(chain.filters.is_empty());
+        assert!(chain.timescale.is_none());
+    }
+
+    #[test]
+    fn filter_chain_with_volume() {
+        let mut filters = Filters::default();
+        filters.volume = Some(50);
+        let chain = FilterChain::from_config(&filters);
+        assert!(chain.is_active());
+        assert_eq!(chain.filters.len(), 1);
+    }
+
+    #[test]
+    fn filter_chain_process_passthrough() {
+        let mut chain = FilterChain::from_config(&Filters::default());
+        let mut samples = [100i16, 200, 300, 400];
+        let original = samples;
+        chain.process(&mut samples);
+        // No filters active, samples unchanged
+        assert_eq!(samples, original);
+    }
+
+    #[test]
+    fn filter_chain_reset() {
+        let mut filters = Filters::default();
+        filters.volume = Some(100);
+        let mut chain = FilterChain::from_config(&filters);
+        chain.reset();
+        // After reset, process should still work
+        let mut samples = [100i16, 200];
+        chain.process(&mut samples);
+    }
+
+    #[test]
+    fn validate_filters_default_all_valid() {
+        let filters = Filters::default();
+        let config = FiltersConfig::default();
+        let invalid = validate_filters(&filters, &config);
+        // No filters set, nothing should be invalid
+        assert!(invalid.is_empty());
     }
 }

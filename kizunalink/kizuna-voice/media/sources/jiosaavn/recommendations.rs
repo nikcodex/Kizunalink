@@ -9,7 +9,7 @@ use crate::lavalink::protocol::tracks::{LoadResult, PlaylistData, PlaylistInfo};
 impl JioSaavnSource {
     pub async fn get_recommendations(&self, query: &str) -> LoadResult {
         let mut id = query.to_owned();
-        let id_regex = Regex::new(r"^[A-Za-z0-9_,-]+$").unwrap();
+        let id_regex = Regex::new(r"^[A-Za-z0-9_,-]+$").expect("valid regex");
         if !id_regex.is_match(query) {
             if let LoadResult::Search(tracks) = self.search(query).await {
                 if let Some(first) = tracks.first() {

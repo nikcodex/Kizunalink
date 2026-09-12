@@ -12,7 +12,7 @@ use axum::{
 use crate::{
     player::{PlayerContext, PlayerUpdate, VoiceConnectionState},
     protocol::{self},
-    server::AppState,
+    server::{AppState, session::Session},
 };
 
 pub async fn update_player(
@@ -21,7 +21,7 @@ pub async fn update_player(
         kizunalink::common::types::GuildId,
     )>,
     Query(params): Query<std::collections::HashMap<String, String>>,
-    State(state): State<Arc<dyn ServerContext>>,
+    State(state): State<Arc<AppState>>,
     Json(body): Json<PlayerUpdate>,
 ) -> impl IntoResponse {
     tracing::debug!(
@@ -100,7 +100,7 @@ fn handle_player_state(
     body: &PlayerUpdate,
     loading_new_track: bool,
     guild_id: &kizunalink::common::types::GuildId,
-    session: &Arc<crate::>,
+    session: &Arc<Session>,
 ) {
     if !loading_new_track {
         if let Some(pos) = body.position {
@@ -136,7 +136,7 @@ async fn handle_filters(
     filters: kizunalink::discord::player::Filters,
     state: &AppState,
     guild_id: &kizunalink::common::types::GuildId,
-    session: &Arc<crate::>,
+    session: &Arc<Session>,
 ) -> Result<(), (StatusCode, Json<kizunalink::common::KizunaLinkError>)> {
     let invalid_filters = kizunalink::engine::filters::validate_filters(&filters, &state.config.filters);
     if !invalid_filters.is_empty() {
@@ -148,7 +148,7 @@ async fn handle_filters(
             StatusCode::BAD_REQUEST,
             Json(kizunalink::common::KizunaLinkError::bad_request(
                 message,
-                format!("/v4/sessions/xxx/players/{}", guild_id), // session content isn't strictly needed for response body here
+                format!("/v4/sessions/{}/players/{}", session.session_id, guild_id),
             )),
         ));
     }
@@ -180,7 +180,7 @@ async fn handle_filters(
 async fn handle_voice(
     player: &mut PlayerContext,
     voice: kizunalink::discord::player::VoiceState,
-    session: &Arc<crate::>,
+    session: &Arc<Session>,
     _player_arc: &Arc<tokio::sync::RwLock<PlayerContext>>,
 ) -> Result<(), (StatusCode, Json<kizunalink::common::KizunaLinkError>)> {
     if voice.token.is_empty() || voice.endpoint.is_empty() || voice.session_id.is_empty() {
@@ -256,7 +256,7 @@ fn resolve_track_update(body: &PlayerUpdate) -> Option<kizunalink::discord::play
 async fn apply_track_update(
     player: &mut PlayerContext,
     track_update: kizunalink::discord::player::PlayerUpdateTrack,
-    session: Arc<crate::>,
+    session: Arc<Session>,
     state: &AppState,
     no_replace: bool,
     end_time_input: Option<kizunalink::discord::player::state::EndTime>,
@@ -302,7 +302,7 @@ async fn apply_track_update(
     }
 }
 
-async fn stop_player(player: &mut PlayerContext, session: &Arc<crate::>) {
+async fn stop_player(player: &mut PlayerContext, session: &Arc<Session>) {
     let track_data = player.track.clone();
     if let Some(handle) = &player.track_handle {
         player
@@ -319,15 +319,19 @@ async fn stop_player(player: &mut PlayerContext, session: &Arc<crate::>) {
     player.track = None;
 
     if let Some(encoded) = track_data {
+        // B08 fix: use the real track info instead of default
+        let track_info = player.track_info.clone().unwrap_or_else(|| {
+            protocol::tracks::Track {
+                encoded: encoded.clone(),
+                info: protocol::tracks::TrackInfo::default(),
+                plugin_info: serde_json::json!({}),
+                user_data: serde_json::json!({}),
+            }
+        });
         session.send_message(&protocol::OutgoingMessage::Event {
             event: Box::new(protocol::KizunaLinkEvent::TrackEnd {
                 guild_id: player.guild_id.clone(),
-                track: protocol::tracks::Track {
-                    encoded,
-                    info: protocol::tracks::TrackInfo::default(),
-                    plugin_info: serde_json::json!({}),
-                    user_data: serde_json::json!({}),
-                },
+                track: track_info,
                 reason: protocol::TrackEndReason::Stopped,
             }),
         });
@@ -338,7 +342,7 @@ async fn start_playback(
     player: &mut PlayerContext,
     track: String,
     user_data: Option<serde_json::Value>,
-    session: Arc<crate::>,
+    session: Arc<Session>,
     state: &AppState,
     end_time_input: Option<kizunalink::discord::player::state::EndTime>,
     start_time_ms: Option<u64>,
@@ -368,7 +372,7 @@ async fn start_playback(
 /// PATCH /v4/sessions/{sessionId}
 pub async fn update_session(
     Path(session_id): Path<kizunalink::common::types::SessionId>,
-    State(state): State<Arc<dyn ServerContext>>,
+    State(state): State<Arc<AppState>>,
     Json(body): Json<protocol::SessionUpdate>,
 ) -> impl IntoResponse {
     tracing::debug!("PATCH /v4/sessions/{}: body={:?}", session_id, body);

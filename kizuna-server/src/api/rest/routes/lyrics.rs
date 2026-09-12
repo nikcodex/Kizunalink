@@ -18,7 +18,7 @@ use crate::{
 };
 
 pub async fn subscribe_lyrics(
-    State(state): State<Arc<dyn ServerContext>>,
+    State(state): State<Arc<AppState>>,
     Path((session_id, guild_id)): Path<(String, String)>,
 ) -> axum::http::StatusCode {
     let session_id = kizunalink::common::types::SessionId(session_id);
@@ -94,7 +94,7 @@ pub async fn subscribe_lyrics(
 }
 
 pub async fn unsubscribe_lyrics(
-    State(state): State<Arc<dyn ServerContext>>,
+    State(state): State<Arc<AppState>>,
     Path((session_id, guild_id)): Path<(String, String)>,
 ) -> axum::http::StatusCode {
     let session_id = kizunalink::common::types::SessionId(session_id);
@@ -119,7 +119,7 @@ pub async fn unsubscribe_lyrics(
 }
 
 pub async fn get_lyrics(
-    State(state): State<Arc<dyn ServerContext>>,
+    State(state): State<Arc<AppState>>,
     Query(query): Query<GetLyricsQuery>,
 ) -> impl IntoResponse {
     tracing::info!(
@@ -166,62 +166,50 @@ pub async fn get_lyrics(
 }
 
 pub async fn get_player_lyrics(
-    State(state): State<Arc<dyn ServerContext>>,
+    State(state): State<Arc<AppState>>,
     Path((session_id, guild_id)): Path<(String, String)>,
     Query(query): Query<GetPlayerLyricsQuery>,
 ) -> impl IntoResponse {
     let session_id = kizunalink::common::types::SessionId(session_id);
     let guild_id = kizunalink::common::types::GuildId(guild_id);
     tracing::info!(
-        "GET /v4/sessions/{}/players/{}/track/lyrics: skipTrackSource={}",
+        "GET /v4/sessions/{}/players/{}/track/lyrics",
         session_id,
-        guild_id,
-        query.skip_track_source
+        guild_id
     );
 
-    let session = match state.sessions.get(&session_id) {
-        Some(s) => s,
-        None => return axum::http::StatusCode::NOT_FOUND.into_response(),
+    let Some(session) = state.sessions.get(&session_id) else {
+        return axum::http::StatusCode::NOT_FOUND.into_response();
     };
 
-    let player_arc = match session.players.get(&guild_id) {
-        Some(p) => p.value().clone(),
-        None => return axum::http::StatusCode::NOT_FOUND.into_response(),
+    let Some(player_arc) = session.players.get(&guild_id).map(|kv| kv.value().clone()) else {
+        return axum::http::StatusCode::NOT_FOUND.into_response();
     };
 
     let player = player_arc.read().await;
 
-    let track = match &player.track_info {
-        Some(t) => t,
-        None => return axum::http::StatusCode::NOT_FOUND.into_response(),
-    };
-
-    match state
-        .lyrics_manager
-        .load_lyrics_ext(&track.info, query.skip_track_source)
-        .await
-    {
+    let lyrics_data = player.lyrics_data.lock().await;
+    match lyrics_data.as_ref() {
         Some(lyrics) => {
+            let track_info = player.track_info.as_ref().map(|t| &t.info);
             let response = KizunaLinkLyrics {
-                source_name: track.info.source_name.clone(),
-                provider: Some(lyrics.provider),
-                text: Some(lyrics.text),
-                lines: lyrics
-                    .lines
-                    .map(|lines: Vec<crate::lavalink::protocol::models::LyricsLine>| {
-                        lines
-                            .into_iter()
-                            .map(|l| KizunaLinkLyricsLine {
-                                timestamp: l.timestamp,
-                                duration: Some(l.duration),
-                                line: l.text,
-                                plugin: serde_json::json!({}),
-                            })
-                            .collect()
-                    }),
+                source_name: track_info.map(|i| i.source_name.clone()).unwrap_or_default(),
+                provider: Some(lyrics.provider.clone()),
+                text: Some(lyrics.text.clone()),
+                lines: lyrics.lines.as_ref().map(|lines| {
+                    lines
+                        .iter()
+                        .map(|l| KizunaLinkLyricsLine {
+                            timestamp: l.timestamp,
+                            duration: Some(l.duration),
+                            line: l.text.clone(),
+                            plugin: serde_json::json!({}),
+                        })
+                        .collect()
+                }),
                 plugin: serde_json::json!({}),
             };
-            Json(response).into_response()
+            (axum::http::StatusCode::OK, Json(response)).into_response()
         }
         None => axum::http::StatusCode::NO_CONTENT.into_response(),
     }

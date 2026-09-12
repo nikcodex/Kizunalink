@@ -8,7 +8,7 @@ use axum::{extract::State, response::Json};
 use crate::{discord::player::Filters, protocol, server::AppState};
 
 /// GET /v4/info
-pub async fn get_info(State(state): State<Arc<dyn ServerContext>>) -> Json<protocol::Info> {
+pub async fn get_info(State(state): State<Arc<AppState>>) -> Json<protocol::Info> {
     tracing::info!("GET /v4/info");
 
     let version_str = env!("CARGO_PKG_VERSION");
@@ -68,9 +68,9 @@ fn parse_semver(v: &str) -> (u32, u32, u32, Option<String>) {
     (major, minor, patch, pre_release)
 }
 
-pub async fn get_stats(State(state): State<Arc<dyn ServerContext>>) -> Json<protocol::Stats> {
+pub async fn get_stats(State(state): State<Arc<AppState>>) -> Json<protocol::Stats> {
     tracing::info!("GET /v4/stats");
-    Json(kizunalink::monitoring::collect_stats(&state, None))
+    Json(crate::monitoring::collect_stats(&state, None))
 }
 
 pub async fn get_version() -> String {

@@ -16,11 +16,11 @@ use self::{
     middleware::{add_response_headers, check_auth},
     routes::{lyrics, player, stats, youtube},
 };
-use crate::common::server_hooks::ServerContext;
+use crate::server::AppState;
 
 const API_V4: &str = "/v4";
 
-pub fn router(state: Arc<dyn ServerContext>) -> Router {
+pub fn router(state: Arc<AppState>) -> Router {
     let v4_routes = Router::new()
         .route("/loadtracks", get(stats::load_tracks))
         .route("/loadsearch", get(stats::load_search))

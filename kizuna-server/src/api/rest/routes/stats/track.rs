@@ -21,7 +21,7 @@ use crate::{
 /// GET /v4/loadtracks?identifier=...
 pub async fn load_tracks(
     Query(params): Query<LoadTracksQuery>,
-    State(state): State<Arc<dyn ServerContext>>,
+    State(state): State<Arc<AppState>>,
 ) -> Json<LoadResult> {
     let identifier = params.identifier;
     tracing::info!("GET /v4/loadtracks: identifier='{}'", identifier);
@@ -36,7 +36,7 @@ pub async fn load_tracks(
 
 pub async fn load_search(
     Query(params): Query<LoadSearchQuery>,
-    State(state): State<Arc<dyn ServerContext>>,
+    State(state): State<Arc<AppState>>,
 ) -> impl IntoResponse {
     let query = params.query;
     let types_str = params.types.unwrap_or_default();

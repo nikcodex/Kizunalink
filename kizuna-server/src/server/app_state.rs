@@ -9,12 +9,12 @@ use sysinfo::System;
 
 use crate::{
     common::types::SessionId,
-    lavalink::protocol::routeplanner::RoutePlanner,
+    lavalink::routeplanner::RoutePlanner,
     server::session::Session,
     sources::{SourceManager, youtube::YoutubeStreamContext},
 };
 
-pub type SessionMap = DashMap<SessionId, Arc<dyn crate::Context>>;
+pub type SessionMap = DashMap<SessionId, Arc<Session>>;
 
 pub struct AppState {
     pub start_time: std::time::Instant,
@@ -29,3 +29,6 @@ pub struct AppState {
     pub last_system_refresh: parking_lot::Mutex<std::time::Instant>,
     pub process_stat: parking_lot::Mutex<ProcessStat>,
 }
+
+// Implement the library's ServerContext marker trait for AppState.
+impl kizunalink::common::server_hooks::ServerContext for AppState {}

@@ -20,7 +20,7 @@ pub mod track;
 fn url_regex() -> &'static Regex {
     static REGEX: OnceLock<Regex> = OnceLock::new();
     REGEX.get_or_init(|| {
-        Regex::new(r"https?://music\.163\.com/(?:(?:#|m)/)?(?P<type>song|album|playlist|artist)(?:\?id=|\/)(?P<id>\d+)").unwrap()
+        Regex::new(r"https?://music\.163\.com/(?:(?:#|m)/)?(?P<type>song|album|playlist|artist)(?:\?id=|\/)(?P<id>\d+)").expect("valid regex")
     })
 }
 
@@ -88,7 +88,7 @@ impl SourcePlugin for NeteaseSource {
     async fn load(
         &self,
         identifier: &str,
-        _routeplanner: Option<Arc<dyn crate::crate::lavalink::protocol::routeplanner::RoutePlanner>>,
+        _routeplanner: Option<Arc<dyn crate::lavalink::routeplanner::RoutePlanner>>,
     ) -> LoadResult {
         for prefix in self.search_prefixes() {
             if let Some(query) = identifier.strip_prefix(prefix) {
@@ -173,7 +173,7 @@ impl SourcePlugin for NeteaseSource {
         &self,
         query: &str,
         _types: &[String],
-        _routeplanner: Option<Arc<dyn crate::crate::lavalink::protocol::routeplanner::RoutePlanner>>,
+        _routeplanner: Option<Arc<dyn crate::lavalink::routeplanner::RoutePlanner>>,
     ) -> Option<SearchResult> {
         let mut q = query;
         for prefix in self.search_prefixes() {
@@ -197,7 +197,7 @@ impl SourcePlugin for NeteaseSource {
     async fn get_track(
         &self,
         identifier: &str,
-        routeplanner: Option<Arc<dyn crate::crate::lavalink::protocol::routeplanner::RoutePlanner>>,
+        routeplanner: Option<Arc<dyn crate::lavalink::routeplanner::RoutePlanner>>,
     ) -> Option<BoxedTrack> {
         let id = url_regex()
             .captures(identifier)

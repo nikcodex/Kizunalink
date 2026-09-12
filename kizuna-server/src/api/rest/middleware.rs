@@ -11,10 +11,10 @@ use axum::{
 };
 use tracing::warn;
 
-use crate::common::server_hooks::ServerContext;
+use crate::server::AppState;
 
 pub async fn check_auth(
-    State(state): State<Arc<dyn ServerContext>>,
+    State(state): State<Arc<AppState>>,
     req: Request,
     next: Next,
 ) -> Result<Response, StatusCode> {

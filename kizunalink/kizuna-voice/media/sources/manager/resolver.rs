@@ -11,7 +11,7 @@ pub async fn resolve_with_mirrors(
     track_info: &crate::lavalink::protocol::tracks::TrackInfo,
     identifier: &str,
     mirrors: &crate::config::server::MirrorsConfig,
-    routeplanner: Option<Arc<dyn crate::crate::lavalink::protocol::routeplanner::RoutePlanner>>,
+    routeplanner: Option<Arc<dyn crate::lavalink::routeplanner::RoutePlanner>>,
 ) -> Result<BoxedTrack, String> {
     if mirrors.best_match.scoring {
         return super::best_match::resolve_scored(
@@ -96,7 +96,7 @@ pub async fn resolve_with_mirrors(
 pub async fn resolve_nested_track(
     manager: &SourceManager,
     identifier: &str,
-    routeplanner: Option<Arc<dyn crate::crate::lavalink::protocol::routeplanner::RoutePlanner>>,
+    routeplanner: Option<Arc<dyn crate::lavalink::routeplanner::RoutePlanner>>,
 ) -> Option<BoxedTrack> {
     for source in &manager.sources {
         if source.can_handle(identifier) {

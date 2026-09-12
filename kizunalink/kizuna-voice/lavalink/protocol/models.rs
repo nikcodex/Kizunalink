@@ -93,7 +93,7 @@ pub struct LyricsTextData {
 #[serde(rename_all = "camelCase")]
 pub struct LyricsLoadError {
     pub message: String,
-    pub severity: kizunalink::common::Severity,
+    pub severity: crate::common::Severity,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]

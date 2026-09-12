@@ -22,14 +22,14 @@ const BASE_URL: &str = "https://api-v2.soundcloud.com";
 fn track_url_re() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     RE.get_or_init(|| {
-        Regex::new(r"^https?://(?:www\.|m\.)?soundcloud\.com/([a-zA-Z0-9_-]+)/([a-zA-Z0-9_-]+)(?:/s-[a-zA-Z0-9_-]+)?/?(?:\?.*)?$").unwrap()
+        Regex::new(r"^https?://(?:www\.|m\.)?soundcloud\.com/([a-zA-Z0-9_-]+)/([a-zA-Z0-9_-]+)(?:/s-[a-zA-Z0-9_-]+)?/?(?:\?.*)?$").expect("valid regex")
     })
 }
 
 fn playlist_url_re() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     RE.get_or_init(|| {
-        Regex::new(r"^https?://(?:www\.|m\.)?soundcloud\.com/([a-zA-Z0-9_-]+)/sets/([a-zA-Z0-9_:-]+)(?:/[a-zA-Z0-9_-]+)?/?(?:\?.*)?$").unwrap()
+        Regex::new(r"^https?://(?:www\.|m\.)?soundcloud\.com/([a-zA-Z0-9_-]+)/sets/([a-zA-Z0-9_:-]+)(?:/[a-zA-Z0-9_-]+)?/?(?:\?.*)?$").expect("valid regex")
     })
 }
 
@@ -44,33 +44,33 @@ fn liked_url_re() -> &'static Regex {
 fn short_url_re() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     RE.get_or_init(|| {
-        Regex::new(r"^https://on\.soundcloud\.com/[a-zA-Z0-9_-]+/?(?:\?.*)?$").unwrap()
+        Regex::new(r"^https://on\.soundcloud\.com/[a-zA-Z0-9_-]+/?(?:\?.*)?$").expect("valid regex")
     })
 }
 
 fn mobile_url_re() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     RE.get_or_init(|| {
-        Regex::new(r"^https://soundcloud\.app\.goo\.gl/[a-zA-Z0-9_-]+/?(?:\?.*)?$").unwrap()
+        Regex::new(r"^https://soundcloud\.app\.goo\.gl/[a-zA-Z0-9_-]+/?(?:\?.*)?$").expect("valid regex")
     })
 }
 
 fn liked_user_urn_re() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
-    RE.get_or_init(|| Regex::new(r#""urn":"soundcloud:users:(\d+)","username":"([^"]+)""#).unwrap())
+    RE.get_or_init(|| Regex::new(r#""urn":"soundcloud:users:(\d+)","username":"([^"]+)""#).expect("valid regex"))
 }
 
 fn user_url_re() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     RE.get_or_init(|| {
-        Regex::new(r"^https?://(?:www\.|m\.)?soundcloud\.com/([a-zA-Z0-9_-]+)(?:/(tracks|popular-tracks|albums|sets|reposts|spotlight))?/?(?:\?.*)?$").unwrap()
+        Regex::new(r"^https?://(?:www\.|m\.)?soundcloud\.com/([a-zA-Z0-9_-]+)(?:/(tracks|popular-tracks|albums|sets|reposts|spotlight))?/?(?:\?.*)?$").expect("valid regex")
     })
 }
 
 fn search_url_re() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     RE.get_or_init(|| {
-        Regex::new(r"^https?://(?:www\.|m\.)?soundcloud\.com/search(?:/(?:sounds|people|albums|sets))?/?(?:\?.*)?$").unwrap()
+        Regex::new(r"^https?://(?:www\.|m\.)?soundcloud\.com/search(?:/(?:sounds|people|albums|sets))?/?(?:\?.*)?$").expect("valid regex")
     })
 }
 
@@ -835,7 +835,7 @@ impl SourcePlugin for SoundCloudSource {
     async fn load(
         &self,
         identifier: &str,
-        _routeplanner: Option<Arc<dyn crate::crate::lavalink::protocol::routeplanner::RoutePlanner>>,
+        _routeplanner: Option<Arc<dyn crate::lavalink::routeplanner::RoutePlanner>>,
     ) -> LoadResult {
         // 1. Search
         if let Some(prefix) = self
@@ -897,7 +897,7 @@ impl SourcePlugin for SoundCloudSource {
     async fn get_track(
         &self,
         identifier: &str,
-        routeplanner: Option<Arc<dyn crate::crate::lavalink::protocol::routeplanner::RoutePlanner>>,
+        routeplanner: Option<Arc<dyn crate::lavalink::routeplanner::RoutePlanner>>,
     ) -> Option<Box<dyn PlayableTrack>> {
         // Resolve identifier to a URL if needed
         let url = if mobile_url_re().is_match(identifier) {

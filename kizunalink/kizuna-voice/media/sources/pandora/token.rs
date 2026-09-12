@@ -111,7 +111,7 @@ impl PandoraTokenTracker {
             .map_err(|e| e.to_string())?;
 
         let cookies = resp.headers().get_all(reqwest::header::SET_COOKIE);
-        let regex = regex::Regex::new(r"csrftoken=([a-f0-9]{16})").unwrap();
+        let regex = regex::Regex::new(r"csrftoken=([a-f0-9]{16})").expect("valid regex");
         for cookie in cookies {
             let cookie_str = cookie.to_str().unwrap_or("");
             if let Some(raw) = cookie_str.split(';').next()

@@ -43,7 +43,7 @@ impl SourceManager {
     pub async fn load(
         &self,
         identifier: &str,
-        routeplanner: Option<Arc<dyn crate::crate::lavalink::protocol::routeplanner::RoutePlanner>>,
+        routeplanner: Option<Arc<dyn crate::lavalink::routeplanner::RoutePlanner>>,
     ) -> crate::lavalink::protocol::tracks::LoadResult {
         for source in &self.sources {
             if source.can_handle(identifier) {
@@ -68,7 +68,7 @@ impl SourceManager {
         &self,
         query: &str,
         types: &[String],
-        routeplanner: Option<Arc<dyn crate::crate::lavalink::protocol::routeplanner::RoutePlanner>>,
+        routeplanner: Option<Arc<dyn crate::lavalink::routeplanner::RoutePlanner>>,
     ) -> Option<crate::lavalink::protocol::tracks::SearchResult> {
         for source in &self.sources {
             if source.can_handle(query) {
@@ -84,7 +84,7 @@ impl SourceManager {
     pub async fn resolve_track(
         &self,
         track_info: &crate::lavalink::protocol::tracks::TrackInfo,
-        routeplanner: Option<Arc<dyn crate::crate::lavalink::protocol::routeplanner::RoutePlanner>>,
+        routeplanner: Option<Arc<dyn crate::lavalink::routeplanner::RoutePlanner>>,
     ) -> Result<BoxedTrack, String> {
         let identifier = track_info.uri.as_deref().unwrap_or(&track_info.identifier);
 

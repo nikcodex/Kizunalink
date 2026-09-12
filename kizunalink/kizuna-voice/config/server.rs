@@ -5,18 +5,25 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct ServerConfig {
+    /// Server bind address (e.g. "0.0.0.0" or "127.0.0.1").
     #[serde(default = "default_address")]
     pub address: String,
+    /// Server port (default: 2333, matching Lavalink convention).
     #[serde(default = "default_port")]
     pub port: u16,
+    /// Authorization password required for REST and WebSocket access.
     #[serde(default = "default_authorization")]
     pub authorization: String,
+    /// Interval in **seconds** between player state updates sent to the client.
     #[serde(default = "default_player_update_interval")]
     pub player_update_interval: u64,
+    /// Interval in **seconds** between stats events sent over WebSocket.
     #[serde(default = "default_stats_interval")]
     pub stats_interval: u64,
+    /// Interval in **seconds** between WebSocket ping frames.
     #[serde(default = "default_websocket_ping_interval")]
     pub websocket_ping_interval: u64,
+    /// Maximum number of events to queue for a disconnected session.
     #[serde(default = "default_max_event_queue_size")]
     pub max_event_queue_size: usize,
 }

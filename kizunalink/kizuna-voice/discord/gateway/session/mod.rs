@@ -238,7 +238,7 @@ impl VoiceGateway {
         };
 
         let _ = ws_tx.send(Message::Text(
-            serde_json::to_string(&handshake).unwrap().into(),
+            serde_json::to_string(&handshake).expect("handshake serialization is infallible").into(),
         ));
 
         let (speaking_tx, mut speaking_rx) = unbounded_channel::<bool>();

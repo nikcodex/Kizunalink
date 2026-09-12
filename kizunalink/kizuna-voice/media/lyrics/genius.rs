@@ -59,19 +59,19 @@ impl LyricsProvider for GeniusProvider {
         let song_page = song_resp.text().await.ok()?;
 
         let re =
-            Regex::new(r#"(?s)window\.__PRELOADED_STATE__\s*=\s*JSON\.parse\('(.*?)'\);"#).unwrap();
+            Regex::new(r#"(?s)window\.__PRELOADED_STATE__\s*=\s*JSON\.parse\('(.*?)'\);"#).expect("valid regex");
         let caps = re.captures(&song_page)?;
         let lyrics_data_raw = caps.get(1)?.as_str();
 
         // Unescape any backslash-escaped character, matching the replace(/\\(.)/g, '$1')
-        let escape_re = Regex::new(r#"\\(.)"#).unwrap();
+        let escape_re = Regex::new(r#"\\(.)"#).expect("valid regex");
         let lyrics_data_unescaped = escape_re.replace_all(lyrics_data_raw, "$1");
 
         let lyrics_json: serde_json::Value = serde_json::from_str(&lyrics_data_unescaped).ok()?;
 
         let lyrics_content = lyrics_json["songPage"]["lyricsData"]["body"]["html"].as_str()?;
 
-        let tag_re = Regex::new(r#"<[^>]*>"#).unwrap();
+        let tag_re = Regex::new(r#"<[^>]*>"#).expect("valid regex");
         let lyrics_text = lyrics_content
             .replace("<br>", "\n")
             .replace("<br/>", "\n")

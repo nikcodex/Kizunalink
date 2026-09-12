@@ -24,10 +24,10 @@ use crate::{
 
 pub struct PlaybackStartConfig {
     pub track: String,
-    pub session: Arc<dyn crate::Context>,
+    pub session: Arc<dyn crate::common::server_hooks::SessionContext>,
     pub source_manager: Arc<crate::media::sources::SourceManager>,
     pub lyrics_manager: Arc<crate::media::lyrics::LyricsManager>,
-    pub routeplanner: Option<Arc<dyn crate::crate::lavalink::protocol::routeplanner::RoutePlanner>>,
+    pub routeplanner: Option<Arc<dyn crate::lavalink::routeplanner::RoutePlanner>>,
     pub update_interval_secs: u64,
     pub user_data: Option<serde_json::Value>,
     pub end_time: Option<u64>,
@@ -178,7 +178,7 @@ pub async fn start_playback(player: &mut PlayerContext, config: PlaybackStartCon
 }
 
 /// Stop the currently playing track and emit `TrackEnd: Replaced` if needed.
-async fn stop_current_track(player: &mut PlayerContext, session: &(dyn crate::Context)) {
+async fn stop_current_track(player: &mut PlayerContext, session: &(dyn crate::common::server_hooks::SessionContext)) {
     if let Some(handle) = &player.track_handle
         && handle.get_state() != PlaybackState::Stopped
         && let Some(track) = player.to_player_response().await.track

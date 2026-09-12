@@ -99,6 +99,69 @@ impl AudioMixer {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn audio_mixer_new_is_empty() {
+        let mixer = AudioMixer::new();
+        assert!(mixer.layers.is_empty());
+        assert!(mixer.enabled);
+        assert_eq!(mixer.max_layers, MAX_LAYERS);
+    }
+
+    #[test]
+    fn audio_mixer_disabled_does_not_modify() {
+        let mut mixer = AudioMixer::new();
+        mixer.enabled = false;
+        let mut frame = [100i16, 200, 300, 400];
+        let original = frame;
+        mixer.mix(&mut frame);
+        assert_eq!(frame, original);
+    }
+
+    #[test]
+    fn audio_mixer_empty_layers_does_not_modify() {
+        let mut mixer = AudioMixer::new();
+        let mut frame = [100i16, 200, 300, 400];
+        let original = frame;
+        mixer.mix(&mut frame);
+        assert_eq!(frame, original);
+    }
+
+    #[test]
+    fn audio_mixer_max_layers_enforced() {
+        let mut mixer = AudioMixer::new();
+        let (tx, _rx) = flume::unbounded();
+        for i in 0..MAX_LAYERS {
+            assert!(mixer.add_layer(format!("layer-{i}"), tx.clone(), 1.0).is_ok());
+        }
+        assert!(mixer.add_layer("overflow".into(), tx, 1.0).is_err());
+    }
+
+    #[test]
+    fn audio_mixer_remove_layer() {
+        let mut mixer = AudioMixer::new();
+        let (tx, _rx) = flume::unbounded();
+        mixer.add_layer("test".into(), tx, 1.0).unwrap();
+        assert_eq!(mixer.layers.len(), 1);
+        mixer.remove_layer("test");
+        assert!(mixer.layers.is_empty());
+    }
+
+    #[test]
+    fn audio_mixer_set_layer_volume_clamps() {
+        let mut mixer = AudioMixer::new();
+        let (tx, _rx) = flume::unbounded();
+        mixer.add_layer("test".into(), tx, 1.0).unwrap();
+        mixer.set_layer_volume("test", 5.0);
+        assert_eq!(mixer.layers["test"].volume, 1.0);
+        mixer.set_layer_volume("test", -1.0);
+        assert_eq!(mixer.layers["test"].volume, 0.0);
+    }
+}
+
 pub struct Mixer {
     tracks: Vec<MixerTrack>,
     mix_buf: Vec<i32>,

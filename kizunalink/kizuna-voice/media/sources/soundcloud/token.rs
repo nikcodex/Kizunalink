@@ -17,12 +17,12 @@ const CLIENT_ID_REFRESH_INTERVAL: Duration = Duration::from_secs(3600); // 1 hou
 
 fn asset_re() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
-    RE.get_or_init(|| Regex::new(r"https://a-v2\.sndcdn\.com/assets/[a-zA-Z0-9_-]+\.js").unwrap())
+    RE.get_or_init(|| Regex::new(r"https://a-v2\.sndcdn\.com/assets/[a-zA-Z0-9_-]+\.js").expect("valid regex"))
 }
 
 fn client_id_re() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
-    RE.get_or_init(|| Regex::new(r#"[^_]client_id[:"=]+\s*"?([a-zA-Z0-9_-]{20,})"?"#).unwrap())
+    RE.get_or_init(|| Regex::new(r#"[^_]client_id[:"=]+\s*"?([a-zA-Z0-9_-]{20,})"?"#).expect("valid regex"))
 }
 
 pub struct SoundCloudTokenTracker {

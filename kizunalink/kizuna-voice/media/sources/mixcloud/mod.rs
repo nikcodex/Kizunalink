@@ -32,14 +32,14 @@ fn track_url_re() -> &'static Regex {
 fn playlist_url_re() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     RE.get_or_init(|| {
-        Regex::new(r"(?i)^https?://(?:(?:www|beta|m)\.)?mixcloud\.com/(?P<user>[^/]+)/playlists/(?P<playlist>[^/]+)/?$").unwrap()
+        Regex::new(r"(?i)^https?://(?:(?:www|beta|m)\.)?mixcloud\.com/(?P<user>[^/]+)/playlists/(?P<playlist>[^/]+)/?$").expect("valid regex")
     })
 }
 
 fn user_url_re() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     RE.get_or_init(|| {
-        Regex::new(r"(?i)^https?://(?:(?:www|beta|m)\.)?mixcloud\.com/(?P<id>[^/]+)(?:/(?P<type>uploads|favorites|listens|stream))?/?$").unwrap()
+        Regex::new(r"(?i)^https?://(?:(?:www|beta|m)\.)?mixcloud\.com/(?P<id>[^/]+)(?:/(?P<type>uploads|favorites|listens|stream))?/?$").expect("valid regex")
     })
 }
 
@@ -459,7 +459,7 @@ impl SourcePlugin for MixcloudSource {
     async fn load(
         &self,
         identifier: &str,
-        _routeplanner: Option<Arc<dyn crate::crate::lavalink::protocol::routeplanner::RoutePlanner>>,
+        _routeplanner: Option<Arc<dyn crate::lavalink::routeplanner::RoutePlanner>>,
     ) -> LoadResult {
         if let Some(prefix) = self
             .search_prefixes()
@@ -494,7 +494,7 @@ impl SourcePlugin for MixcloudSource {
     async fn get_track(
         &self,
         identifier: &str,
-        routeplanner: Option<Arc<dyn crate::crate::lavalink::protocol::routeplanner::RoutePlanner>>,
+        routeplanner: Option<Arc<dyn crate::lavalink::routeplanner::RoutePlanner>>,
     ) -> Option<BoxedTrack> {
         let url = match self.load(identifier, None).await {
             LoadResult::Track(track) => track.info.uri?,

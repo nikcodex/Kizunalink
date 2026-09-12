@@ -19,12 +19,12 @@ use crate::{
     monitoring::collect_stats,
     player::PlayerState,
     protocol,
-    common::server_hooks::ServerContext,
+    server::{AppState, Session},
 };
 
 pub async fn handle_socket(
     mut socket: WebSocket,
-    state: Arc<dyn ServerContext>,
+    state: Arc<AppState>,
     user_id: Option<UserId>,
     client_session_id: Option<SessionId>,
 ) {
@@ -130,9 +130,9 @@ pub async fn handle_socket(
 
                 match msg {
                     Message::Text(text) => {
-                        match serde_json::from_str::<protocol::opcodes::IncomingMessage>(&text) {
+                        match serde_json::from_str::<kizunalink::lavalink::protocol::opcodes::IncomingMessage>(&text) {
                             Ok(op) => {
-                                if let Err(e) = protocol::opcodes::handle_op(op, &state, &session_id).await {
+                                if let Err(e) = crate::api::ws::opcodes::handle_op(op, &state, &session_id).await {
                                     warn!("Op handling error: session={session_id} err={e}");
                                 }
                             }
@@ -173,11 +173,11 @@ pub async fn handle_socket(
 }
 
 fn resolve_session(
-    state: &Arc<dyn ServerContext>,
+    state: &Arc<AppState>,
     user_id: Option<UserId>,
-    client_session_id: Option<&(dyn crate::Context)Id>,
+    client_session_id: Option<&SessionId>,
     tx: flume::Sender<Message>,
-) -> (Arc<dyn crate::Context>, bool) {
+) -> (Arc<Session>, bool) {
     if let Some(sid) = client_session_id
         && let Some((_, existing)) = state.resumable_sessions.remove(sid)
     {
@@ -200,7 +200,7 @@ fn resolve_session(
     (session, false)
 }
 
-async fn send_initial_state(socket: &mut WebSocket, session: &Arc<dyn crate::Context>, resumed: bool) {
+async fn send_initial_state(socket: &mut WebSocket, session: &Arc<Session>, resumed: bool) {
     let ready = protocol::OutgoingMessage::Ready {
         resumed,
         session_id: session.session_id.clone(),
@@ -242,8 +242,8 @@ async fn send_initial_state(socket: &mut WebSocket, session: &Arc<dyn crate::Con
 }
 
 async fn handle_session_close(
-    state: &Arc<dyn ServerContext>,
-    session: Arc<dyn crate::Context>,
+    state: &Arc<AppState>,
+    session: Arc<Session>,
     tx: &flume::Sender<Message>,
 ) {
     let session_id = session.session_id.clone();

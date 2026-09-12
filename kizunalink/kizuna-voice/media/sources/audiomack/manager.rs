@@ -460,19 +460,19 @@ impl SourcePlugin for AudiomackSource {
             .iter()
             .any(|p| identifier.starts_with(p))
             || SONG_REGEX
-                .get_or_init(|| Regex::new(r"https?://(?:www\.)?audiomack\.com/(?P<artist>[^/]+)/song/(?P<slug>[^/?#]+)").unwrap())
+                .get_or_init(|| Regex::new(r"https?://(?:www\.)?audiomack\.com/(?P<artist>[^/]+)/song/(?P<slug>[^/?#]+)").expect("valid regex"))
                 .is_match(identifier)
             || ALBUM_REGEX
-                .get_or_init(|| Regex::new(r"https?://(?:www\.)?audiomack\.com/(?P<artist>[^/]+)/album/(?P<slug>[^/?#]+)").unwrap())
+                .get_or_init(|| Regex::new(r"https?://(?:www\.)?audiomack\.com/(?P<artist>[^/]+)/album/(?P<slug>[^/?#]+)").expect("valid regex"))
                 .is_match(identifier)
             || PLAYLIST_REGEX
-                .get_or_init(|| Regex::new(r"https?://(?:www\.)?audiomack\.com/(?P<artist>[^/]+)/playlist/(?P<slug>[^/?#]+)").unwrap())
+                .get_or_init(|| Regex::new(r"https?://(?:www\.)?audiomack\.com/(?P<artist>[^/]+)/playlist/(?P<slug>[^/?#]+)").expect("valid regex"))
                 .is_match(identifier)
             || ARTIST_REGEX
-                .get_or_init(|| Regex::new(r"https?://(?:www\.)?audiomack\.com/(?P<artist>[^/?#]+)(?:/songs)?/?$").unwrap())
+                .get_or_init(|| Regex::new(r"https?://(?:www\.)?audiomack\.com/(?P<artist>[^/?#]+)(?:/songs)?/?$").expect("valid regex"))
                 .is_match(identifier)
             || LIKES_REGEX
-                .get_or_init(|| Regex::new(r"https?://(?:www\.)?audiomack\.com/(?P<artist>[^/]+)/likes").unwrap())
+                .get_or_init(|| Regex::new(r"https?://(?:www\.)?audiomack\.com/(?P<artist>[^/]+)/likes").expect("valid regex"))
                 .is_match(identifier)
     }
 
@@ -483,7 +483,7 @@ impl SourcePlugin for AudiomackSource {
     async fn load(
         &self,
         identifier: &str,
-        _routeplanner: Option<Arc<dyn crate::crate::lavalink::protocol::routeplanner::RoutePlanner>>,
+        _routeplanner: Option<Arc<dyn crate::lavalink::routeplanner::RoutePlanner>>,
     ) -> LoadResult {
         if let Some(prefix) = self
             .search_prefixes()
@@ -528,7 +528,7 @@ impl SourcePlugin for AudiomackSource {
     async fn get_track(
         &self,
         identifier: &str,
-        routeplanner: Option<Arc<dyn crate::crate::lavalink::protocol::routeplanner::RoutePlanner>>,
+        routeplanner: Option<Arc<dyn crate::lavalink::routeplanner::RoutePlanner>>,
     ) -> Option<Box<dyn PlayableTrack>> {
         let mut track_id = identifier.to_owned();
 

@@ -14,7 +14,7 @@ use prometheus::{Encoder, Gauge, Opts, Registry, TextEncoder};
 use tokio::time::interval;
 use tracing::{error, info};
 
-use crate::common::server_hooks::ServerContext;
+use crate::server::AppState;
 
 const NAMESPACE: &str = "lavalink";
 
@@ -108,7 +108,7 @@ static METRICS: LazyLock<NodeMetrics> = LazyLock::new(|| {
 });
 
 /// Initializes the metrics system and starts the background observer.
-pub fn init(state: Arc<dyn ServerContext>) {
+pub fn init(state: Arc<AppState>) {
     let config = &state.config.metrics.prometheus;
     if !config.enabled {
         return;

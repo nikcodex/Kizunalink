@@ -87,19 +87,19 @@ impl AudiusSource {
 
     async fn resolve_url(&self, url: &str) -> LoadResult {
         if PLAYLIST_PATTERN
-            .get_or_init(|| Regex::new(r"(?i)^https?://(?:www\.)?audius\.co/(?P<artist>[^/]+)/playlist/(?P<slug>[^/?#]+)(?:\?.*)?$").unwrap())
+            .get_or_init(|| Regex::new(r"(?i)^https?://(?:www\.)?audius\.co/(?P<artist>[^/]+)/playlist/(?P<slug>[^/?#]+)(?:\?.*)?$").expect("valid regex"))
             .is_match(url)
         {
             return self.resolve_playlist_or_album(url, "playlist").await;
         }
         if ALBUM_PATTERN
-            .get_or_init(|| Regex::new(r"(?i)^https?://(?:www\.)?audius\.co/(?P<artist>[^/]+)/album/(?P<slug>[^/?#]+)(?:\?.*)?$").unwrap())
+            .get_or_init(|| Regex::new(r"(?i)^https?://(?:www\.)?audius\.co/(?P<artist>[^/]+)/album/(?P<slug>[^/?#]+)(?:\?.*)?$").expect("valid regex"))
             .is_match(url)
         {
             return self.resolve_playlist_or_album(url, "album").await;
         }
         if TRACK_PATTERN
-            .get_or_init(|| Regex::new(r"(?i)^https?://(?:www\.)?audius\.co/(?P<artist>[^/]+)/(?P<slug>[^/?#]+)(?:\?.*)?$").unwrap())
+            .get_or_init(|| Regex::new(r"(?i)^https?://(?:www\.)?audius\.co/(?P<artist>[^/]+)/(?P<slug>[^/?#]+)(?:\?.*)?$").expect("valid regex"))
             .is_match(url)
         {
             return self.resolve_track(url).await;
@@ -306,16 +306,16 @@ impl SourcePlugin for AudiusSource {
             .iter()
             .any(|p| identifier.starts_with(p))
             || TRACK_PATTERN
-                .get_or_init(|| Regex::new(r"(?i)^https?://(?:www\.)?audius\.co/(?P<artist>[^/]+)/(?P<slug>[^/?#]+)(?:\?.*)?$").unwrap())
+                .get_or_init(|| Regex::new(r"(?i)^https?://(?:www\.)?audius\.co/(?P<artist>[^/]+)/(?P<slug>[^/?#]+)(?:\?.*)?$").expect("valid regex"))
                 .is_match(identifier)
             || PLAYLIST_PATTERN
-                .get_or_init(|| Regex::new(r"(?i)^https?://(?:www\.)?audius\.co/(?P<artist>[^/]+)/playlist/(?P<slug>[^/?#]+)(?:\?.*)?$").unwrap())
+                .get_or_init(|| Regex::new(r"(?i)^https?://(?:www\.)?audius\.co/(?P<artist>[^/]+)/playlist/(?P<slug>[^/?#]+)(?:\?.*)?$").expect("valid regex"))
                 .is_match(identifier)
             || ALBUM_PATTERN
-                .get_or_init(|| Regex::new(r"(?i)^https?://(?:www\.)?audius\.co/(?P<artist>[^/]+)/album/(?P<slug>[^/?#]+)(?:\?.*)?$").unwrap())
+                .get_or_init(|| Regex::new(r"(?i)^https?://(?:www\.)?audius\.co/(?P<artist>[^/]+)/album/(?P<slug>[^/?#]+)(?:\?.*)?$").expect("valid regex"))
                 .is_match(identifier)
             || USER_PATTERN
-                .get_or_init(|| Regex::new(r"(?i)^https?://(?:www\.)?audius\.co/(?P<user>[^/?#]+)(?:\?.*)?$").unwrap())
+                .get_or_init(|| Regex::new(r"(?i)^https?://(?:www\.)?audius\.co/(?P<user>[^/?#]+)(?:\?.*)?$").expect("valid regex"))
                 .is_match(identifier)
     }
 
@@ -326,7 +326,7 @@ impl SourcePlugin for AudiusSource {
     async fn load(
         &self,
         identifier: &str,
-        _routeplanner: Option<Arc<dyn crate::crate::lavalink::protocol::routeplanner::RoutePlanner>>,
+        _routeplanner: Option<Arc<dyn crate::lavalink::routeplanner::RoutePlanner>>,
     ) -> LoadResult {
         if let Some(prefix) = self
             .search_prefixes()
@@ -342,7 +342,7 @@ impl SourcePlugin for AudiusSource {
     async fn get_track(
         &self,
         identifier: &str,
-        routeplanner: Option<Arc<dyn crate::crate::lavalink::protocol::routeplanner::RoutePlanner>>,
+        routeplanner: Option<Arc<dyn crate::lavalink::routeplanner::RoutePlanner>>,
     ) -> Option<BoxedTrack> {
         let track_id = if identifier.starts_with("http") {
             let mut params = std::collections::BTreeMap::new();

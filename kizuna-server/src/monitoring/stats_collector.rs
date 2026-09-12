@@ -7,11 +7,11 @@ use sysinfo::{CpuRefreshKind, MemoryRefreshKind, ProcessRefreshKind, RefreshKind
 
 use crate::{
     protocol,
-    common::server_hooks::{ServerContext, session::Session},
+    server::{AppState, session::Session},
 };
 
 /// Collects system and process-level metrics.
-pub fn collect_stats(app_state: &AppState, session: Option<&(dyn crate::Context)>) -> protocol::Stats {
+pub fn collect_stats(app_state: &AppState, session: Option<&Session>) -> protocol::Stats {
     let mut system = app_state.system_state.lock();
 
     let pid = sysinfo::Pid::from_u32(process::id());
@@ -86,7 +86,7 @@ pub fn collect_stats(app_state: &AppState, session: Option<&(dyn crate::Context)
 struct FrameMetrics;
 
 impl FrameMetrics {
-    fn calculate(session: &(dyn crate::Context), interval_secs: u64) -> Option<protocol::FrameStats> {
+    fn calculate(session: &Session, interval_secs: u64) -> Option<protocol::FrameStats> {
         let mut historical_sent = session.total_sent_historical.load(Ordering::Acquire);
         let mut historical_nulled = session.total_nulled_historical.load(Ordering::Acquire);
         let mut active_player_count = 0;
