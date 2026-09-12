@@ -16,8 +16,8 @@ mod resolver;
 pub struct SourceManager {
     pub sources: Vec<BoxedSource>,
     pub mirrors: Option<crate::config::server::MirrorsConfig>,
-    pub youtube_cipher_manager: Option<Arc<crate::media::media::sources::youtube::cipher::YouTubeCipherManager>>,
-    pub youtube_stream_ctx: Option<Arc<crate::media::media::sources::youtube::YoutubeStreamContext>>,
+    pub youtube_cipher_manager: Option<Arc<crate::media::sources::youtube::cipher::YouTubeCipherManager>>,
+    pub youtube_stream_ctx: Option<Arc<crate::media::sources::youtube::YoutubeStreamContext>>,
     pub http_pool: Arc<HttpClientPool>,
 }
 

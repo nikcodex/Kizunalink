@@ -27,7 +27,7 @@ pub struct JioSaavnTrack {
 }
 
 impl PlayableTrack for JioSaavnTrack {
-    fn start_decoding(&self, config: crate::config::discord::player::PlayerConfig) -> DecoderOutput {
+    fn start_decoding(&self, config: crate::discord::player::PlayerConfig) -> DecoderOutput {
         let mut playback_url = match self.decrypt_url(&self.encrypted_url) {
             Some(url) => url,
             None => {
@@ -74,7 +74,7 @@ impl PlayableTrack for JioSaavnTrack {
 
             match AudioProcessor::new(reader, kind, tx, cmd_rx, Some(err_tx.clone()), config) {
                 Ok(mut processor) => {
-                    std::thread::Builder::new()
+                    if let Err(e) = std::thread::Builder::new()
                         .name(format!("jiosaavn-decoder-{}", url))
                         .spawn(move || {
                             if let Err(e) = processor.run() {
@@ -84,8 +84,10 @@ impl PlayableTrack for JioSaavnTrack {
                                     e
                                 );
                             }
-                        })
-                        .expect("failed to spawn jiosaavn decoder thread");
+                        }) {
+                            tracing::error!("failed to spawn thread: {e}");
+                            let _ = err_tx.send(format!("Failed to spawn decoder thread: {e}"));
+                        }
                 }
                 Err(e) => {
                     tracing::error!("JioSaavn failed to initialize processor for {}: {}", url, e);

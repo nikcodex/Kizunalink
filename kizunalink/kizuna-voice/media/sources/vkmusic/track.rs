@@ -3,7 +3,7 @@
 
 use std::net::IpAddr;
 
-use crate::media::media::sources::{
+use crate::media::sources::{
     http::HttpTrack,
     plugin::{DecoderOutput, PlayableTrack},
 };
@@ -15,7 +15,7 @@ pub struct VkMusicTrack {
 }
 
 impl PlayableTrack for VkMusicTrack {
-    fn start_decoding(&self, config: crate::config::discord::player::PlayerConfig) -> DecoderOutput {
+    fn start_decoding(&self, config: crate::discord::player::PlayerConfig) -> DecoderOutput {
         HttpTrack {
             url: self.stream_url.clone(),
             local_addr: self.local_addr,

@@ -4,7 +4,7 @@
 use serde::{Deserialize, Serialize};
 
 use super::HttpProxyConfig;
-use crate::config::media::sources::{default_country_code, default_five, default_true, default_zero};
+use crate::config::sources::sources::{default_country_code, default_five, default_true, default_zero};
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct AppleMusicConfig {

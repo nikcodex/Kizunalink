@@ -26,7 +26,7 @@ pub struct GaanaTrack {
 }
 
 impl PlayableTrack for GaanaTrack {
-    fn start_decoding(&self, config: crate::config::discord::player::PlayerConfig) -> DecoderOutput {
+    fn start_decoding(&self, config: crate::discord::player::PlayerConfig) -> DecoderOutput {
         let (tx, rx) = flume::bounded::<AudioFrame>((config.buffer_duration_ms / 20) as usize);
         let (cmd_tx, cmd_rx) = flume::unbounded::<DecoderCommand>();
         let (err_tx, err_rx) = flume::bounded::<String>(1);
@@ -44,11 +44,11 @@ impl PlayableTrack for GaanaTrack {
 
             if let Some(url) = hls_url {
                 let err_tx_for_setup = err_tx.clone();
-                let setup_res = tokio::task::spawn_blocking(move || {
+                let setup_res_task = tokio::task::spawn_blocking(move || {
                     let is_plugin_hls = url.contains(".m3u8") || url.contains("/api/manifest/hls_");
 
                     let reader = if is_plugin_hls {
-                        crate::media::media::sources::youtube::hls::HlsReader::new(
+                        crate::media::sources::youtube::hls::HlsReader::new(
                             &url, local_addr, None, None, proxy,
                         )
                         .ok()
@@ -82,12 +82,20 @@ impl PlayableTrack for GaanaTrack {
                         Err("GaanaTrack: Failed to create reader".to_string())
                     }
                 })
-                .await
-                .expect("failed to spawn gaana setup task");
+                .await;
+                
+                let setup_res = match setup_res_task {
+                    Ok(res) => res,
+                    Err(e) => {
+                        tracing::error!("GaanaTrack setup task failed: {}", e);
+                        let _ = err_tx.send(format!("Failed to spawn setup task: {e}"));
+                        return;
+                    }
+                };
 
                 match setup_res {
                     Ok(mut processor) => {
-                        std::thread::Builder::new()
+                        if let Err(e) = std::thread::Builder::new()
                             .name(format!("gaana-decoder-{}", track_id_for_log))
                             .spawn(move || {
                                 if let Err(e) = processor.run() {
@@ -98,7 +106,10 @@ impl PlayableTrack for GaanaTrack {
                                     );
                                 }
                             })
-                            .expect("failed to spawn gaana decoder thread");
+                        {
+                            tracing::error!("failed to spawn gaana decoder thread: {e}");
+                            let _ = err_tx.send(format!("Failed to spawn decoder thread: {e}"));
+                        }
                     }
                     Err(e) => {
                         tracing::error!(

@@ -49,22 +49,26 @@ impl PoolInner {
     fn release(&mut self, mut buf: Vec<u8>) {
         self.last_activity = Instant::now();
         let size = buf.capacity();
+        let key = Self::aligned_size(size);
 
         // Only pool buffers in the 1 KB – 10 MB range.
-        if !(1024..=10 * 1024 * 1024).contains(&size) {
+        if !(1024..=10 * 1024 * 1024).contains(&key) {
             return;
         }
-        if self.total_bytes + size > MAX_POOL_BYTES {
+        if self.total_bytes + key > MAX_POOL_BYTES {
             return;
         }
 
-        let bucket = self.buckets.entry(size).or_default();
+        let bucket = self.buckets.entry(key).or_default();
         if bucket.len() >= MAX_BUCKET_ENTRIES {
             return;
         }
 
         buf.clear();
-        self.total_bytes += size;
+        if buf.capacity() > key {
+            buf.shrink_to(key);
+        }
+        self.total_bytes += key;
         bucket.push(buf);
     }
 

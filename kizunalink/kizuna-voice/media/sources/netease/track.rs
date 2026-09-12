@@ -18,7 +18,7 @@ pub struct NeteaseTrack {
 }
 
 impl PlayableTrack for NeteaseTrack {
-    fn start_decoding(&self, config: crate::config::discord::player::PlayerConfig) -> DecoderOutput {
+    fn start_decoding(&self, config: crate::discord::player::PlayerConfig) -> DecoderOutput {
         HttpTrack {
             url: self.stream_url.clone(),
             local_addr: self.local_addr,

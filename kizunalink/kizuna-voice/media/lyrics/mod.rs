@@ -94,7 +94,7 @@ impl LyricsManager {
                 );
             }
 
-            let yandex_lyrics_cfg = crate::config::media::lyrics::YandexLyricsConfig {
+            let yandex_lyrics_cfg = crate::config::sources::lyrics::YandexLyricsConfig {
                 access_token: yandex_cfg.access_token.clone(),
             };
             let yandex_proxy = yandex_cfg.proxy.as_ref();

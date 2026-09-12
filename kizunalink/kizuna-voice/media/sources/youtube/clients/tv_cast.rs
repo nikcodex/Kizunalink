@@ -50,8 +50,8 @@ impl TvCastClient {
         visitor_data: Option<&str>,
         signature_timestamp: Option<u32>,
     ) -> AnyResult<Value> {
-        crate::media::media::sources::youtube::clients::common::make_player_request(
-            crate::media::media::sources::youtube::clients::common::PlayerRequestOptions {
+        crate::media::sources::youtube::clients::common::make_player_request(
+            crate::media::sources::youtube::clients::common::PlayerRequestOptions {
                 http: &self.http,
                 config: &self.config(),
                 video_id,

@@ -24,8 +24,8 @@ use crate::{
 pub struct PlaybackStartConfig {
     pub track: String,
     pub session: Arc<Session>,
-    pub source_manager: Arc<crate::media::media::sources::SourceManager>,
-    pub lyrics_manager: Arc<crate::media::media::lyrics::LyricsManager>,
+    pub source_manager: Arc<crate::media::sources::SourceManager>,
+    pub lyrics_manager: Arc<crate::media::lyrics::LyricsManager>,
     pub routeplanner: Option<Arc<dyn crate::lavalink::routeplanner::RoutePlanner>>,
     pub update_interval_secs: u64,
     pub user_data: Option<serde_json::Value>,

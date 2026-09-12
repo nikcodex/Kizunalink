@@ -11,12 +11,12 @@ pub mod sources;
 use std::{fs, path::Path};
 
 pub use filters::*;
-pub use media::lyrics::*;
+pub use crate::media::lyrics::*;
 pub use metrics::*;
-pub use discord::player::*;
+pub use crate::discord::player::*;
 use serde::Deserialize;
 pub use server::*;
-pub use media::sources::*;
+pub use crate::media::sources::*;
 
 use crate::common::types::AnyResult;
 

@@ -552,7 +552,7 @@ impl SourcePlugin for TidalSource {
         &self,
         identifier: &str,
         _: Option<Arc<dyn crate::lavalink::routeplanner::RoutePlanner>>,
-    ) -> Option<crate::media::media::sources::plugin::BoxedTrack> {
+    ) -> Option<crate::media::sources::plugin::BoxedTrack> {
         let id = if let Some(caps) = url_regex().captures(identifier) {
             if caps.get(1).map_or("", |m| m.as_str()) != "track" {
                 return None;

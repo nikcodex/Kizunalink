@@ -41,7 +41,7 @@ pub struct SoundCloudTrack {
 }
 
 impl PlayableTrack for SoundCloudTrack {
-    fn start_decoding(&self, config: crate::config::discord::player::PlayerConfig) -> DecoderOutput {
+    fn start_decoding(&self, config: crate::discord::player::PlayerConfig) -> DecoderOutput {
         let (tx, rx) = flume::bounded::<AudioFrame>((config.buffer_duration_ms / 20) as usize);
         let (cmd_tx, cmd_rx) = flume::unbounded::<DecoderCommand>();
         let (err_tx, err_rx) = flume::bounded::<String>(1);
@@ -192,19 +192,21 @@ fn run_processor(
     tx: flume::Sender<AudioFrame>,
     cmd_rx: flume::Receiver<DecoderCommand>,
     err_tx: flume::Sender<String>,
-    config: crate::config::discord::player::PlayerConfig,
+    config: crate::discord::player::PlayerConfig,
     identifier: String,
 ) {
     match AudioProcessor::new(reader, kind, tx, cmd_rx, Some(err_tx.clone()), config) {
         Ok(mut p) => {
-            std::thread::Builder::new()
+            if let Err(e) = std::thread::Builder::new()
                 .name(format!("soundcloud-decoder-{}", identifier))
                 .spawn(move || {
                     if let Err(e) = p.run() {
                         error!("SoundCloud AudioProcessor error for {}: {}", identifier, e);
                     }
-                })
-                .expect("failed to spawn soundcloud decoder thread");
+                }) {
+                            tracing::error!("failed to spawn thread: {e}");
+                            let _ = err_tx.send(format!("Failed to spawn decoder thread: {e}"));
+                        }
         }
         Err(e) => {
             error!(

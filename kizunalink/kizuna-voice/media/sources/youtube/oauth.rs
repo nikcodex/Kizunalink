@@ -163,7 +163,6 @@ impl YouTubeOAuth {
                         crate::log_println!(
                             "\x1b[1;32mOAUTH INTEGRATION: Token retrieved successfully!\x1b[0m"
                         );
-                        crate::log_println!("\x1b[1;32mRefresh token:\x1b[0m {}", refresh_token);
                         break;
                     }
                 }

@@ -24,7 +24,7 @@ pub async fn update_player(
     State(state): State<Arc<AppState>>,
     Json(body): Json<PlayerUpdate>,
 ) -> impl IntoResponse {
-    tracing::info!(
+    tracing::debug!(
         "PATCH /v4/sessions/{}/players/{}: body={:?}",
         session_id,
         guild_id,
@@ -371,7 +371,7 @@ pub async fn update_session(
     State(state): State<Arc<AppState>>,
     Json(body): Json<protocol::SessionUpdate>,
 ) -> impl IntoResponse {
-    tracing::info!("PATCH /v4/sessions/{}: body={:?}", session_id, body);
+    tracing::debug!("PATCH /v4/sessions/{}: body={:?}", session_id, body);
 
     let Some(session) = state.sessions.get(&session_id) else {
         return (

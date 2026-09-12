@@ -897,7 +897,7 @@ impl SourcePlugin for PandoraSource {
         &self,
         _identifier: &str,
         _routeplanner: Option<Arc<dyn crate::lavalink::routeplanner::RoutePlanner>>,
-    ) -> Option<crate::media::media::sources::plugin::BoxedTrack> {
+    ) -> Option<crate::media::sources::plugin::BoxedTrack> {
         None
     }
 }

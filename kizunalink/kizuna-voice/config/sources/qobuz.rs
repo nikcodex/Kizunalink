@@ -4,7 +4,7 @@
 use serde::{Deserialize, Serialize};
 
 use super::HttpProxyConfig;
-use crate::config::media::sources::{
+use crate::config::sources::sources::{
     default_limit_10, default_limit_20, default_limit_50, default_limit_100, default_true,
 };
 

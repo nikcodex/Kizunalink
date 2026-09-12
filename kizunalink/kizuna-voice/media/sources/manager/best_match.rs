@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use futures::stream::{FuturesOrdered, FuturesUnordered, StreamExt};
 
-use crate::media::media::sources::{manager::SourceManager, plugin::BoxedTrack};
+use crate::media::sources::{manager::SourceManager, plugin::BoxedTrack};
 
 pub struct MirrorResult {
     pub track: BoxedTrack,

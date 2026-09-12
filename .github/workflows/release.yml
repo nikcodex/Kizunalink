@@ -75,7 +75,7 @@ jobs:
 
       - name: 📦 Rename binary
         run: |
-          mv target/${{ matrix.target }}/release/kizunalink \
+          mv target/${{ matrix.target }}/release/kizuna-server \
              target/${{ matrix.target }}/release/kizunalink-linux-${{ matrix.arch }}
 
       - name: 📤 Upload artifact
@@ -148,14 +148,14 @@ jobs:
       - name: 📦 Rename binary (Unix)
         if: "!startsWith(matrix.os, 'windows')"
         run: |
-          mv target/${{ matrix.target }}/release/kizunalink \
+          mv target/${{ matrix.target }}/release/kizuna-server \
              target/${{ matrix.target }}/release/${{ matrix.output }}
 
       - name: 📦 Rename binary (Windows)
         if: startsWith(matrix.os, 'windows')
         shell: bash
         run: |
-          mv target/${{ matrix.target }}/release/kizunalink.exe \
+          mv target/${{ matrix.target }}/release/kizuna-server.exe \
              target/${{ matrix.target }}/release/${{ matrix.output }}
 
       - name: 📤 Upload artifact
@@ -215,7 +215,7 @@ jobs:
 
       - name: 📦 Rename binary
         run: |
-          mv target/aarch64-linux-android/release/kizunalink \
+          mv target/aarch64-linux-android/release/kizuna-server \
              target/aarch64-linux-android/release/kizunalink-termux-arm64
 
       - name: 📤 Upload artifact

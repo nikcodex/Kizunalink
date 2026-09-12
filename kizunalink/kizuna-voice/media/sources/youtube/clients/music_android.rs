@@ -56,8 +56,8 @@ impl MusicAndroidClient {
         signature_timestamp: Option<u32>,
         _oauth: &Arc<YouTubeOAuth>,
     ) -> AnyResult<Value> {
-        crate::media::media::sources::youtube::clients::common::make_player_request(
-            crate::media::media::sources::youtube::clients::common::PlayerRequestOptions {
+        crate::media::sources::youtube::clients::common::make_player_request(
+            crate::media::sources::youtube::clients::common::PlayerRequestOptions {
                 http: &self.http,
                 config: &self.config(),
                 video_id,
@@ -478,7 +478,7 @@ impl YouTubeClient for MusicAndroidClient {
         }
 
         let body: Value = res.json().await?;
-        let result = crate::media::media::sources::youtube::extractor::extract_from_next(&body, "youtube");
+        let result = crate::media::sources::youtube::extractor::extract_from_next(&body, "youtube");
 
         if result.is_none() {
             tracing::warn!("MusicAndroid: extract_from_next returned None");

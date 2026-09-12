@@ -81,6 +81,9 @@ impl Encoder {
     ///
     /// Returns [`Error::Opus`] if encoding fails or arguments are invalid.
     pub fn encode(&self, pcm: &[i16], output: &mut [u8]) -> Result<usize> {
+        if pcm.len() % self.channels.count() != 0 {
+            return Err(Error::Opus(ErrorCode::BadArgument));
+        }
         let frame_size = i32::try_from(pcm.len() / self.channels.count())
             .map_err(|_| Error::Opus(ErrorCode::BadArgument))?;
         let max_data_bytes = i32::try_from(output.len())
@@ -117,6 +120,9 @@ impl Encoder {
     ///
     /// Returns [`Error::Opus`] if encoding fails or arguments are invalid.
     pub fn encode_float(&self, pcm: &[f32], output: &mut [u8]) -> Result<usize> {
+        if pcm.len() % self.channels.count() != 0 {
+            return Err(Error::Opus(ErrorCode::BadArgument));
+        }
         let frame_size = i32::try_from(pcm.len() / self.channels.count())
             .map_err(|_| Error::Opus(ErrorCode::BadArgument))?;
         let max_data_bytes = i32::try_from(output.len())
@@ -155,15 +161,10 @@ impl Encoder {
     /// # Arguments
     ///
     /// * `complexity` - Value in the range `0..=10`, where 0 is lowest CPU usage and 10 is highest audio quality.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `complexity > 10`.
     pub fn set_complexity(&self, complexity: u8) -> Result<()> {
-        assert!(
-            complexity <= 10,
-            "Opus complexity must be between 0 and 10 (got {complexity})"
-        );
+        if complexity > 10 {
+            return Err(Error::Opus(ErrorCode::BadArgument));
+        }
         self.encoder_ctl_set(ffi::OPUS_SET_COMPLEXITY_REQUEST, i32::from(complexity))
     }
 
@@ -188,15 +189,10 @@ impl Encoder {
     /// # Arguments
     ///
     /// * `percentage` - Expected loss in the range `0..=100`.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `percentage > 100`.
     pub fn set_packet_loss_perc(&self, percentage: u8) -> Result<()> {
-        assert!(
-            percentage <= 100,
-            "Packet loss percentage must be between 0 and 100 (got {percentage})"
-        );
+        if percentage > 100 {
+            return Err(Error::Opus(ErrorCode::BadArgument));
+        }
         self.encoder_ctl_set(
             ffi::OPUS_SET_PACKET_LOSS_PERC_REQUEST,
             i32::from(percentage),

@@ -30,7 +30,7 @@ pub struct YoutubeTrack {
 }
 
 impl PlayableTrack for YoutubeTrack {
-    fn start_decoding(&self, config: crate::config::discord::player::PlayerConfig) -> DecoderOutput {
+    fn start_decoding(&self, config: crate::discord::player::PlayerConfig) -> DecoderOutput {
         let (tx, rx) = flume::bounded::<AudioFrame>((config.buffer_duration_ms / 20) as usize);
         let (cmd_tx, cmd_rx) = flume::bounded(8);
         let (err_tx, err_rx) = flume::bounded(1);
@@ -112,7 +112,7 @@ impl PlayableTrack for YoutubeTrack {
                 let proxy_clone = proxy_bg.clone();
                 let client_name_inner = client_name.clone();
 
-                let reader_res = tokio::task::spawn_blocking(move || {
+                let reader_res_task = tokio::task::spawn_blocking(move || {
                     create_reader(
                         &url_clone,
                         &client_name_inner,
@@ -121,8 +121,16 @@ impl PlayableTrack for YoutubeTrack {
                         cipher_clone,
                     )
                 })
-                .await
-                .expect("YoutubeTrack: reader spawn_blocking failed");
+                .await;
+                
+                let reader_res = match reader_res_task {
+                    Ok(res) => res,
+                    Err(e) => {
+                        error!("YoutubeTrack: spawn_blocking failed: {}", e);
+                        let _ = err_tx.send(format!("Failed to spawn blocking task: {e}"));
+                        return;
+                    }
+                };
 
                 let reader = match reader_res {
                     Ok(r) => r,
@@ -143,7 +151,7 @@ impl PlayableTrack for YoutubeTrack {
                 let (done_tx, mut done_rx) = tokio::sync::oneshot::channel::<Result<(), String>>();
                 let identifier_for_thread = identifier_async.clone();
 
-                std::thread::Builder::new()
+                if let Err(e) = std::thread::Builder::new()
                     .name(format!("youtube-decoder-{}", identifier_async))
                     .spawn(move || {
                         let result = match crate::engine::processor::AudioProcessor::new(
@@ -165,7 +173,10 @@ impl PlayableTrack for YoutubeTrack {
                         };
                         let _ = done_tx.send(result);
                     })
-                    .expect("failed to spawn youtube decoder thread");
+                {
+                    error!("failed to spawn youtube decoder thread: {e}");
+                    let _ = err_tx.send(format!("Failed to spawn decoder thread: {e}"));
+                }
 
                 if current_seek_ms > 0 {
                     let _ = inner_cmd_tx.send(DecoderCommand::Seek(current_seek_ms));

@@ -79,7 +79,7 @@ impl JioSaavnSource {
 }
 
 #[async_trait]
-impl crate::media::media::sources::plugin::SourcePlugin for JioSaavnSource {
+impl crate::media::sources::plugin::SourcePlugin for JioSaavnSource {
     fn name(&self) -> &str {
         "jiosaavn"
     }

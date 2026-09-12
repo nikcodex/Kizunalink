@@ -45,7 +45,7 @@ impl LastFMSource {
             .map(|t| {
                 let title = t["name"].as_str().unwrap_or("Unknown").to_owned();
                 let artist = t["artist"].as_str().unwrap_or("Unknown").to_owned();
-                let uri = crate::media::media::sources::lastfm::construct_track_url(&artist, &title);
+                let uri = crate::media::sources::lastfm::construct_track_url(&artist, &title);
 
                 let artwork_url = t["image"]
                     .as_array()
@@ -101,14 +101,14 @@ impl LastFMSource {
         };
 
         let mut results = Vec::new();
-        for caps in crate::media::media::sources::lastfm::search_regex().captures_iter(&body) {
+        for caps in crate::media::sources::lastfm::search_regex().captures_iter(&body) {
             let artwork_url = caps
                 .get(1)
                 .map(|m| m.as_str().replace("/64s/", "/300x300/"));
             let title = unescape_html(caps.get(2).map(|m| m.as_str()).unwrap_or("Unknown"));
             let artist = unescape_html(caps.get(4).map(|m| m.as_str()).unwrap_or("Unknown"));
 
-            let full_url = crate::media::media::sources::lastfm::construct_track_url(&artist, &title);
+            let full_url = crate::media::sources::lastfm::construct_track_url(&artist, &title);
 
             results.push(Track::new(TrackInfo {
                 identifier: full_url.clone(),

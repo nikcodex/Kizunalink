@@ -11,7 +11,7 @@ use crate::lavalink::protocol::tracks::{LoadResult, PlaylistData, PlaylistInfo, 
 
 impl LastFMSource {
     pub async fn resolve_url(&self, url: &str) -> LoadResult {
-        let caps = match crate::media::media::sources::lastfm::path_regex().captures(url) {
+        let caps = match crate::media::sources::lastfm::path_regex().captures(url) {
             Some(c) => c,
             None => {
                 tracing::debug!("Last.fm: URL path failed to match regex: {}", url);
@@ -102,7 +102,7 @@ impl LastFMSource {
             }
         }
 
-        let canonical_url = crate::media::media::sources::lastfm::construct_track_url(artist, title);
+        let canonical_url = crate::media::sources::lastfm::construct_track_url(artist, title);
 
         LoadResult::Track(Track::new(TrackInfo {
             identifier: canonical_url.clone(),
@@ -139,7 +139,7 @@ impl LastFMSource {
                 let mut results = Vec::new();
                 for t in tracks {
                     let title = t["name"].as_str().unwrap_or("Unknown").to_owned();
-                    let t_url = crate::media::media::sources::lastfm::construct_track_url(artist, &title);
+                    let t_url = crate::media::sources::lastfm::construct_track_url(artist, &title);
                     let length = t["duration"]
                         .as_str()
                         .and_then(|s| s.parse::<u64>().ok())
@@ -187,12 +187,12 @@ impl LastFMSource {
         };
 
         let mut results = Vec::new();
-        for caps in crate::media::media::sources::lastfm::search_regex().captures_iter(&body) {
+        for caps in crate::media::sources::lastfm::search_regex().captures_iter(&body) {
             let artwork_url = caps
                 .get(1)
                 .map(|m| m.as_str().replace("/64s/", "/300x300/"));
             let title = unescape_html(caps.get(2).map(|m| m.as_str()).unwrap_or("Unknown"));
-            let full_url = crate::media::media::sources::lastfm::construct_track_url(artist, &title);
+            let full_url = crate::media::sources::lastfm::construct_track_url(artist, &title);
 
             results.push(Track::new(TrackInfo {
                 identifier: full_url.clone(),
@@ -238,7 +238,7 @@ impl LastFMSource {
                 let mut results = Vec::new();
                 for t in tracks {
                     let title = t["name"].as_str().unwrap_or("Unknown").to_owned();
-                    let t_url = crate::media::media::sources::lastfm::construct_track_url(artist, &title);
+                    let t_url = crate::media::sources::lastfm::construct_track_url(artist, &title);
                     let artwork_url = t["image"]
                         .as_array()
                         .and_then(|images| images.last())
@@ -297,12 +297,12 @@ impl LastFMSource {
         };
 
         let mut results = Vec::new();
-        for caps in crate::media::media::sources::lastfm::search_regex().captures_iter(&body) {
+        for caps in crate::media::sources::lastfm::search_regex().captures_iter(&body) {
             let artwork_url = caps
                 .get(1)
                 .map(|m| m.as_str().replace("/64s/", "/300x300/"));
             let title = unescape_html(caps.get(2).map(|m| m.as_str()).unwrap_or("Unknown"));
-            let full_url = crate::media::media::sources::lastfm::construct_track_url(artist, &title);
+            let full_url = crate::media::sources::lastfm::construct_track_url(artist, &title);
 
             results.push(Track::new(TrackInfo {
                 identifier: full_url.clone(),
@@ -345,7 +345,7 @@ impl LastFMSource {
                 for t in tracks {
                     let title = t["name"].as_str().unwrap_or("Unknown").to_owned();
                     let artist = t["artist"]["name"].as_str().unwrap_or("Unknown").to_owned();
-                    let t_url = crate::media::media::sources::lastfm::construct_track_url(&artist, &title);
+                    let t_url = crate::media::sources::lastfm::construct_track_url(&artist, &title);
                     let artwork_url = t["image"]
                         .as_array()
                         .and_then(|images| images.last())
@@ -404,13 +404,13 @@ impl LastFMSource {
         };
 
         let mut results = Vec::new();
-        for caps in crate::media::media::sources::lastfm::search_regex().captures_iter(&body) {
+        for caps in crate::media::sources::lastfm::search_regex().captures_iter(&body) {
             let artwork_url = caps
                 .get(1)
                 .map(|m| m.as_str().replace("/64s/", "/300x300/"));
             let title = unescape_html(caps.get(2).map(|m| m.as_str()).unwrap_or("Unknown"));
             let artist = unescape_html(caps.get(4).map(|m| m.as_str()).unwrap_or("Unknown"));
-            let full_url = crate::media::media::sources::lastfm::construct_track_url(&artist, &title);
+            let full_url = crate::media::sources::lastfm::construct_track_url(&artist, &title);
 
             results.push(Track::new(TrackInfo {
                 identifier: full_url.clone(),

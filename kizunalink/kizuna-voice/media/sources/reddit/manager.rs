@@ -22,7 +22,7 @@ pub struct RedditSource {
 
 impl RedditSource {
     pub fn new(
-        _config: Option<crate::config::media::sources::RedditConfig>,
+        _config: Option<crate::config::sources::sources::RedditConfig>,
         http: Arc<reqwest::Client>,
     ) -> Result<Self, String> {
         Ok(Self { http })

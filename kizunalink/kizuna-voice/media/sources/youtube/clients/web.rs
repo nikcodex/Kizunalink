@@ -75,8 +75,8 @@ impl WebClient {
         _oauth: &Arc<YouTubeOAuth>,
         po_token: Option<&str>,
     ) -> AnyResult<Value> {
-        crate::media::media::sources::youtube::clients::common::make_player_request(
-            crate::media::media::sources::youtube::clients::common::PlayerRequestOptions {
+        crate::media::sources::youtube::clients::common::make_player_request(
+            crate::media::sources::youtube::clients::common::PlayerRequestOptions {
                 http: &self.http,
                 config: &self.config(),
                 video_id,
@@ -239,7 +239,7 @@ impl YouTubeClient for WebClient {
         }
 
         let response: Value = res.json().await?;
-        Ok(crate::media::media::sources::youtube::extractor::extract_from_next(
+        Ok(crate::media::sources::youtube::extractor::extract_from_next(
             &response, "youtube",
         ))
     }

@@ -3,7 +3,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::config::media::sources::default_true;
+use crate::config::sources::sources::default_true;
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct GoogleTtsConfig {

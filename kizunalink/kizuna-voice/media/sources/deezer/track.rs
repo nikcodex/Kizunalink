@@ -20,14 +20,14 @@ use crate::{
 pub struct DeezerTrack {
     pub client: Arc<reqwest::Client>,
     pub track_id: String,
-    pub token_tracker: Arc<crate::media::media::sources::deezer::token::DeezerTokenTracker>,
+    pub token_tracker: Arc<crate::media::sources::deezer::token::DeezerTokenTracker>,
     pub master_key: String,
     pub local_addr: Option<IpAddr>,
     pub proxy: Option<HttpProxyConfig>,
 }
 
 impl PlayableTrack for DeezerTrack {
-    fn start_decoding(&self, config: crate::config::discord::player::PlayerConfig) -> DecoderOutput {
+    fn start_decoding(&self, config: crate::discord::player::PlayerConfig) -> DecoderOutput {
         let (tx, rx) = flume::bounded::<AudioFrame>((config.buffer_duration_ms / 20) as usize);
         let (cmd_tx, cmd_rx) = flume::unbounded::<DecoderCommand>();
         let (err_tx, err_rx) = flume::bounded::<String>(1);
@@ -218,7 +218,7 @@ impl PlayableTrack for DeezerTrack {
 
             if let Some(url) = playback_url {
                 let err_tx_for_setup = err_tx.clone();
-                let setup_res = tokio::task::spawn_blocking(move || {
+                let setup_res_task = tokio::task::spawn_blocking(move || {
                     let (reader_res, final_url) = if let Some(stripped) =
                         url.strip_prefix("deezer_encrypted:")
                     {
@@ -282,8 +282,16 @@ impl PlayableTrack for DeezerTrack {
                         config,
                     )
                 })
-                .await
-                .expect("failed to spawn deezer setup task");
+                .await;
+                
+                let setup_res = match setup_res_task {
+                    Ok(res) => res,
+                    Err(e) => {
+                        error!("DeezerTrack: spawn_blocking failed: {}", e);
+                        let _ = err_tx.send(format!("Failed to spawn setup task: {e}"));
+                        return;
+                    }
+                };
 
                 let processor = match setup_res {
                     Ok(r) => r,
@@ -329,7 +337,7 @@ impl PlayableTrack for DeezerTrack {
 pub(super) async fn verify_track_resolvable(
     client: &Arc<reqwest::Client>,
     track_id: &str,
-    token_tracker: &crate::media::media::sources::deezer::token::DeezerTokenTracker,
+    token_tracker: &crate::media::sources::deezer::token::DeezerTokenTracker,
 ) -> Option<String> {
     let tokens = token_tracker.get_token().await?;
 

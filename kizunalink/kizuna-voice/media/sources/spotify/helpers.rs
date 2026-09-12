@@ -8,7 +8,7 @@ use serde_json::{Value, json};
 use tokio::sync::Semaphore;
 use tracing::warn;
 
-use crate::media::media::sources::spotify::token::SpotifyTokenTracker;
+use crate::media::sources::spotify::token::SpotifyTokenTracker;
 
 const PARTNER_API_URL: &str = "https://api-partner.spotify.com/pathfinder/v2/query";
 

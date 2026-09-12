@@ -1,9 +1,25 @@
 [workspace]
-members = [
-    "kizunalink",
-    "kizuna-server",
-]
+members = [ "kizunalink", "kizuna-server",]
 resolver = "2"
+
+[workspace.dependencies]
+base64 = "^0.22.1"
+bytes = "1.11.1"
+flume = "^0.11.1"
+dashmap = "^6.1.0"
+tracing = "^0.1.41"
+futures = "^0.3.31"
+async-trait = "^0.1.89"
+serde_json = "^1.0.145"
+byteorder = "^1.5.0"
+regex = "^1.12.2"
+ipnet = "2.11.0"
+rand = "^0.8"
+toml = "1.0.2"
+parking_lot = "0.12.5"
+thiserror = "2.0.18"
+sysinfo = "0.38.3"
+prometheus = "0.13"
 
 [profile.dev]
 opt-level = 1
@@ -13,12 +29,45 @@ overflow-checks = false
 lto = false
 codegen-units = 256
 
-[profile.dev.package."*"]
-opt-level = 3
-
 [profile.release]
 lto = "fat"
 codegen-units = 1
 panic = "abort"
 opt-level = 3
 strip = true
+
+[workspace.dependencies.tracing-subscriber]
+version = "^0.3.20"
+features = [ "env-filter", "registry", "time", "local-time",]
+
+[workspace.dependencies.serde]
+version = "^1.0.145"
+features = [ "derive",]
+
+[workspace.dependencies.time]
+version = "0.3"
+features = [ "formatting", "macros", "local-offset",]
+
+[workspace.dependencies.uuid]
+version = "1.21.0"
+features = [ "v4", "serde",]
+
+[workspace.dependencies.reqwest]
+version = "0.12"
+default-features = false
+features = [ "json", "rustls-tls", "stream", "cookies", "gzip", "deflate",]
+
+[workspace.dependencies.tokio]
+version = "1.49.0"
+features = [ "tracing", "macros", "signal", "rt-multi-thread",]
+
+[workspace.dependencies.axum]
+version = "0.8.1"
+features = [ "ws",]
+
+[workspace.dependencies.tower-http]
+version = "0.6.2"
+features = [ "trace", "cors",]
+
+[profile.dev.package."*"]
+opt-level = 3

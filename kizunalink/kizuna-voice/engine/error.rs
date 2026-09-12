@@ -9,5 +9,14 @@ pub enum AudioError {
     DecoderFinished,
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
-    // Add other variants as needed
+    #[error("Decoder error: {0}")]
+    Decoder(#[from] symphonia::core::errors::Error),
+    #[error("Opus error: {0}")]
+    Opus(#[from] crate::opus::Error),
+    #[error("Resample error")]
+    Resample,
+    #[error("Seek out of range")]
+    SeekOutOfRange,
+    #[error("Unsupported format")]
+    UnsupportedFormat,
 }

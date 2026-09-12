@@ -157,7 +157,7 @@ impl PlayerContext {
             let engine = self.engine.lock().await;
             if let Some(dave_shared) = &engine.dave {
                 let dave = dave_shared.lock().await;
-                Some(crate::discord::discord::player::state::DaveState {
+                Some(crate::discord::player::state::DaveState {
                     protocol_version: dave.protocol_version(),
                     privacy_code: dave.voice_privacy_code(),
                 })
@@ -215,7 +215,7 @@ impl PlayerContext {
             let engine = engine_shared.lock().await;
             if let Some(dave_shared) = &engine.dave {
                 let dave = dave_shared.lock().await;
-                Some(crate::discord::discord::player::state::DaveState {
+                Some(crate::discord::player::state::DaveState {
                     protocol_version: dave.protocol_version(),
                     privacy_code: dave.voice_privacy_code(),
                 })

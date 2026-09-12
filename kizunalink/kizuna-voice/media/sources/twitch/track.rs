@@ -235,7 +235,7 @@ impl MediaSource for LiveHlsReader {
 }
 
 impl PlayableTrack for TwitchTrack {
-    fn start_decoding(&self, config: crate::config::discord::player::PlayerConfig) -> DecoderOutput {
+    fn start_decoding(&self, config: crate::discord::player::PlayerConfig) -> DecoderOutput {
         let (tx, rx) = flume::bounded::<AudioFrame>((config.buffer_duration_ms / 20) as usize);
         let (cmd_tx, cmd_rx) = flume::unbounded::<DecoderCommand>();
         let (err_tx, err_rx) = flume::bounded::<String>(1);
@@ -267,7 +267,7 @@ impl PlayableTrack for TwitchTrack {
             ) {
                 Ok(mut processor) => {
                     let url_for_log = url_for_name.clone();
-                    std::thread::Builder::new()
+                    if let Err(e) = std::thread::Builder::new()
                         .name(format!("twitch-decoder-{}", url_for_name))
                         .spawn(move || {
                             if let Err(e) = processor.run() {
@@ -277,8 +277,10 @@ impl PlayableTrack for TwitchTrack {
                                     e
                                 );
                             }
-                        })
-                        .expect("failed to spawn twitch decoder thread");
+                        }) {
+                            tracing::error!("failed to spawn thread: {e}");
+                            let _ = err_tx.send(format!("Failed to spawn decoder thread: {e}"));
+                        }
                 }
                 Err(e) => {
                     tracing::error!("Twitch HLS processor init failed for {}: {}", url, e);

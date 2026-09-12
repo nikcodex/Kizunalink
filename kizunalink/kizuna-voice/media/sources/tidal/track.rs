@@ -19,7 +19,7 @@ pub struct TidalTrack {
 }
 
 impl PlayableTrack for TidalTrack {
-    fn start_decoding(&self, config: crate::config::discord::player::PlayerConfig) -> DecoderOutput {
+    fn start_decoding(&self, config: crate::discord::player::PlayerConfig) -> DecoderOutput {
         let (tx, rx) = flume::bounded::<AudioFrame>((config.buffer_duration_ms / 20) as usize);
         let (cmd_tx, cmd_rx) = flume::bounded(8);
         let (err_tx, err_rx) = flume::bounded(1);
@@ -34,7 +34,7 @@ impl PlayableTrack for TidalTrack {
         tokio::spawn(async move {
             debug!("TidalTrack: starting playback for {}", identifier);
 
-            let setup_res = tokio::task::spawn_blocking(move || {
+            let setup_res_task = tokio::task::spawn_blocking(move || {
                 let client_clone = http_client.clone();
                 match HttpSource::new(client_clone, &stream_url) {
                     Ok(reader) => AudioProcessor::new(
@@ -52,12 +52,19 @@ impl PlayableTrack for TidalTrack {
                     }
                 }
             })
-            .await
-            .expect("TidalTrack: spawn_blocking panicked");
+                .await;
+                let setup_res = match setup_res_task {
+                    Ok(res) => res,
+                    Err(e) => {
+                        tracing::error!("spawn_blocking failed: {}", e);
+                        let _ = err_tx.send(format!("Failed to spawn task: {e}"));
+                        return;
+                    }
+                };
 
             match setup_res {
                 Ok(mut processor) => {
-                    std::thread::Builder::new()
+                    if let Err(e) = std::thread::Builder::new()
                         .name(format!("tidal-decoder-{}", identifier))
                         .spawn(move || {
                             if let Err(e) = processor.run() {
@@ -66,8 +73,10 @@ impl PlayableTrack for TidalTrack {
                                     identifier, e
                                 );
                             }
-                        })
-                        .expect("failed to spawn tidal decoder thread");
+                        }) {
+                            tracing::error!("failed to spawn thread: {e}");
+                            let _ = err_tx.send(format!("Failed to spawn decoder thread: {e}"));
+                        }
                 }
                 Err(e) => {
                     error!(

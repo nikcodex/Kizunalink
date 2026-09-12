@@ -5,7 +5,7 @@ use std::{collections::BTreeMap, net::IpAddr, sync::Arc};
 
 use rand::{Rng, distributions::Alphanumeric, thread_rng};
 
-use crate::media::media::sources::{
+use crate::media::sources::{
     audiomack::utils::build_auth_header,
     http::HttpTrack,
     plugin::{DecoderOutput, PlayableTrack},
@@ -17,7 +17,7 @@ pub struct AudiomackTrack {
 }
 
 impl PlayableTrack for AudiomackTrack {
-    fn start_decoding(&self, config: crate::config::discord::player::PlayerConfig) -> DecoderOutput {
+    fn start_decoding(&self, config: crate::discord::player::PlayerConfig) -> DecoderOutput {
         let http_track = HttpTrack {
             url: self.stream_url.clone(),
             local_addr: self.local_addr,

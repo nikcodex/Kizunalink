@@ -30,7 +30,8 @@ pub async fn websocket_handler(
         return Err((StatusCode::UNAUTHORIZED, "Unauthorized"));
     };
 
-    if auth != state.config.server.authorization {
+    use subtle::ConstantTimeEq;
+    if !bool::from(auth.as_bytes().ct_eq(state.config.server.authorization.as_bytes())) {
         warn!("Authorization failed: Invalid password provided");
         return Err((StatusCode::UNAUTHORIZED, "Unauthorized"));
     }

@@ -1557,6 +1557,7 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
+ "subtle",
  "sysinfo",
  "thiserror 2.0.20",
  "time",

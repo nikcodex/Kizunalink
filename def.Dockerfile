@@ -27,19 +27,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     tzdata \
     && rm -rf /var/lib/apt/lists/* \
-    && addgroup --system rustalink \
-    && adduser --system --ingroup rustalink rustalink
+    && addgroup --system kizunalink \
+    && adduser --system --ingroup kizunalink kizunalink
 
 WORKDIR /app
 
 ARG TARGETARCH
-COPY bin/linux/${TARGETARCH}/rustalink /app/rustalink
-RUN chmod +x /app/rustalink && chown rustalink:rustalink /app/rustalink
+COPY bin/linux/${TARGETARCH}/kizunalink /app/kizunalink
+RUN chmod +x /app/kizunalink && chown kizunalink:kizunalink /app/kizunalink
 
-USER rustalink
+USER kizunalink
 EXPOSE 2333
 ENV RUST_LOG=info
-ENTRYPOINT ["/app/rustalink"]
+ENTRYPOINT ["/app/kizunalink"]
 
 
 FROM debian:bookworm-slim AS local
@@ -48,15 +48,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     tzdata \
     && rm -rf /var/lib/apt/lists/* \
-    && addgroup --system rustalink \
-    && adduser --system --ingroup rustalink rustalink
+    && addgroup --system kizunalink \
+    && adduser --system --ingroup kizunalink kizunalink
 
 WORKDIR /app
 
-COPY --from=builder /build/target/release/rustalink /app/rustalink
-RUN chmod +x /app/rustalink && chown rustalink:rustalink /app/rustalink
+COPY --from=builder /build/target/release/kizuna-server /app/kizunalink
+RUN chmod +x /app/kizunalink && chown kizunalink:kizunalink /app/kizunalink
 
-USER rustalink
+USER kizunalink
 EXPOSE 2333
 ENV RUST_LOG=info
-ENTRYPOINT ["/app/rustalink"]
+ENTRYPOINT ["/app/kizunalink"]

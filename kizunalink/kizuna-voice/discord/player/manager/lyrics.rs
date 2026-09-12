@@ -19,7 +19,7 @@ pub fn spawn_lyrics_fetch(
     subscribed: Arc<std::sync::atomic::AtomicBool>,
     lyrics_data: Arc<tokio::sync::Mutex<Option<LyricsData>>>,
     track_info: TrackInfo,
-    lyrics_manager: Arc<crate::media::media::lyrics::LyricsManager>,
+    lyrics_manager: Arc<crate::media::lyrics::LyricsManager>,
     session: Arc<Session>,
     guild_id: GuildId,
 ) {
