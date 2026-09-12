@@ -17,6 +17,8 @@ jobs:
     name: Check
     runs-on: ubuntu-latest
     steps:
+      - name: Install libopus
+        run: sudo apt-get update && sudo apt-get install -y libopus-dev
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: actions/cache@v4
