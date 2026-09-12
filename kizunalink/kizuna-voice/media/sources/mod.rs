@@ -1,9 +1,11 @@
 // Copyright (c) 2026 nikcodex (KizunaLink)
 // Licensed under the MIT License
 
+pub mod error;
 pub mod manager;
 pub mod plugin;
 
+pub use error::SourceError;
 pub use manager::SourceManager;
 pub use plugin::{BoxedSource, BoxedTrack, SourcePlugin};
 
