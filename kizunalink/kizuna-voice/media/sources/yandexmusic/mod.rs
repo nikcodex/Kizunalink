@@ -9,7 +9,7 @@ use serde_json::{Value, json};
 use tracing::debug;
 
 use crate::{
-    protocol::tracks::{LoadResult, PlaylistData, PlaylistInfo, Track, TrackInfo},
+    lavalink::protocol::tracks::{LoadResult, PlaylistData, PlaylistInfo, Track, TrackInfo},
     media::sources::{SourcePlugin, plugin::BoxedTrack},
 };
 

@@ -7,7 +7,7 @@ use futures::future::join_all;
 use serde_json::{Value, json};
 
 use crate::{
-    protocol::tracks::{LoadResult, PlaylistData, PlaylistInfo, Track},
+    lavalink::protocol::tracks::{LoadResult, PlaylistData, PlaylistInfo, Track},
     media::sources::spotify::{
         helpers::SpotifyHelpers, parser::SpotifyParser, search::SpotifySearch,
         token::SpotifyTokenTracker,

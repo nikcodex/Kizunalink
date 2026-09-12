@@ -16,7 +16,7 @@ use super::{
 };
 use crate::{
     common::types::AudioFormat,
-    protocol::tracks::{LoadResult, PlaylistData, PlaylistInfo, Track, TrackInfo},
+    crate::lavalink::protocol::tracks::{LoadResult, PlaylistData, PlaylistInfo, Track, TrackInfo},
     media::sources::SourcePlugin,
 };
 

@@ -5,12 +5,12 @@ use std::sync::{Arc, atomic::Ordering};
 
 use tracing::warn;
 
-use super::media::lyrics::sync_lyrics;
+use crate::media::lyrics::sync_lyrics;
 use crate::{
     engine::playback::{PlaybackState, TrackHandle},
     common::types::GuildId,
     discord::player::state::PlayerState,
-    protocol::{
+    crate::lavalink::protocol::{
         self,
         events::{KizunaLinkEvent, TrackEndReason, TrackException},
         models::LyricsData,

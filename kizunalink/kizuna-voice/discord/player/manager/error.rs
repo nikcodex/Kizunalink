@@ -3,7 +3,7 @@
 
 use super::super::context::PlayerContext;
 use crate::{
-    protocol::{
+    lavalink::protocol::{
         self,
         events::{KizunaLinkEvent, TrackEndReason, TrackException},
     },

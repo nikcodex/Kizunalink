@@ -7,7 +7,8 @@ use async_trait::async_trait;
 use regex::Regex;
 
 use self::track::JioSaavnTrack;
-use crate::{protocol::tracks::LoadResult, media::sources::plugin::PlayableTrack};
+use crate::{
+    lavalink::protocol::tracks::LoadResult, media::sources::plugin::PlayableTrack};
 
 pub mod helpers;
 pub mod metadata;

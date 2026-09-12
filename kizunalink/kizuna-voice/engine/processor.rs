@@ -5,7 +5,7 @@ use std::io::ErrorKind;
 
 use flume::Receiver;
 use symphonia::core::{
-    engine::SampleBuffer,
+    audio::SampleBuffer,
     codecs::Decoder,
     errors::Error,
     formats::{FormatReader, SeekMode, SeekTo},

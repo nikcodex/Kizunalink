@@ -12,7 +12,7 @@ use serde_json::{Value, json};
 
 use crate::{
     config::AppConfig,
-    protocol::tracks::{LoadResult, PlaylistData, PlaylistInfo, Track, TrackInfo},
+    crate::lavalink::protocol::tracks::{LoadResult, PlaylistData, PlaylistInfo, Track, TrackInfo},
     media::sources::{BoxedTrack, SourcePlugin},
 };
 

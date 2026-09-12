@@ -3,7 +3,7 @@
 
 use crate::opus::{Channels, SampleRate, Decoder as OpusDecoder};
 use symphonia::core::{
-    engine::{AsAudioBufferRef, AudioBuffer, AudioBufferRef, Layout, Signal, SignalSpec},
+    audio::{AsAudioBufferRef, AudioBuffer, AudioBufferRef, Layout, Signal, SignalSpec},
     codecs::{
         CODEC_TYPE_OPUS, CodecDescriptor, CodecParameters, Decoder, DecoderOptions, FinalizeResult,
     },

@@ -9,7 +9,7 @@ use serde_json::Value;
 
 use super::track::RedditTrack;
 use crate::{
-    protocol::tracks::{LoadResult, Track, TrackInfo},
+    lavalink::protocol::tracks::{LoadResult, Track, TrackInfo},
     media::sources::plugin::{BoxedTrack, SourcePlugin},
 };
 

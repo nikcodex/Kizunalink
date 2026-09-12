@@ -14,7 +14,7 @@ use super::{
 };
 use crate::{
     engine::playback::{PlaybackState, TrackHandle},
-    protocol::{
+    crate::lavalink::protocol::{
         self,
         events::{KizunaLinkEvent, TrackEndReason},
     },

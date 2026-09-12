@@ -11,7 +11,7 @@ use tracing::{debug, warn};
 
 use super::token::PandoraTokenTracker;
 use crate::{
-    protocol::tracks::{LoadResult, PlaylistData, PlaylistInfo, SearchResult, Track, TrackInfo},
+    lavalink::protocol::tracks::{LoadResult, PlaylistData, PlaylistInfo, SearchResult, Track, TrackInfo},
     media::sources::SourcePlugin,
 };
 

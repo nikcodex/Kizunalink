@@ -10,7 +10,7 @@ use tracing::{debug, error};
 use crate::{
     common::types::AnyResult,
     config::AppConfig,
-    protocol::tracks::{LoadResult, PlaylistData, PlaylistInfo, Track, TrackInfo},
+    crate::lavalink::protocol::tracks::{LoadResult, PlaylistData, PlaylistInfo, Track, TrackInfo},
     media::sources::{
         SourcePlugin,
         plugin::BoxedTrack,

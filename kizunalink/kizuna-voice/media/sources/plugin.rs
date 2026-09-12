@@ -9,7 +9,7 @@ use flume::{Receiver, Sender};
 use crate::{
     engine::{AudioFrame, processor::DecoderCommand},
     config::HttpProxyConfig,
-    protocol::tracks::{LoadResult, SearchResult},
+    crate::lavalink::protocol::tracks::{LoadResult, SearchResult},
     routeplanner::RoutePlanner,
 };
 

@@ -9,7 +9,7 @@ use tracing::debug;
 
 use crate::{
     config::media::sources::FloweryConfig,
-    protocol::tracks::{LoadResult, Track, TrackInfo},
+    crate::lavalink::protocol::tracks::{LoadResult, Track, TrackInfo},
     media::sources::{
         http::HttpTrack,
         plugin::{BoxedTrack, SourcePlugin},

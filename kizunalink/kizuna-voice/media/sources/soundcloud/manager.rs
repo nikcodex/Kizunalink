@@ -13,7 +13,7 @@ use super::{
     track::{SoundCloudStreamKind, SoundCloudTrack},
 };
 use crate::{
-    protocol::tracks::{LoadResult, PlaylistData, PlaylistInfo, Track, TrackInfo},
+    lavalink::protocol::tracks::{LoadResult, PlaylistData, PlaylistInfo, Track, TrackInfo},
     media::sources::{SourcePlugin, plugin::PlayableTrack},
 };
 

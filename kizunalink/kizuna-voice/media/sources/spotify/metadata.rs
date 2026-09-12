@@ -8,7 +8,7 @@ use serde_json::{Value, json};
 use tokio::sync::Semaphore;
 
 use crate::{
-    protocol::tracks::{LoadResult, PlaylistData, PlaylistInfo, Track, TrackInfo},
+    lavalink::protocol::tracks::{LoadResult, PlaylistData, PlaylistInfo, Track, TrackInfo},
     media::sources::spotify::{
         helpers::SpotifyHelpers, parser::SpotifyParser, token::SpotifyTokenTracker,
     },

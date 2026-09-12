@@ -21,7 +21,7 @@ use crate::{
         processor::{AudioProcessor, DecoderCommand},
     },
     common::types::AnyResult,
-    protocol::tracks::{LoadError, LoadResult, Track, TrackInfo},
+    crate::lavalink::protocol::tracks::{LoadError, LoadResult, Track, TrackInfo},
     media::sources::{
         SourcePlugin,
         plugin::{DecoderOutput, PlayableTrack},

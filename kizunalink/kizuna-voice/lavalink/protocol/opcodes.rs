@@ -153,7 +153,7 @@ async fn handle_voice_update(
             }
         });
 
-        let new_task = crate::server::connect_voice(crate::server::voice::VoiceConnectConfig {
+        let new_task = crate::common::server_hooks::connect_voice(crate::common::server_hooks::voice::VoiceConnectConfig {
             engine,
             guild_id: guild,
             user_id: uid,

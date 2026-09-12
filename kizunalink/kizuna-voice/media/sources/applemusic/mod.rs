@@ -13,7 +13,8 @@ use async_trait::async_trait;
 use regex::Regex;
 use token::AppleMusicTokenTracker;
 
-use crate::{protocol::tracks::LoadResult, media::sources::SourcePlugin};
+use crate::{
+    lavalink::protocol::tracks::LoadResult, media::sources::SourcePlugin};
 
 const API_BASE: &str = "https://api.music.apple.com/v1";
 

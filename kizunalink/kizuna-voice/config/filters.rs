@@ -3,7 +3,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::media::sources::default_true;
+use crate::media::sources::default_true;
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct FiltersConfig {
