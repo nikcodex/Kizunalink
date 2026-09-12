@@ -182,4 +182,12 @@ impl kizunalink::common::server_hooks::SessionContext for Session {
     fn total_nulled_historical(&self) -> &std::sync::atomic::AtomicU64 {
         &self.total_nulled_historical
     }
+
+    fn get_player(
+        &self,
+        guild_id: &kizunalink::common::types::GuildId,
+    ) -> Option<std::sync::Arc<tokio::sync::RwLock<kizunalink::discord::player::PlayerContext>>>
+    {
+        self.players.get(guild_id).map(|kv| kv.value().clone())
+    }
 }

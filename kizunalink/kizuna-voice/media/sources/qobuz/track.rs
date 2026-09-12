@@ -7,7 +7,7 @@ use md5::{Digest, Md5};
 
 use crate::{
     engine::{AudioFrame, processor::DecoderCommand},
-    crate::lavalink::protocol::tracks::TrackInfo,
+    lavalink::protocol::tracks::TrackInfo,
     media::sources::{
         http::HttpTrack,
         plugin::{DecoderOutput, PlayableTrack},

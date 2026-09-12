@@ -221,14 +221,14 @@ impl VoiceGateway {
         }
 
         let handshake = if is_resume {
-            crate::lavalink::protocol::builders::resume(
+            protocol::builders::resume(
                 self.guild_id.to_string(),
                 self.session_id.to_string(),
                 self.token.clone(),
                 seq_ack.load(Ordering::Relaxed),
             )
         } else {
-            crate::lavalink::protocol::builders::identify(
+            protocol::builders::identify(
                 self.guild_id.to_string(),
                 self.user_id.0.to_string(),
                 self.session_id.to_string(),

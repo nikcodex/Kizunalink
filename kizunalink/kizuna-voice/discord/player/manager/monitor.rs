@@ -214,12 +214,7 @@ fn send_player_update(ctx: &MonitorCtx, cur_pos: u64) {
 }
 
 async fn clear_player_state(ctx: &MonitorCtx) {
-    if let Some(player_arc) = ctx
-        .session
-        .players
-        .get(&ctx.guild_id)
-        .map(|kv| kv.value().clone())
-    {
+    if let Some(player_arc) = ctx.session.get_player(&ctx.guild_id) {
         let mut p = player_arc.write().await;
         if p.track_handle
             .as_ref()
