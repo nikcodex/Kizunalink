@@ -61,3 +61,40 @@ impl KizunaLinkError {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bad_request_has_correct_status() {
+        let err = KizunaLinkError::bad_request("test msg", "/v4/test");
+        assert_eq!(err.status, 400);
+        assert_eq!(err.error, "Bad Request");
+        assert_eq!(err.message, "test msg");
+        assert_eq!(err.path, "/v4/test");
+    }
+
+    #[test]
+    fn not_found_has_correct_status() {
+        let err = KizunaLinkError::not_found("missing", "/v4/sessions/123");
+        assert_eq!(err.status, 404);
+        assert_eq!(err.error, "Not Found");
+    }
+
+    #[test]
+    fn error_has_timestamp() {
+        let err = KizunaLinkError::new(500, "Internal", "oops", "/v4/test");
+        assert!(err.timestamp > 0);
+        assert!(err.trace.is_none());
+    }
+
+    #[test]
+    fn severity_variants_serialize() {
+        // Ensure serde works
+        let json = serde_json::to_string(&Severity::Common).unwrap();
+        assert_eq!(json, "\"common\"");
+        let json = serde_json::to_string(&Severity::Fault).unwrap();
+        assert_eq!(json, "\"fault\"");
+    }
+}
