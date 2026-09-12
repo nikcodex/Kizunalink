@@ -394,3 +394,56 @@ impl FilterChain {
         self.timescale_buffer.clear();
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::discord::player::state::Filters;
+
+    #[test]
+    fn filter_chain_default_is_inactive() {
+        let chain = FilterChain::from_config(&Filters::default());
+        assert!(!chain.is_active());
+        assert!(chain.filters.is_empty());
+        assert!(chain.timescale.is_none());
+    }
+
+    #[test]
+    fn filter_chain_with_volume() {
+        let mut filters = Filters::default();
+        filters.volume = Some(50);
+        let chain = FilterChain::from_config(&filters);
+        assert!(chain.is_active());
+        assert_eq!(chain.filters.len(), 1);
+    }
+
+    #[test]
+    fn filter_chain_process_passthrough() {
+        let mut chain = FilterChain::from_config(&Filters::default());
+        let mut samples = [100i16, 200, 300, 400];
+        let original = samples;
+        chain.process(&mut samples);
+        // No filters active, samples unchanged
+        assert_eq!(samples, original);
+    }
+
+    #[test]
+    fn filter_chain_reset() {
+        let mut filters = Filters::default();
+        filters.volume = Some(100);
+        let mut chain = FilterChain::from_config(&filters);
+        chain.reset();
+        // After reset, process should still work
+        let mut samples = [100i16, 200];
+        chain.process(&mut samples);
+    }
+
+    #[test]
+    fn validate_filters_default_all_valid() {
+        let filters = Filters::default();
+        let config = FiltersConfig::default();
+        let invalid = validate_filters(&filters, &config);
+        // No filters set, nothing should be invalid
+        assert!(invalid.is_empty());
+    }
+}
