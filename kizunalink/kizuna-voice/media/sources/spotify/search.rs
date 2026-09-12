@@ -7,7 +7,7 @@ use serde_json::json;
 use tokio::time::timeout;
 
 use crate::{
-    lavalink::protocol::tracks::{PlaylistData, PlaylistInfo, SearchResult, Track},
+    crate::lavalink::protocol::tracks::{PlaylistData, PlaylistInfo, SearchResult, Track},
     media::sources::spotify::{
         helpers::SpotifyHelpers, metadata::SpotifyMetadata, parser::SpotifyParser,
         token::SpotifyTokenTracker,

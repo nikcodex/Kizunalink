@@ -7,7 +7,7 @@ use async_trait::async_trait;
 use regex::Regex;
 
 use crate::{
-    lavalink::protocol::tracks::{LoadResult, Track},
+    crate::lavalink::protocol::tracks::{LoadResult, Track},
     media::sources::{SourcePlugin, spotify::token::SpotifyTokenTracker},
 };
 
@@ -152,7 +152,7 @@ impl SourcePlugin for SpotifySource {
     async fn load(
         &self,
         identifier: &str,
-        _routeplanner: Option<Arc<dyn crate::lavalink::routeplanner::RoutePlanner>>,
+        _routeplanner: Option<Arc<dyn crate::crate::lavalink::protocol::routeplanner::RoutePlanner>>,
     ) -> LoadResult {
         if let Some(prefix) = self
             .search_prefixes()
@@ -266,7 +266,7 @@ impl SourcePlugin for SpotifySource {
         &self,
         query: &str,
         types: &[String],
-        _routeplanner: Option<Arc<dyn crate::lavalink::routeplanner::RoutePlanner>>,
+        _routeplanner: Option<Arc<dyn crate::crate::lavalink::protocol::routeplanner::RoutePlanner>>,
     ) -> Option<crate::lavalink::protocol::tracks::SearchResult> {
         let mut q = query;
         for prefix in self.search_prefixes() {
@@ -281,7 +281,7 @@ impl SourcePlugin for SpotifySource {
     async fn get_track(
         &self,
         _identifier: &str,
-        _routeplanner: Option<Arc<dyn crate::lavalink::routeplanner::RoutePlanner>>,
+        _routeplanner: Option<Arc<dyn crate::crate::lavalink::protocol::routeplanner::RoutePlanner>>,
     ) -> Option<crate::media::sources::plugin::BoxedTrack> {
         None
     }

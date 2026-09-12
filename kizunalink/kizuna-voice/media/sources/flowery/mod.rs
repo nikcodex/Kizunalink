@@ -8,8 +8,8 @@ use regex::Regex;
 use tracing::debug;
 
 use crate::{
-    config::media::sources::FloweryConfig,
-    lavalink::protocol::tracks::{LoadResult, Track, TrackInfo},
+    crate::config::sources::FloweryConfig,
+    crate::lavalink::protocol::tracks::{LoadResult, Track, TrackInfo},
     media::sources::{
         http::HttpTrack,
         plugin::{BoxedTrack, SourcePlugin},
@@ -159,7 +159,7 @@ impl SourcePlugin for FlowerySource {
     async fn load(
         &self,
         identifier: &str,
-        _routeplanner: Option<Arc<dyn crate::lavalink::routeplanner::RoutePlanner>>,
+        _routeplanner: Option<Arc<dyn crate::crate::lavalink::protocol::routeplanner::RoutePlanner>>,
     ) -> LoadResult {
         debug!("Flowery TTS loading: {}", identifier);
 
@@ -177,7 +177,7 @@ impl SourcePlugin for FlowerySource {
     async fn get_track(
         &self,
         identifier: &str,
-        routeplanner: Option<Arc<dyn crate::lavalink::routeplanner::RoutePlanner>>,
+        routeplanner: Option<Arc<dyn crate::crate::lavalink::protocol::routeplanner::RoutePlanner>>,
     ) -> Option<BoxedTrack> {
         let (text, params) = self.parse_query(identifier);
         let url = self.build_url(&text, params);

@@ -9,7 +9,7 @@ use serde_json::Value;
 
 use super::track::RedditTrack;
 use crate::{
-    lavalink::protocol::tracks::{LoadResult, Track, TrackInfo},
+    crate::lavalink::protocol::tracks::{LoadResult, Track, TrackInfo},
     media::sources::plugin::{BoxedTrack, SourcePlugin},
 };
 
@@ -226,7 +226,7 @@ impl SourcePlugin for RedditSource {
     async fn load(
         &self,
         identifier: &str,
-        _routeplanner: Option<Arc<dyn crate::lavalink::routeplanner::RoutePlanner>>,
+        _routeplanner: Option<Arc<dyn crate::crate::lavalink::protocol::routeplanner::RoutePlanner>>,
     ) -> LoadResult {
         match self.acquire_metadata_packet(identifier).await {
             Some((meta, _)) => LoadResult::Track(Track::new(meta)),
@@ -237,7 +237,7 @@ impl SourcePlugin for RedditSource {
     async fn get_track(
         &self,
         identifier: &str,
-        routeplanner: Option<Arc<dyn crate::lavalink::routeplanner::RoutePlanner>>,
+        routeplanner: Option<Arc<dyn crate::crate::lavalink::protocol::routeplanner::RoutePlanner>>,
     ) -> Option<BoxedTrack> {
         let (meta, audio_stream) = self.acquire_metadata_packet(identifier).await?;
 

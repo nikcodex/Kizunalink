@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 use serde_json::{Value, json};
 use tokio::sync::RwLock;
 
-use crate::{common::types::AnyResult, config::media::sources::YouTubeCipherConfig};
+use crate::{common::types::AnyResult, crate::config::sources::YouTubeCipherConfig};
 
 #[derive(Clone)]
 pub struct CachedPlayerScript {

@@ -32,7 +32,7 @@ pub fn spawn_lyrics_fetch(
             let mut lock = lyrics_data.lock().await;
             *lock = Some(lyrics.clone());
 
-            lavalink::protocol::OutgoingMessage::Event {
+            crate::lavalink::protocol::OutgoingMessage::Event {
                 event: Box::new(KizunaLinkEvent::LyricsFound {
                     guild_id,
                     lyrics: KizunaLinkLyrics {
@@ -55,7 +55,7 @@ pub fn spawn_lyrics_fetch(
                 }),
             }
         } else {
-            lavalink::protocol::OutgoingMessage::Event {
+            crate::lavalink::protocol::OutgoingMessage::Event {
                 event: Box::new(KizunaLinkEvent::LyricsNotFound { guild_id }),
             }
         };

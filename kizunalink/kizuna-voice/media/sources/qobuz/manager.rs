@@ -10,7 +10,7 @@ use tracing::{debug, error};
 use crate::{
     common::types::AnyResult,
     config::AppConfig,
-    lavalink::protocol::tracks::{LoadResult, PlaylistData, PlaylistInfo, Track, TrackInfo},
+    crate::lavalink::protocol::tracks::{LoadResult, PlaylistData, PlaylistInfo, Track, TrackInfo},
     media::sources::{
         SourcePlugin,
         plugin::BoxedTrack,
@@ -528,7 +528,7 @@ impl SourcePlugin for QobuzSource {
     async fn load(
         &self,
         identifier: &str,
-        _routeplanner: Option<Arc<dyn crate::lavalink::routeplanner::RoutePlanner>>,
+        _routeplanner: Option<Arc<dyn crate::crate::lavalink::protocol::routeplanner::RoutePlanner>>,
     ) -> LoadResult {
         if let Some(prefix) = self
             .search_prefixes()
@@ -591,7 +591,7 @@ impl SourcePlugin for QobuzSource {
     async fn get_track(
         &self,
         identifier: &str,
-        _routeplanner: Option<Arc<dyn crate::lavalink::routeplanner::RoutePlanner>>,
+        _routeplanner: Option<Arc<dyn crate::crate::lavalink::protocol::routeplanner::RoutePlanner>>,
     ) -> Option<BoxedTrack> {
         let id = if identifier.contains("qobuz.com/track/") {
             identifier

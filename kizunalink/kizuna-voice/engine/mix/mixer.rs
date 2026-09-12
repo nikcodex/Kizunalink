@@ -20,7 +20,7 @@ use crate::{
         flow::FlowController,
         playback::handle::PlaybackState,
     },
-    crate::config::player::PlayerConfig,
+    config::player::PlayerConfig,
 };
 
 pub struct AudioMixer {

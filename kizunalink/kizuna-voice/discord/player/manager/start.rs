@@ -9,7 +9,7 @@ use tracing::{error, info};
 use super::{
     super::context::PlayerContext,
     error::send_load_failed,
-    crate::discord::player::manager::lyrics::spawn_lyrics_fetch,
+    discord::player::manager::lyrics::spawn_lyrics_fetch,
     monitor::{MonitorCtx, monitor_loop},
 };
 use crate::{
@@ -26,7 +26,7 @@ pub struct PlaybackStartConfig {
     pub session: Arc<dyn crate::Context>,
     pub source_manager: Arc<crate::media::sources::SourceManager>,
     pub lyrics_manager: Arc<crate::media::lyrics::LyricsManager>,
-    pub routeplanner: Option<Arc<dyn crate::lavalink::routeplanner::RoutePlanner>>,
+    pub routeplanner: Option<Arc<dyn crate::crate::lavalink::protocol::routeplanner::RoutePlanner>>,
     pub update_interval_secs: u64,
     pub user_data: Option<serde_json::Value>,
     pub end_time: Option<u64>,

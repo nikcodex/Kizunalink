@@ -23,7 +23,7 @@ use crate::{
         processor::{AudioProcessor, DecoderCommand},
     },
     common::Severity,
-    lavalink::protocol::tracks::{LoadError, LoadResult, Track, TrackInfo},
+    crate::lavalink::protocol::tracks::{LoadError, LoadResult, Track, TrackInfo},
     media::sources::{
         SourcePlugin,
         plugin::{DecoderOutput, PlayableTrack},
@@ -143,7 +143,7 @@ impl SourcePlugin for LocalSource {
     async fn load(
         &self,
         identifier: &str,
-        _routeplanner: Option<Arc<dyn crate::lavalink::routeplanner::RoutePlanner>>,
+        _routeplanner: Option<Arc<dyn crate::crate::lavalink::protocol::routeplanner::RoutePlanner>>,
     ) -> LoadResult {
         let path = identifier
             .strip_prefix("file://")
@@ -181,7 +181,7 @@ impl SourcePlugin for LocalSource {
     async fn get_track(
         &self,
         identifier: &str,
-        _routeplanner: Option<Arc<dyn crate::lavalink::routeplanner::RoutePlanner>>,
+        _routeplanner: Option<Arc<dyn crate::crate::lavalink::protocol::routeplanner::RoutePlanner>>,
     ) -> Option<Box<dyn PlayableTrack>> {
         let path = identifier
             .strip_prefix("file://")

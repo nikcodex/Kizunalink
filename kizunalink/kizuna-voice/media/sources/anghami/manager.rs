@@ -12,7 +12,7 @@ use serde_json::{Value, json};
 
 use crate::{
     config::AppConfig,
-    lavalink::protocol::tracks::{LoadResult, PlaylistData, PlaylistInfo, Track, TrackInfo},
+    crate::lavalink::protocol::tracks::{LoadResult, PlaylistData, PlaylistInfo, Track, TrackInfo},
     media::sources::{BoxedTrack, SourcePlugin},
 };
 
@@ -586,7 +586,7 @@ impl SourcePlugin for AnghamiSource {
     async fn load(
         &self,
         identifier: &str,
-        _routeplanner: Option<Arc<dyn crate::lavalink::routeplanner::RoutePlanner>>,
+        _routeplanner: Option<Arc<dyn crate::crate::lavalink::protocol::routeplanner::RoutePlanner>>,
     ) -> LoadResult {
         if let Some(prefix) = self
             .search_prefixes()
@@ -615,7 +615,7 @@ impl SourcePlugin for AnghamiSource {
     async fn get_track(
         &self,
         _identifier: &str,
-        _routeplanner: Option<Arc<dyn crate::lavalink::routeplanner::RoutePlanner>>,
+        _routeplanner: Option<Arc<dyn crate::crate::lavalink::protocol::routeplanner::RoutePlanner>>,
     ) -> Option<BoxedTrack> {
         None
     }

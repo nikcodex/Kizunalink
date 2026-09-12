@@ -16,7 +16,7 @@ use super::{
 };
 use crate::{
     common::types::AudioFormat,
-    lavalink::protocol::tracks::{LoadResult, PlaylistData, PlaylistInfo, Track, TrackInfo},
+    crate::lavalink::protocol::tracks::{LoadResult, PlaylistData, PlaylistInfo, Track, TrackInfo},
     media::sources::SourcePlugin,
 };
 
@@ -517,7 +517,7 @@ impl SourcePlugin for TidalSource {
     async fn load(
         &self,
         identifier: &str,
-        _: Option<Arc<dyn crate::lavalink::routeplanner::RoutePlanner>>,
+        _: Option<Arc<dyn crate::crate::lavalink::protocol::routeplanner::RoutePlanner>>,
     ) -> LoadResult {
         if let Some(prefix) = self.search_prefixes().iter().find(|p| identifier.starts_with(**p)) {
             return self.search(&identifier[prefix.len()..]).await;
@@ -551,7 +551,7 @@ impl SourcePlugin for TidalSource {
     async fn get_track(
         &self,
         identifier: &str,
-        _: Option<Arc<dyn crate::lavalink::routeplanner::RoutePlanner>>,
+        _: Option<Arc<dyn crate::crate::lavalink::protocol::routeplanner::RoutePlanner>>,
     ) -> Option<crate::media::sources::plugin::BoxedTrack> {
         let id = if let Some(caps) = url_regex().captures(identifier) {
             if caps.get(1).map_or("", |m| m.as_str()) != "track" {

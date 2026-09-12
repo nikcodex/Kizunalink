@@ -11,7 +11,7 @@ use async_trait::async_trait;
 use regex::Regex;
 
 use crate::{
-    lavalink::protocol::tracks::LoadResult,
+    crate::lavalink::protocol::tracks::LoadResult,
     media::sources::plugin::{BoxedTrack, SourcePlugin},
 };
 
@@ -92,7 +92,7 @@ impl SourcePlugin for LastFMSource {
     async fn load(
         &self,
         identifier: &str,
-        _routeplanner: Option<Arc<dyn crate::lavalink::routeplanner::RoutePlanner>>,
+        _routeplanner: Option<Arc<dyn crate::crate::lavalink::protocol::routeplanner::RoutePlanner>>,
     ) -> LoadResult {
         if let Some(prefix) = self
             .search_prefixes()
@@ -109,7 +109,7 @@ impl SourcePlugin for LastFMSource {
     async fn get_track(
         &self,
         _identifier: &str,
-        _routeplanner: Option<Arc<dyn crate::lavalink::routeplanner::RoutePlanner>>,
+        _routeplanner: Option<Arc<dyn crate::crate::lavalink::protocol::routeplanner::RoutePlanner>>,
     ) -> Option<BoxedTrack> {
         None
     }

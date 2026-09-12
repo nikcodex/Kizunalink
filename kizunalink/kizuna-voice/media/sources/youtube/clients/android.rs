@@ -12,7 +12,7 @@ use super::{
 };
 use crate::{
     common::types::AnyResult,
-    lavalink::protocol::tracks::Track,
+    crate::lavalink::protocol::tracks::Track,
     media::sources::youtube::{
         cipher::YouTubeCipherManager,
         clients::common::ClientConfig,

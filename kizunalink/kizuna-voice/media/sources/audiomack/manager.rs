@@ -14,7 +14,7 @@ use tracing::{error, warn};
 
 use super::{track::AudiomackTrack, utils::build_auth_header};
 use crate::{
-    lavalink::protocol::tracks::{LoadResult, PlaylistData, PlaylistInfo, Track, TrackInfo},
+    crate::lavalink::protocol::tracks::{LoadResult, PlaylistData, PlaylistInfo, Track, TrackInfo},
     media::sources::plugin::{PlayableTrack, SourcePlugin},
 };
 
@@ -483,7 +483,7 @@ impl SourcePlugin for AudiomackSource {
     async fn load(
         &self,
         identifier: &str,
-        _routeplanner: Option<Arc<dyn crate::lavalink::routeplanner::RoutePlanner>>,
+        _routeplanner: Option<Arc<dyn crate::crate::lavalink::protocol::routeplanner::RoutePlanner>>,
     ) -> LoadResult {
         if let Some(prefix) = self
             .search_prefixes()
@@ -528,7 +528,7 @@ impl SourcePlugin for AudiomackSource {
     async fn get_track(
         &self,
         identifier: &str,
-        routeplanner: Option<Arc<dyn crate::lavalink::routeplanner::RoutePlanner>>,
+        routeplanner: Option<Arc<dyn crate::crate::lavalink::protocol::routeplanner::RoutePlanner>>,
     ) -> Option<Box<dyn PlayableTrack>> {
         let mut track_id = identifier.to_owned();
 

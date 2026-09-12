@@ -13,8 +13,8 @@ use super::{
     utils::{extract_thumbnail, unmask_vk_url},
 };
 use crate::{
-    config::VkMusicConfig,
-    lavalink::protocol::tracks::{LoadResult, PlaylistData, PlaylistInfo, Track, TrackInfo},
+    crate::config::sources::VkMusicConfig,
+    crate::lavalink::protocol::tracks::{LoadResult, PlaylistData, PlaylistInfo, Track, TrackInfo},
     media::sources::{SourcePlugin, plugin::BoxedTrack},
 };
 
@@ -395,7 +395,7 @@ impl SourcePlugin for VkMusicSource {
     async fn load(
         &self,
         identifier: &str,
-        _routeplanner: Option<Arc<dyn crate::lavalink::routeplanner::RoutePlanner>>,
+        _routeplanner: Option<Arc<dyn crate::crate::lavalink::protocol::routeplanner::RoutePlanner>>,
     ) -> LoadResult {
         if let Some(prefix) = self
             .search_prefixes()
@@ -456,7 +456,7 @@ impl SourcePlugin for VkMusicSource {
         &self,
         query: &str,
         _types: &[String],
-        _routeplanner: Option<Arc<dyn crate::lavalink::routeplanner::RoutePlanner>>,
+        _routeplanner: Option<Arc<dyn crate::crate::lavalink::protocol::routeplanner::RoutePlanner>>,
     ) -> Option<crate::lavalink::protocol::tracks::SearchResult> {
         let q = self
             .search_prefixes()
@@ -530,7 +530,7 @@ impl SourcePlugin for VkMusicSource {
     async fn get_track(
         &self,
         identifier: &str,
-        routeplanner: Option<Arc<dyn crate::lavalink::routeplanner::RoutePlanner>>,
+        routeplanner: Option<Arc<dyn crate::crate::lavalink::protocol::routeplanner::RoutePlanner>>,
     ) -> Option<BoxedTrack> {
         let audio_id = if let Some(caps) = self.track_re.captures(identifier) {
             let owner = caps.name("owner")?.as_str();

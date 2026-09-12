@@ -20,8 +20,8 @@ use super::{
     },
 };
 use crate::{
-    config::AmazonMusicConfig,
-    lavalink::protocol::tracks::{LoadError, LoadResult, PlaylistData, PlaylistInfo, Track},
+    crate::config::sources::AmazonMusicConfig,
+    crate::lavalink::protocol::tracks::{LoadError, LoadResult, PlaylistData, PlaylistInfo, Track},
     media::sources::{SourcePlugin, plugin::BoxedTrack},
 };
 
@@ -460,7 +460,7 @@ impl SourcePlugin for AmazonMusicSource {
     async fn load(
         &self,
         identifier: &str,
-        _routeplanner: Option<Arc<dyn crate::lavalink::routeplanner::RoutePlanner>>,
+        _routeplanner: Option<Arc<dyn crate::crate::lavalink::protocol::routeplanner::RoutePlanner>>,
     ) -> LoadResult {
         if let Some(prefix) = self
             .search_prefixes()
@@ -490,7 +490,7 @@ impl SourcePlugin for AmazonMusicSource {
     async fn get_track(
         &self,
         _identifier: &str,
-        _routeplanner: Option<Arc<dyn crate::lavalink::routeplanner::RoutePlanner>>,
+        _routeplanner: Option<Arc<dyn crate::crate::lavalink::protocol::routeplanner::RoutePlanner>>,
     ) -> Option<BoxedTrack> {
         None
     }

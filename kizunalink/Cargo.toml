@@ -10,6 +10,7 @@ repository = "https://github.com/nikcodex/Kizunalink"
 path = "kizuna-voice/lib.rs"
 
 [dependencies]
+aes-gcm = "0.10.3"
 davey = "0.1.4"
 xsalsa20poly1305 = "0.9.1"
 aes = "0.8"
@@ -28,8 +29,6 @@ perf_monitor = "0.2.1"
 
 [build-dependencies]
 pkg-config = "0.3.30"
-aes-gcm = "0.10.3"
-xsalsa20poly1305 = "0.9.1"
 
 [dependencies.base64]
 workspace = true

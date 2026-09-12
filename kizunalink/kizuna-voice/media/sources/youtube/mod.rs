@@ -11,8 +11,8 @@ use tracing::{debug, warn};
 
 use crate::{
     common::types::SharedRw,
-    config::media::sources::YouTubeConfig,
-    lavalink::protocol::tracks::*,
+    crate::config::sources::YouTubeConfig,
+    crate::lavalink::protocol::tracks::*,
     media::sources::{SourcePlugin, plugin::BoxedTrack},
 };
 
@@ -420,7 +420,7 @@ impl SourcePlugin for YouTubeSource {
     async fn load(
         &self,
         identifier: &str,
-        _routeplanner: Option<Arc<dyn crate::lavalink::routeplanner::RoutePlanner>>,
+        _routeplanner: Option<Arc<dyn crate::crate::lavalink::protocol::routeplanner::RoutePlanner>>,
     ) -> LoadResult {
         let visitor_data = self.visitor_data.read().await.clone();
         let context = if let Some(vd) = visitor_data {
@@ -457,7 +457,7 @@ impl SourcePlugin for YouTubeSource {
     async fn get_track(
         &self,
         identifier: &str,
-        routeplanner: Option<Arc<dyn crate::lavalink::routeplanner::RoutePlanner>>,
+        routeplanner: Option<Arc<dyn crate::crate::lavalink::protocol::routeplanner::RoutePlanner>>,
     ) -> Option<BoxedTrack> {
         let visitor_data = self.visitor_data.read().await.clone();
         let id = self.extract_id(identifier);

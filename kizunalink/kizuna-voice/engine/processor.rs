@@ -23,7 +23,7 @@ use crate::{
         resample::Resampler,
     },
     common::types::AudioFormat,
-    crate::config::player::{PlayerConfig, ResamplingQuality},
+    config::player::{PlayerConfig, ResamplingQuality},
 };
 
 #[derive(Debug, Clone, PartialEq)]

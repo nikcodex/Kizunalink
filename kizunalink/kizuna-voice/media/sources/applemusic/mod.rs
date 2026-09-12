@@ -14,7 +14,7 @@ use regex::Regex;
 use token::AppleMusicTokenTracker;
 
 use crate::{
-    lavalink::protocol::tracks::LoadResult, media::sources::SourcePlugin};
+    crate::lavalink::protocol::tracks::LoadResult, media::sources::SourcePlugin};
 
 const API_BASE: &str = "https://api.music.apple.com/v1";
 
@@ -87,7 +87,7 @@ impl SourcePlugin for AppleMusicSource {
     async fn load(
         &self,
         identifier: &str,
-        _routeplanner: Option<Arc<dyn crate::lavalink::routeplanner::RoutePlanner>>,
+        _routeplanner: Option<Arc<dyn crate::crate::lavalink::protocol::routeplanner::RoutePlanner>>,
     ) -> LoadResult {
         if let Some(prefix) = self
             .search_prefixes()
@@ -125,7 +125,7 @@ impl SourcePlugin for AppleMusicSource {
         &self,
         query: &str,
         types: &[String],
-        _routeplanner: Option<Arc<dyn crate::lavalink::routeplanner::RoutePlanner>>,
+        _routeplanner: Option<Arc<dyn crate::crate::lavalink::protocol::routeplanner::RoutePlanner>>,
     ) -> Option<crate::lavalink::protocol::tracks::SearchResult> {
         let q = if let Some(prefix) = self
             .search_prefixes()
@@ -143,7 +143,7 @@ impl SourcePlugin for AppleMusicSource {
     async fn get_track(
         &self,
         _identifier: &str,
-        _routeplanner: Option<Arc<dyn crate::lavalink::routeplanner::RoutePlanner>>,
+        _routeplanner: Option<Arc<dyn crate::crate::lavalink::protocol::routeplanner::RoutePlanner>>,
     ) -> Option<crate::media::sources::plugin::BoxedTrack> {
         None
     }

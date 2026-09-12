@@ -19,7 +19,7 @@ use crate::{
     monitoring::collect_stats,
     player::PlayerState,
     protocol,
-    common::server_hooks::{ServerContext, Session},
+    common::server_hooks::ServerContext,
 };
 
 pub async fn handle_socket(

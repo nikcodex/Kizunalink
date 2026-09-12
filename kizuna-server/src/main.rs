@@ -26,9 +26,9 @@ async fn main() -> AnyResult<()> {
 
     let routeplanner = if config.route_planner.enabled && !config.route_planner.cidrs.is_empty() {
         Some(
-            Arc::new(kizuna_server::lavalink::routeplanner::BalancingIpRoutePlanner::new(
+            Arc::new(kizuna_server::crate::lavalink::protocol::routeplanner::BalancingIpRoutePlanner::new(
                 config.route_planner.cidrs.clone(),
-            )) as Arc<dyn kizuna_server::lavalink::routeplanner::RoutePlanner>,
+            )) as Arc<dyn kizuna_server::crate::lavalink::protocol::routeplanner::RoutePlanner>,
         )
     } else {
         None

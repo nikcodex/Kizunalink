@@ -3,7 +3,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::{crate::config::player::PlayerConfig, lavalink::protocol::tracks::Track};
+use crate::{config::player::PlayerConfig, lavalink::protocol::tracks::Track};
 
 /// Deserializer for track encoded field which can be null or string.
 pub fn deserialize_track_encoded<'de, D>(deserializer: D) -> Result<Option<TrackEncoded>, D::Error>

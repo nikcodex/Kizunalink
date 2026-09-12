@@ -9,8 +9,8 @@ use tracing::{debug, warn};
 
 use super::{api::TwitchGqlClient, track::TwitchTrack};
 use crate::{
-    config::TwitchConfig,
-    lavalink::protocol::tracks::{LoadError, LoadResult, Track, TrackInfo},
+    crate::config::sources::TwitchConfig,
+    crate::lavalink::protocol::tracks::{LoadError, LoadResult, Track, TrackInfo},
     media::sources::{SourcePlugin, plugin::BoxedTrack},
 };
 
@@ -131,7 +131,7 @@ impl SourcePlugin for TwitchSource {
     async fn load(
         &self,
         identifier: &str,
-        _routeplanner: Option<Arc<dyn crate::lavalink::routeplanner::RoutePlanner>>,
+        _routeplanner: Option<Arc<dyn crate::crate::lavalink::protocol::routeplanner::RoutePlanner>>,
     ) -> LoadResult {
         let stream_name = match self.get_channel_identifier_from_url(identifier) {
             Some(n) => n,
@@ -185,7 +185,7 @@ impl SourcePlugin for TwitchSource {
     async fn get_track(
         &self,
         identifier: &str,
-        routeplanner: Option<Arc<dyn crate::lavalink::routeplanner::RoutePlanner>>,
+        routeplanner: Option<Arc<dyn crate::crate::lavalink::protocol::routeplanner::RoutePlanner>>,
     ) -> Option<BoxedTrack> {
         let stream_name = self.get_channel_identifier_from_url(identifier)?;
 

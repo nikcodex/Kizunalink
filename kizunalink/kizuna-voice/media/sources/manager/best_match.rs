@@ -140,7 +140,7 @@ pub async fn resolve_scored(
     track_info: &crate::lavalink::protocol::tracks::TrackInfo,
     identifier: &str,
     mirrors: &crate::config::server::MirrorsConfig,
-    routeplanner: Option<Arc<dyn crate::lavalink::routeplanner::RoutePlanner>>,
+    routeplanner: Option<Arc<dyn crate::crate::lavalink::protocol::routeplanner::RoutePlanner>>,
 ) -> Result<BoxedTrack, String> {
     let isrc = track_info.isrc.as_deref().unwrap_or("");
     let query = format!("{} {}", track_info.title, track_info.author);
@@ -295,7 +295,7 @@ async fn search_provider(
     manager: &SourceManager,
     original: &crate::lavalink::protocol::tracks::TrackInfo,
     resolved_provider: &str,
-    routeplanner: Option<Arc<dyn crate::lavalink::routeplanner::RoutePlanner>>,
+    routeplanner: Option<Arc<dyn crate::crate::lavalink::protocol::routeplanner::RoutePlanner>>,
     cfg: &crate::config::server::BestMatchConfig,
     trust_any: bool,
 ) -> Option<MirrorResult> {

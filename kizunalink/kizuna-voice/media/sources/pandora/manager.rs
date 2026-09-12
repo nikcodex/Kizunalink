@@ -11,7 +11,7 @@ use tracing::{debug, warn};
 
 use super::token::PandoraTokenTracker;
 use crate::{
-    lavalink::protocol::tracks::{LoadResult, PlaylistData, PlaylistInfo, SearchResult, Track, TrackInfo},
+    crate::lavalink::protocol::tracks::{LoadResult, PlaylistData, PlaylistInfo, SearchResult, Track, TrackInfo},
     media::sources::SourcePlugin,
 };
 
@@ -821,7 +821,7 @@ impl SourcePlugin for PandoraSource {
     async fn load(
         &self,
         identifier: &str,
-        _routeplanner: Option<Arc<dyn crate::lavalink::routeplanner::RoutePlanner>>,
+        _routeplanner: Option<Arc<dyn crate::crate::lavalink::protocol::routeplanner::RoutePlanner>>,
     ) -> LoadResult {
         if let Some(prefix) = self
             .search_prefixes()
@@ -888,7 +888,7 @@ impl SourcePlugin for PandoraSource {
         &self,
         query: &str,
         types: &[String],
-        _routeplanner: Option<Arc<dyn crate::lavalink::routeplanner::RoutePlanner>>,
+        _routeplanner: Option<Arc<dyn crate::crate::lavalink::protocol::routeplanner::RoutePlanner>>,
     ) -> Option<SearchResult> {
         self.get_autocomplete(query, types).await
     }
@@ -896,7 +896,7 @@ impl SourcePlugin for PandoraSource {
     async fn get_track(
         &self,
         _identifier: &str,
-        _routeplanner: Option<Arc<dyn crate::lavalink::routeplanner::RoutePlanner>>,
+        _routeplanner: Option<Arc<dyn crate::crate::lavalink::protocol::routeplanner::RoutePlanner>>,
     ) -> Option<crate::media::sources::plugin::BoxedTrack> {
         None
     }
