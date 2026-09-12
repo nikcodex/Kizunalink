@@ -1,7 +1,7 @@
 // Copyright (c) 2026 nikcodex (KizunaLink)
 // Licensed under the MIT License
 
-use audiopus::{Application, Bitrate, Channels, SampleRate, coder::Encoder as OpusEncoder};
+use crate::opus::{Application, Bitrate, Channels, SampleRate, Encoder as OpusEncoder, Error as OpusError};
 
 use crate::common::types::AnyResult;
 
