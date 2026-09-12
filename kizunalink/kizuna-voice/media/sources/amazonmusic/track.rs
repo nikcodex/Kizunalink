@@ -1,7 +1,7 @@
 // Copyright (c) 2026 nikcodex (KizunaLink)
 // Licensed under the MIT License
 
-use crate::lavalink::lavalink::protocol::tracks::TrackInfo;
+use crate::lavalink::protocol::tracks::TrackInfo;
 
 pub struct AmazonTrackData {
     pub track_id: String,

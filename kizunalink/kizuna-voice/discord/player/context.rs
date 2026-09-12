@@ -21,7 +21,7 @@ pub struct PlayerContext {
     pub volume: i32,
     pub paused: bool,
     pub track: Option<String>,
-    pub track_info: Option<crate::lavalink::lavalink::protocol::tracks::Track>,
+    pub track_info: Option<crate::lavalink::protocol::tracks::Track>,
     pub track_handle: Option<TrackHandle>,
     pub position: u64,
     pub voice: VoiceConnectionState,

@@ -137,7 +137,7 @@ fn fmt_ms(ms: u64) -> String {
 
 pub async fn resolve_scored(
     manager: &SourceManager,
-    track_info: &crate::lavalink::lavalink::protocol::tracks::TrackInfo,
+    track_info: &crate::lavalink::protocol::tracks::TrackInfo,
     identifier: &str,
     mirrors: &crate::config::server::MirrorsConfig,
     routeplanner: Option<Arc<dyn crate::lavalink::routeplanner::RoutePlanner>>,
@@ -293,7 +293,7 @@ pub async fn resolve_scored(
 
 async fn search_provider(
     manager: &SourceManager,
-    original: &crate::lavalink::lavalink::protocol::tracks::TrackInfo,
+    original: &crate::lavalink::protocol::tracks::TrackInfo,
     resolved_provider: &str,
     routeplanner: Option<Arc<dyn crate::lavalink::routeplanner::RoutePlanner>>,
     cfg: &crate::config::server::BestMatchConfig,
@@ -301,7 +301,7 @@ async fn search_provider(
 ) -> Option<MirrorResult> {
     use crate::lavalink::protocol::tracks::LoadResult;
 
-    let candidates: Vec<crate::lavalink::lavalink::protocol::tracks::TrackInfo> =
+    let candidates: Vec<crate::lavalink::protocol::tracks::TrackInfo> =
         match manager.load(resolved_provider, routeplanner.clone()).await {
             LoadResult::Track(t) => vec![t.info],
             LoadResult::Search(tracks) => tracks.into_iter().take(10).map(|t| t.info).collect(),
@@ -312,7 +312,7 @@ async fn search_provider(
         return None;
     }
 
-    let mut scored: Vec<(f64, crate::lavalink::lavalink::protocol::tracks::TrackInfo)> = candidates
+    let mut scored: Vec<(f64, crate::lavalink::protocol::tracks::TrackInfo)> = candidates
         .into_iter()
         .map(|info| {
             let s = score_match(

@@ -3,7 +3,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::{config::discord::player::PlayerConfig, lavalink::lavalink::protocol::tracks::Track};
+use crate::{config::discord::player::PlayerConfig, lavalink::protocol::tracks::Track};
 
 /// Deserializer for track encoded field which can be null or string.
 pub fn deserialize_track_encoded<'de, D>(deserializer: D) -> Result<Option<TrackEncoded>, D::Error>

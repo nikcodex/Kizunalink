@@ -4,7 +4,7 @@
 use serde_json::Value;
 
 use super::api::{clean_image_url, clean_song_title, duration_str_to_ms, normalize_artist};
-use crate::lavalink::lavalink::protocol::tracks::TrackInfo;
+use crate::lavalink::protocol::tracks::TrackInfo;
 
 pub fn parse_track(resp: &Value, track_id: &str) -> Option<TrackInfo> {
     let methods = resp["methods"].as_array()?;

@@ -4,7 +4,7 @@
 use serde_json::Value;
 use tracing::debug;
 
-use crate::lavalink::lavalink::protocol::tracks::TrackInfo;
+use crate::lavalink::protocol::tracks::TrackInfo;
 
 pub struct SpotifyParser;
 

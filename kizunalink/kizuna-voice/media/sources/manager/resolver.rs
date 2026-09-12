@@ -8,7 +8,7 @@ use crate::media::sources::{manager::SourceManager, plugin::BoxedTrack};
 /// Fallback mechanism to resolve a track using mirrors (ISRC or search queries).
 pub async fn resolve_with_mirrors(
     manager: &SourceManager,
-    track_info: &crate::lavalink::lavalink::protocol::tracks::TrackInfo,
+    track_info: &crate::lavalink::protocol::tracks::TrackInfo,
     identifier: &str,
     mirrors: &crate::config::server::MirrorsConfig,
     routeplanner: Option<Arc<dyn crate::lavalink::routeplanner::RoutePlanner>>,

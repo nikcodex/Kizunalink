@@ -32,7 +32,7 @@ pub struct EncodedTracks(pub Vec<String>);
 
 #[derive(Serialize)]
 pub struct Tracks {
-    pub tracks: Vec<crate::lavalink::lavalink::protocol::tracks::Track>,
+    pub tracks: Vec<crate::lavalink::protocol::tracks::Track>,
 }
 
 #[derive(Serialize)]
