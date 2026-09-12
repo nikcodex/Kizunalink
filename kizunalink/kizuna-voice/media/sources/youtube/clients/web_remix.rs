@@ -50,8 +50,8 @@ impl WebRemixClient {
         signature_timestamp: Option<u32>,
         _oauth: &Arc<YouTubeOAuth>,
     ) -> AnyResult<Value> {
-        media::sources::youtube::clients::common::make_player_request(
-            media::sources::youtube::clients::common::PlayerRequestOptions {
+        crate::media::sources::youtube::clients::common::make_player_request(
+            crate::media::sources::youtube::clients::common::PlayerRequestOptions {
                 http: &self.http,
                 config: &self.config(),
                 video_id,

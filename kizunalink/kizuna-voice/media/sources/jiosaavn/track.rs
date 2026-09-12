@@ -27,7 +27,7 @@ pub struct JioSaavnTrack {
 }
 
 impl PlayableTrack for JioSaavnTrack {
-    fn start_decoding(&self, config: crate::discord::player::PlayerConfig) -> DecoderOutput {
+    fn start_decoding(&self, config: crate::config::player::PlayerConfig) -> DecoderOutput {
         let mut playback_url = match self.decrypt_url(&self.encrypted_url) {
             Some(url) => url,
             None => {

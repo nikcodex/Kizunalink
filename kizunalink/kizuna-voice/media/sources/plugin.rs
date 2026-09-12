@@ -25,7 +25,7 @@ pub type DecoderOutput = (
 /// A track capable of initializing its own decoding process.
 pub trait PlayableTrack: Send + Sync {
     /// Starts the decoding process with the provided player configuration.
-    fn start_decoding(&self, config: crate::discord::player::PlayerConfig) -> DecoderOutput;
+    fn start_decoding(&self, config: crate::config::player::PlayerConfig) -> DecoderOutput;
 }
 
 pub type BoxedTrack = Box<dyn PlayableTrack>;

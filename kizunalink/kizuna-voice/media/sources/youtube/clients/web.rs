@@ -75,8 +75,8 @@ impl WebClient {
         _oauth: &Arc<YouTubeOAuth>,
         po_token: Option<&str>,
     ) -> AnyResult<Value> {
-        media::sources::youtube::clients::common::make_player_request(
-            media::sources::youtube::clients::common::PlayerRequestOptions {
+        crate::media::sources::youtube::clients::common::make_player_request(
+            crate::media::sources::youtube::clients::common::PlayerRequestOptions {
                 http: &self.http,
                 config: &self.config(),
                 video_id,

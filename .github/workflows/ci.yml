@@ -46,7 +46,13 @@ jobs:
         if: failure()
         run: |
           if [ -f /tmp/check.log ]; then
-            tail -c 30000 /tmp/check.log | tr '\n' ' ' > /tmp/tail.txt
+            perl -e '
+              my $m = "";
+              while (<STDIN>) {
+                if (/^error(?:\[[^\]]+\])?:\s*(.*)$/) { print "ERR: $1\n"; }
+                elsif (/^\s*-->\s*([^:]+):(\d+):(\d+)/) { print "  AT $1:$2:$3\n"; }
+              }
+            ' < /tmp/check.log | head -c 60000 | tr '\n' ' ' > /tmp/tail.txt
             echo "::error file=ci-check.log,line=1::$(cat /tmp/tail.txt)"
           fi
 

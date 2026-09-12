@@ -41,7 +41,7 @@ pub struct SoundCloudTrack {
 }
 
 impl PlayableTrack for SoundCloudTrack {
-    fn start_decoding(&self, config: crate::discord::player::PlayerConfig) -> DecoderOutput {
+    fn start_decoding(&self, config: crate::config::player::PlayerConfig) -> DecoderOutput {
         let (tx, rx) = flume::bounded::<AudioFrame>((config.buffer_duration_ms / 20) as usize);
         let (cmd_tx, cmd_rx) = flume::unbounded::<DecoderCommand>();
         let (err_tx, err_rx) = flume::bounded::<String>(1);
@@ -192,7 +192,7 @@ fn run_processor(
     tx: flume::Sender<AudioFrame>,
     cmd_rx: flume::Receiver<DecoderCommand>,
     err_tx: flume::Sender<String>,
-    config: crate::discord::player::PlayerConfig,
+    config: crate::config::player::PlayerConfig,
     identifier: String,
 ) {
     match AudioProcessor::new(reader, kind, tx, cmd_rx, Some(err_tx.clone()), config) {
