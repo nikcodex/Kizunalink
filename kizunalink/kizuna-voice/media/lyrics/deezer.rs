@@ -10,7 +10,7 @@ use super::{
 };
 use crate::{
     config::HttpProxyConfig,
-    crate::lavalink::protocol::{
+    lavalink::protocol::{
         models::{LyricsData, LyricsLine},
         tracks::TrackInfo,
     },

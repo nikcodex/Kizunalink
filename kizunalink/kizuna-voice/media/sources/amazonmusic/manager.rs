@@ -21,7 +21,7 @@ use super::{
 };
 use crate::{
     config::AmazonMusicConfig,
-    crate::lavalink::protocol::tracks::{LoadError, LoadResult, PlaylistData, PlaylistInfo, Track},
+    lavalink::protocol::tracks::{LoadError, LoadResult, PlaylistData, PlaylistInfo, Track},
     media::sources::{SourcePlugin, plugin::BoxedTrack},
 };
 

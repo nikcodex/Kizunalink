@@ -48,7 +48,7 @@ impl PlayableTrack for GaanaTrack {
                     let is_plugin_hls = url.contains(".m3u8") || url.contains("/api/manifest/hls_");
 
                     let reader = if is_plugin_hls {
-                        crate::media::sources::youtube::hls::HlsReader::new(
+                        media::sources::youtube::hls::HlsReader::new(
                             &url, local_addr, None, None, proxy,
                         )
                         .ok()

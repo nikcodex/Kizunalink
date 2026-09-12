@@ -10,13 +10,13 @@ use crate::{
     engine::playback::{PlaybackState, TrackHandle},
     common::types::GuildId,
     discord::player::state::PlayerState,
-    crate::lavalink::protocol::{
+    lavalink::protocol::{
         self,
         events::{KizunaLinkEvent, TrackEndReason, TrackException},
         models::LyricsData,
         tracks::Track,
     },
-    server::Session,
+    common::server_hooks::Session,
 };
 
 pub struct MonitorCtx {

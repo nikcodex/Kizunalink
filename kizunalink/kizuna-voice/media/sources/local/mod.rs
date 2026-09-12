@@ -23,7 +23,7 @@ use crate::{
         processor::{AudioProcessor, DecoderCommand},
     },
     common::Severity,
-    crate::lavalink::protocol::tracks::{LoadError, LoadResult, Track, TrackInfo},
+    lavalink::protocol::tracks::{LoadError, LoadResult, Track, TrackInfo},
     media::sources::{
         SourcePlugin,
         plugin::{DecoderOutput, PlayableTrack},

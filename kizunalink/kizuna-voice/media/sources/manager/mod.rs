@@ -60,7 +60,7 @@ impl SourceManager {
             "SourceManager: No source matched identifier: '{}'",
             identifier
         );
-        crate::lavalink::protocol::tracks::LoadResult::Empty {}
+        lavalink::protocol::tracks::LoadResult::Empty {}
     }
 
     /// Perform a search across available sources.
@@ -83,7 +83,7 @@ impl SourceManager {
 
     pub async fn resolve_track(
         &self,
-        track_info: &crate::lavalink::protocol::tracks::TrackInfo,
+        track_info: &crate::lavalink::lavalink::protocol::tracks::TrackInfo,
         routeplanner: Option<Arc<dyn crate::lavalink::routeplanner::RoutePlanner>>,
     ) -> Result<BoxedTrack, String> {
         let identifier = track_info.uri.as_deref().unwrap_or(&track_info.identifier);

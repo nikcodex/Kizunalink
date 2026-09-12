@@ -10,7 +10,7 @@ use sha2::Sha256;
 use super::{LyricsProvider, utils};
 use crate::{
     config::{HttpProxyConfig, media::lyrics::YandexLyricsConfig},
-    crate::lavalink::protocol::{models::LyricsData, tracks::TrackInfo},
+    lavalink::protocol::{models::LyricsData, tracks::TrackInfo},
 };
 
 pub struct YandexProvider {

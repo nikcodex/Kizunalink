@@ -12,7 +12,7 @@ use super::{
 };
 use crate::{
     common::types::AnyResult,
-    crate::lavalink::protocol::tracks::Track,
+    lavalink::lavalink::protocol::tracks::Track,
     media::sources::youtube::{
         cipher::YouTubeCipherManager, clients::common::ClientConfig, extractor::extract_track,
         oauth::YouTubeOAuth,
@@ -54,8 +54,8 @@ impl AndroidVrClient {
         signature_timestamp: Option<u32>,
         _oauth: &Arc<YouTubeOAuth>,
     ) -> AnyResult<Value> {
-        crate::media::sources::youtube::clients::common::make_player_request(
-            crate::media::sources::youtube::clients::common::PlayerRequestOptions {
+        media::sources::youtube::clients::common::make_player_request(
+            media::sources::youtube::clients::common::PlayerRequestOptions {
                 http: &self.http,
                 config: &self.config(),
                 video_id,

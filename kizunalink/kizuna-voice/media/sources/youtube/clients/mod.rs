@@ -8,7 +8,7 @@ use serde_json::Value;
 
 use crate::{
     common::types::AnyResult,
-    crate::lavalink::protocol::tracks::Track,
+    lavalink::lavalink::protocol::tracks::Track,
     media::sources::youtube::{cipher::YouTubeCipherManager, oauth::YouTubeOAuth},
 };
 

@@ -5,13 +5,13 @@ use std::sync::{Arc, atomic::Ordering};
 
 use crate::{
     common::types::GuildId,
-    crate::lavalink::protocol::{
+    lavalink::protocol::{
         self,
         events::KizunaLinkEvent,
         models::{LyricsData, KizunaLinkLyrics, KizunaLinkLyricsLine},
         tracks::TrackInfo,
     },
-    server::Session,
+    common::server_hooks::Session,
 };
 
 /// Spawn a non-blocking task that fetches lyrics and sends the result.
@@ -32,7 +32,7 @@ pub fn spawn_lyrics_fetch(
             let mut lock = lyrics_data.lock().await;
             *lock = Some(lyrics.clone());
 
-            crate::lavalink::protocol::OutgoingMessage::Event {
+            lavalink::protocol::OutgoingMessage::Event {
                 event: Box::new(KizunaLinkEvent::LyricsFound {
                     guild_id,
                     lyrics: KizunaLinkLyrics {
@@ -55,7 +55,7 @@ pub fn spawn_lyrics_fetch(
                 }),
             }
         } else {
-            crate::lavalink::protocol::OutgoingMessage::Event {
+            lavalink::protocol::OutgoingMessage::Event {
                 event: Box::new(KizunaLinkEvent::LyricsNotFound { guild_id }),
             }
         };

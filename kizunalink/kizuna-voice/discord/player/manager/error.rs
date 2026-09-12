@@ -7,7 +7,7 @@ use crate::{
         self,
         events::{KizunaLinkEvent, TrackEndReason, TrackException},
     },
-    server::Session,
+    common::server_hooks::Session,
 };
 
 /// Emit `TrackException` followed by `TrackEnd: LoadFailed`.

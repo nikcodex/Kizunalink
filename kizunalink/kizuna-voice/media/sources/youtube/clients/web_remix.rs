@@ -9,7 +9,7 @@ use serde_json::{Value, json};
 use super::YouTubeClient;
 use crate::{
     common::types::AnyResult,
-    crate::lavalink::protocol::tracks::{Track, TrackInfo},
+    lavalink::protocol::tracks::{Track, TrackInfo},
     media::sources::youtube::{
         cipher::YouTubeCipherManager,
         clients::common::{ClientConfig, extract_thumbnail, is_duration, parse_duration},
@@ -50,8 +50,8 @@ impl WebRemixClient {
         signature_timestamp: Option<u32>,
         _oauth: &Arc<YouTubeOAuth>,
     ) -> AnyResult<Value> {
-        crate::media::sources::youtube::clients::common::make_player_request(
-            crate::media::sources::youtube::clients::common::PlayerRequestOptions {
+        media::sources::youtube::clients::common::make_player_request(
+            media::sources::youtube::clients::common::PlayerRequestOptions {
                 http: &self.http,
                 config: &self.config(),
                 video_id,

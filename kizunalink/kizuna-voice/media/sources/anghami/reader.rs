@@ -1,7 +1,7 @@
 // Copyright (c) 2026 nikcodex (KizunaLink)
 // Licensed under the MIT License
 
-use crate::lavalink::protocol::tracks::TrackInfo;
+use crate::lavalink::lavalink::protocol::tracks::TrackInfo;
 
 /// Decodes a batch of songs from a Protobuf-encoded buffer.
 pub fn decode_song_batch(buf: &[u8]) -> Vec<(String, TrackInfo)> {

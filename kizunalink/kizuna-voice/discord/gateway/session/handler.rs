@@ -21,7 +21,7 @@ use super::{
     VoiceGateway,
     backoff::Backoff,
     heartbeat::HeartbeatTracker,
-    crate::lavalink::protocol::{GatewayPayload, OpCode},
+    lavalink::protocol::{GatewayPayload, OpCode},
     types::{GatewayError, PersistentSessionState, SessionOutcome},
     voice::{SpeakConfig, discover_ip, speak_loop},
 };

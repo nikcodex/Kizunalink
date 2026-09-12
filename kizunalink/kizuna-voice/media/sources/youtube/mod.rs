@@ -12,7 +12,7 @@ use tracing::{debug, warn};
 use crate::{
     common::types::SharedRw,
     config::media::sources::YouTubeConfig,
-    crate::lavalink::protocol::tracks::*,
+    lavalink::protocol::tracks::*,
     media::sources::{SourcePlugin, plugin::BoxedTrack},
 };
 

@@ -8,7 +8,7 @@ use futures::stream::{FuturesUnordered, StreamExt};
 
 use crate::{
     config::AppConfig,
-    crate::lavalink::protocol::{models::LyricsData, tracks::TrackInfo},
+    lavalink::protocol::{models::LyricsData, tracks::TrackInfo},
 };
 
 pub mod deezer;

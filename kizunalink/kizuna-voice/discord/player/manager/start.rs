@@ -14,11 +14,11 @@ use super::{
 };
 use crate::{
     engine::playback::{PlaybackState, TrackHandle},
-    crate::lavalink::protocol::{
+    lavalink::protocol::{
         self,
         events::{KizunaLinkEvent, TrackEndReason},
     },
-    server::Session,
+    common::server_hooks::Session,
 };
 
 pub struct PlaybackStartConfig {
@@ -37,7 +37,7 @@ pub struct PlaybackStartConfig {
 pub async fn start_playback(player: &mut PlayerContext, config: PlaybackStartConfig) {
     stop_current_track(player, &config.session).await;
 
-    player.track_info = protocol::tracks::Track::decode(&config.track);
+    player.track_info = lavalink::protocol::tracks::Track::decode(&config.track);
     player.track = Some(config.track.clone());
     player.position = 0;
     player.end_time = config.end_time;
@@ -48,7 +48,7 @@ pub async fn start_playback(player: &mut PlayerContext, config: PlaybackStartCon
         .track_info
         .as_ref()
         .map(|t| t.info.clone())
-        .unwrap_or_else(|| protocol::tracks::TrackInfo {
+        .unwrap_or_else(|| lavalink::protocol::tracks::TrackInfo {
             title: "Unknown".to_string(),
             author: "Unknown".to_string(),
             length: 0,
