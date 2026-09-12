@@ -45,6 +45,10 @@ impl AppConfig {
         let config_path = if Path::new("config.toml").exists() {
             "config.toml"
         } else if Path::new("config.example.toml").exists() {
+            tracing::warn!(
+                "config.toml not found — falling back to config.example.toml. \
+                 For production, copy config.example.toml to config.toml and customize it."
+            );
             "config.example.toml"
         } else {
             return Err("config.toml or config.example.toml not found — please create one from config.example.toml".into());
