@@ -1,15 +1,29 @@
-use std::sync::Arc;
-use async_trait::async_trait;
+// Copyright (c) 2026 nikcodex (KizunaLink)
+// Licensed under the MIT License
 
-/// A trait that abstracts away the server's AppState and Session,
-/// so the voice library doesn't need to know about HTTP or WebSockets.
-#[async_trait]
-pub trait ServerContext: Send + Sync {
-    // Add methods here if the player needs to fetch info from the server
-}
+use std::sync::atomic::AtomicU64;
 
-#[async_trait]
-pub trait SessionContext: Send + Sync {
-    // Add methods here if the player needs to push events to the websocket
-    async fn send_event(&self, event_data: &[u8]);
+/// Marker trait for the server's application state.
+///
+/// Implemented by the concrete `AppState` in `kizuna-server`.
+/// The player stores this to access server-level resources if needed.
+pub trait ServerContext: Send + Sync + 'static {}
+
+/// Abstraction over a client session (WebSocket connection).
+///
+/// Implemented by the concrete `Session` in `kizuna-server`.
+/// The player manager uses this to push events back to the client
+/// and register spawned tasks for lifecycle management.
+pub trait SessionContext: Send + Sync + 'static {
+    /// Send a protocol-level message to the connected client.
+    fn send_message(&self, msg: &crate::lavalink::protocol::OutgoingMessage);
+
+    /// Register an abort handle so the session can cancel spawned tasks on shutdown.
+    fn register_task(&self, handle: tokio::task::AbortHandle);
+
+    /// Access the cumulative frames-sent counter (for stats).
+    fn total_sent_historical(&self) -> &AtomicU64;
+
+    /// Access the cumulative frames-nulled counter (for stats).
+    fn total_nulled_historical(&self) -> &AtomicU64;
 }

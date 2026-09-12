@@ -143,7 +143,7 @@ impl SourcePlugin for LocalSource {
     async fn load(
         &self,
         identifier: &str,
-        _routeplanner: Option<Arc<dyn crate::crate::lavalink::protocol::routeplanner::RoutePlanner>>,
+        _routeplanner: Option<Arc<dyn crate::lavalink::routeplanner::RoutePlanner>>,
     ) -> LoadResult {
         let path = identifier
             .strip_prefix("file://")
@@ -181,7 +181,7 @@ impl SourcePlugin for LocalSource {
     async fn get_track(
         &self,
         identifier: &str,
-        _routeplanner: Option<Arc<dyn crate::crate::lavalink::protocol::routeplanner::RoutePlanner>>,
+        _routeplanner: Option<Arc<dyn crate::lavalink::routeplanner::RoutePlanner>>,
     ) -> Option<Box<dyn PlayableTrack>> {
         let path = identifier
             .strip_prefix("file://")

@@ -835,7 +835,7 @@ impl SourcePlugin for SoundCloudSource {
     async fn load(
         &self,
         identifier: &str,
-        _routeplanner: Option<Arc<dyn crate::crate::lavalink::protocol::routeplanner::RoutePlanner>>,
+        _routeplanner: Option<Arc<dyn crate::lavalink::routeplanner::RoutePlanner>>,
     ) -> LoadResult {
         // 1. Search
         if let Some(prefix) = self
@@ -897,7 +897,7 @@ impl SourcePlugin for SoundCloudSource {
     async fn get_track(
         &self,
         identifier: &str,
-        routeplanner: Option<Arc<dyn crate::crate::lavalink::protocol::routeplanner::RoutePlanner>>,
+        routeplanner: Option<Arc<dyn crate::lavalink::routeplanner::RoutePlanner>>,
     ) -> Option<Box<dyn PlayableTrack>> {
         // Resolve identifier to a URL if needed
         let url = if mobile_url_re().is_match(identifier) {

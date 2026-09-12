@@ -81,15 +81,17 @@ impl Session {
     pub fn get_or_create_player(
         &self,
         guild_id: GuildId,
-        state: Arc<dyn ServerContext>,
+        state: Arc<AppState>,
     ) -> Arc<tokio::sync::RwLock<PlayerContext>> {
         self.players
             .entry(guild_id.clone())
             .or_insert_with(|| {
+                let player_config = state.config.player.clone();
+                let ctx: Arc<dyn kizunalink::common::server_hooks::ServerContext> = state;
                 Arc::new(tokio::sync::RwLock::new(PlayerContext::new(
                     guild_id,
-                    &state.config.player,
-                    state.clone(),
+                    &player_config,
+                    ctx,
                 )))
             })
             .value()
@@ -146,5 +148,25 @@ impl Drop for Session {
         tracing::info!("Dropping session: {}", self.session_id);
         self.stop_all_players();
         self.players.clear();
+    }
+}
+
+// Implement the library's SessionContext trait so the player manager
+// can push events back through the WebSocket without depending on kizuna-server.
+impl kizunalink::common::server_hooks::SessionContext for Session {
+    fn send_message(&self, msg: &kizunalink::lavalink::protocol::OutgoingMessage) {
+        Session::send_message(self, msg);
+    }
+
+    fn register_task(&self, handle: tokio::task::AbortHandle) {
+        Session::register_task(self, handle);
+    }
+
+    fn total_sent_historical(&self) -> &std::sync::atomic::AtomicU64 {
+        &self.total_sent_historical
+    }
+
+    fn total_nulled_historical(&self) -> &std::sync::atomic::AtomicU64 {
+        &self.total_nulled_historical
     }
 }

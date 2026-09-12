@@ -149,7 +149,7 @@ impl SourcePlugin for HttpSource {
     async fn load(
         &self,
         identifier: &str,
-        routeplanner: Option<Arc<dyn crate::crate::lavalink::protocol::routeplanner::RoutePlanner>>,
+        routeplanner: Option<Arc<dyn crate::lavalink::routeplanner::RoutePlanner>>,
     ) -> LoadResult {
         debug!("Probing HTTP source: {identifier}");
 
@@ -184,7 +184,7 @@ impl SourcePlugin for HttpSource {
     async fn get_track(
         &self,
         identifier: &str,
-        routeplanner: Option<Arc<dyn crate::crate::lavalink::protocol::routeplanner::RoutePlanner>>,
+        routeplanner: Option<Arc<dyn crate::lavalink::routeplanner::RoutePlanner>>,
     ) -> Option<Box<dyn PlayableTrack>> {
         let clean = identifier
             .trim()

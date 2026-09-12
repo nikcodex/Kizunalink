@@ -157,7 +157,7 @@ impl SourcePlugin for DeezerSource {
     async fn load(
         &self,
         identifier: &str,
-        routeplanner: Option<Arc<dyn crate::crate::lavalink::protocol::routeplanner::RoutePlanner>>,
+        routeplanner: Option<Arc<dyn crate::lavalink::routeplanner::RoutePlanner>>,
     ) -> LoadResult {
         for prefix in self.search_prefixes() {
             if let Some(query) = identifier.strip_prefix(prefix) {
@@ -212,7 +212,7 @@ impl SourcePlugin for DeezerSource {
     async fn get_track(
         &self,
         identifier: &str,
-        routeplanner: Option<Arc<dyn crate::crate::lavalink::protocol::routeplanner::RoutePlanner>>,
+        routeplanner: Option<Arc<dyn crate::lavalink::routeplanner::RoutePlanner>>,
     ) -> Option<Box<dyn PlayableTrack>> {
         let track_id = if let Some(caps) = url_regex().captures(identifier) {
             caps.name("id").map(|m| m.as_str())?.to_owned()
@@ -246,7 +246,7 @@ impl SourcePlugin for DeezerSource {
         &self,
         query: &str,
         types: &[String],
-        _routeplanner: Option<Arc<dyn crate::crate::lavalink::protocol::routeplanner::RoutePlanner>>,
+        _routeplanner: Option<Arc<dyn crate::lavalink::routeplanner::RoutePlanner>>,
     ) -> Option<crate::lavalink::protocol::tracks::SearchResult> {
         let mut q = query;
         for prefix in self.search_prefixes() {

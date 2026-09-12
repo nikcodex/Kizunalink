@@ -9,12 +9,16 @@ use axum::{
     response::{IntoResponse, Json},
 };
 
-use crate::{discord::player::Players, protocol, server::AppState};
+use crate::{
+    discord::player::Players,
+    protocol,
+    server::{AppState, session::Session},
+};
 
 /// GET /v4/sessions/{sessionId}/players
 pub async fn get_players(
     Path(session_id): Path<kizunalink::common::types::SessionId>,
-    State(state): State<Arc<dyn ServerContext>>,
+    State(state): State<Arc<AppState>>,
 ) -> impl IntoResponse {
     tracing::info!("GET /v4/sessions/{}/players", session_id);
 
@@ -49,7 +53,7 @@ pub async fn get_players(
 /// GET /v4/sessions/{sessionId}
 pub async fn get_session(
     Path(session_id): Path<kizunalink::common::types::SessionId>,
-    State(state): State<Arc<dyn ServerContext>>,
+    State(state): State<Arc<AppState>>,
 ) -> impl IntoResponse {
     tracing::info!("GET /v4/sessions/{}", session_id);
 
@@ -79,7 +83,7 @@ pub async fn get_player(
         kizunalink::common::types::SessionId,
         kizunalink::common::types::GuildId,
     )>,
-    State(state): State<Arc<dyn ServerContext>>,
+    State(state): State<Arc<AppState>>,
 ) -> impl IntoResponse {
     tracing::info!("GET /v4/sessions/{}/players/{}", session_id, guild_id);
 

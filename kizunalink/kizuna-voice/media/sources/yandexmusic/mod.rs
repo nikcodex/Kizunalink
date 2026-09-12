@@ -491,7 +491,7 @@ impl SourcePlugin for YandexMusicSource {
     async fn load(
         &self,
         identifier: &str,
-        _routeplanner: Option<Arc<dyn crate::crate::lavalink::protocol::routeplanner::RoutePlanner>>,
+        _routeplanner: Option<Arc<dyn crate::lavalink::routeplanner::RoutePlanner>>,
     ) -> LoadResult {
         if let Some(prefix) = self
             .search_prefixes()
@@ -518,7 +518,7 @@ impl SourcePlugin for YandexMusicSource {
         &self,
         query: &str,
         _types: &[String],
-        _routeplanner: Option<Arc<dyn crate::crate::lavalink::protocol::routeplanner::RoutePlanner>>,
+        _routeplanner: Option<Arc<dyn crate::lavalink::routeplanner::RoutePlanner>>,
     ) -> Option<crate::lavalink::protocol::tracks::SearchResult> {
         self.load_search_internal(query).await
     }
@@ -526,7 +526,7 @@ impl SourcePlugin for YandexMusicSource {
     async fn get_track(
         &self,
         identifier: &str,
-        routeplanner: Option<Arc<dyn crate::crate::lavalink::protocol::routeplanner::RoutePlanner>>,
+        routeplanner: Option<Arc<dyn crate::lavalink::routeplanner::RoutePlanner>>,
     ) -> Option<BoxedTrack> {
         let track_id = if identifier.starts_with("http") {
             if let Some(caps) = self.url_pattern.captures(identifier) {

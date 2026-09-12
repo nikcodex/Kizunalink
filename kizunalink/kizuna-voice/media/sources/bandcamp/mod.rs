@@ -276,7 +276,7 @@ impl SourcePlugin for BandcampSource {
     async fn load(
         &self,
         identifier: &str,
-        _routeplanner: Option<Arc<dyn crate::crate::lavalink::protocol::routeplanner::RoutePlanner>>,
+        _routeplanner: Option<Arc<dyn crate::lavalink::routeplanner::RoutePlanner>>,
     ) -> LoadResult {
         if let Some(prefix) = self
             .search_prefixes()
@@ -297,7 +297,7 @@ impl SourcePlugin for BandcampSource {
     async fn get_track(
         &self,
         identifier: &str,
-        routeplanner: Option<Arc<dyn crate::crate::lavalink::protocol::routeplanner::RoutePlanner>>,
+        routeplanner: Option<Arc<dyn crate::lavalink::routeplanner::RoutePlanner>>,
     ) -> Option<BoxedTrack> {
         let id_re = IDENTIFIER_PATTERN.get_or_init(|| {
             Regex::new(r"^(?P<subdomain>[a-zA-Z0-9\-]+):(?P<slug>[a-zA-Z0-9\-]+)$").unwrap()

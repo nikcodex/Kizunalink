@@ -122,7 +122,7 @@ pub struct LoadError {
     /// Human-readable error message.
     pub message: Option<String>,
     /// How severe the error is.
-    pub severity: kizunalink::common::Severity,
+    pub severity: crate::common::Severity,
     /// Exception class / short cause description.
     pub cause: String,
     /// Full stack trace, if available.

@@ -23,7 +23,7 @@ pub struct MonitorCtx {
     pub guild_id: GuildId,
     pub handle: TrackHandle,
     pub err_rx: flume::Receiver<String>,
-    pub session: Arc<dyn crate::Context>,
+    pub session: Arc<dyn crate::common::server_hooks::SessionContext>,
     pub track: Track,
     pub stop_signal: Arc<std::sync::atomic::AtomicBool>,
     pub ping: Arc<std::sync::atomic::AtomicI64>,

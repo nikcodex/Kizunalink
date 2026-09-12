@@ -17,8 +17,6 @@ jobs:
     name: Check
     runs-on: ubuntu-latest
     steps:
-      - name: Install libopus
-        run: sudo apt-get update && sudo apt-get install -y libopus-dev
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: actions/cache@v4
@@ -27,8 +25,81 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
           key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock') }}
-      - name: Install deps
+      - name: Install system deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake pkg-config libclang-dev clang build-essential perl
-      - run: cargo check
+          sudo apt-get install -y cmake pkg-config libclang-dev clang build-essential perl libopus-dev
+      - run: cargo check --workspace --all-targets
+
+  fmt:
+    name: Formatting
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - run: cargo fmt --all -- --check
+
+  clippy:
+    name: Clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock') }}
+      - name: Install system deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake pkg-config libclang-dev clang build-essential perl libopus-dev
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock') }}
+      - name: Install system deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake pkg-config libclang-dev clang build-essential perl libopus-dev
+      - run: cargo test --workspace --all-targets
+
+  build:
+    name: Build (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock') }}
+      - name: Install system deps (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake pkg-config libclang-dev clang build-essential perl libopus-dev
+      - name: Install system deps (macOS)
+        if: runner.os == 'macOS'
+        run: brew install opus cmake pkg-config
+      - run: cargo build --release --workspace

@@ -159,7 +159,7 @@ impl SourcePlugin for FlowerySource {
     async fn load(
         &self,
         identifier: &str,
-        _routeplanner: Option<Arc<dyn crate::crate::lavalink::protocol::routeplanner::RoutePlanner>>,
+        _routeplanner: Option<Arc<dyn crate::lavalink::routeplanner::RoutePlanner>>,
     ) -> LoadResult {
         debug!("Flowery TTS loading: {}", identifier);
 
@@ -177,7 +177,7 @@ impl SourcePlugin for FlowerySource {
     async fn get_track(
         &self,
         identifier: &str,
-        routeplanner: Option<Arc<dyn crate::crate::lavalink::protocol::routeplanner::RoutePlanner>>,
+        routeplanner: Option<Arc<dyn crate::lavalink::routeplanner::RoutePlanner>>,
     ) -> Option<BoxedTrack> {
         let (text, params) = self.parse_query(identifier);
         let url = self.build_url(&text, params);

@@ -20,7 +20,7 @@ pub fn spawn_lyrics_fetch(
     lyrics_data: Arc<tokio::sync::Mutex<Option<LyricsData>>>,
     track_info: TrackInfo,
     lyrics_manager: Arc<crate::media::lyrics::LyricsManager>,
-    session: Arc<dyn crate::Context>,
+    session: Arc<dyn crate::common::server_hooks::SessionContext>,
     guild_id: GuildId,
 ) {
     tokio::spawn(async move {
@@ -70,7 +70,7 @@ pub async fn sync_lyrics(
     pos_ms: u64,
     last_idx: &Arc<std::sync::atomic::AtomicI64>,
     lyrics_data: &Arc<tokio::sync::Mutex<Option<LyricsData>>>,
-    session: &(dyn crate::Context),
+    session: &(dyn crate::common::server_hooks::SessionContext),
 ) {
     let Ok(lock) = lyrics_data.try_lock() else {
         return;

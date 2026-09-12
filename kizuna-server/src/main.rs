@@ -5,7 +5,7 @@ use std::{net::SocketAddr, sync::Arc};
 
 use axum::{Router, routing::get};
 use dashmap::DashMap;
-use kizunalink::{common::types::AnyResult, monitoring,   };
+use kizunalink::common::types::AnyResult;
 use crate::{api::{rest, ws}, server::AppState};
 use tracing::info;
 
@@ -26,9 +26,9 @@ async fn main() -> AnyResult<()> {
 
     let routeplanner = if config.route_planner.enabled && !config.route_planner.cidrs.is_empty() {
         Some(
-            Arc::new(kizuna_server::crate::lavalink::protocol::routeplanner::BalancingIpRoutePlanner::new(
+            Arc::new(crate::lavalink::routeplanner::BalancingIpRoutePlanner::new(
                 config.route_planner.cidrs.clone(),
-            )) as Arc<dyn kizuna_server::crate::lavalink::protocol::routeplanner::RoutePlanner>,
+            )) as Arc<dyn kizunalink::lavalink::routeplanner::RoutePlanner>,
         )
     } else {
         None
@@ -58,7 +58,7 @@ async fn main() -> AnyResult<()> {
         process_stat: parking_lot::Mutex::new(process_stat),
     });
 
-    monitoring::prometheus::init(shared_state.clone());
+    crate::monitoring::prometheus::init(shared_state.clone());
 
     let mut app = Router::new()
         .route("/v4/websocket", get(ws::websocket_handler))
@@ -69,7 +69,7 @@ async fn main() -> AnyResult<()> {
     if config.metrics.prometheus.enabled {
         app = app.route(
             &config.metrics.prometheus.endpoint,
-            get(monitoring::prometheus::metrics_handler),
+            get(crate::monitoring::prometheus::metrics_handler),
         );
     }
 

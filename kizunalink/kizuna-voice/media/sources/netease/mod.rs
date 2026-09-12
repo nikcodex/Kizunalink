@@ -88,7 +88,7 @@ impl SourcePlugin for NeteaseSource {
     async fn load(
         &self,
         identifier: &str,
-        _routeplanner: Option<Arc<dyn crate::crate::lavalink::protocol::routeplanner::RoutePlanner>>,
+        _routeplanner: Option<Arc<dyn crate::lavalink::routeplanner::RoutePlanner>>,
     ) -> LoadResult {
         for prefix in self.search_prefixes() {
             if let Some(query) = identifier.strip_prefix(prefix) {
@@ -173,7 +173,7 @@ impl SourcePlugin for NeteaseSource {
         &self,
         query: &str,
         _types: &[String],
-        _routeplanner: Option<Arc<dyn crate::crate::lavalink::protocol::routeplanner::RoutePlanner>>,
+        _routeplanner: Option<Arc<dyn crate::lavalink::routeplanner::RoutePlanner>>,
     ) -> Option<SearchResult> {
         let mut q = query;
         for prefix in self.search_prefixes() {
@@ -197,7 +197,7 @@ impl SourcePlugin for NeteaseSource {
     async fn get_track(
         &self,
         identifier: &str,
-        routeplanner: Option<Arc<dyn crate::crate::lavalink::protocol::routeplanner::RoutePlanner>>,
+        routeplanner: Option<Arc<dyn crate::lavalink::routeplanner::RoutePlanner>>,
     ) -> Option<BoxedTrack> {
         let id = url_regex()
             .captures(identifier)

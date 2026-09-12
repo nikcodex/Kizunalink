@@ -13,12 +13,12 @@ pub enum OutgoingMessage {
     Ready {
         resumed: bool,
         #[serde(rename = "sessionId")]
-        session_id: kizunalink::common::types::SessionId,
+        session_id: crate::common::types::SessionId,
     },
     #[serde(rename = "playerUpdate")]
     PlayerUpdate {
         #[serde(rename = "guildId")]
-        guild_id: kizunalink::common::types::GuildId,
+        guild_id: crate::common::types::GuildId,
         state: PlayerState,
     },
     #[serde(rename = "stats")]
@@ -40,14 +40,14 @@ pub enum KizunaLinkEvent {
     #[serde(rename = "TrackStartEvent")]
     TrackStart {
         #[serde(rename = "guildId")]
-        guild_id: kizunalink::common::types::GuildId,
+        guild_id: crate::common::types::GuildId,
         track: Track,
     },
 
     #[serde(rename = "TrackEndEvent")]
     TrackEnd {
         #[serde(rename = "guildId")]
-        guild_id: kizunalink::common::types::GuildId,
+        guild_id: crate::common::types::GuildId,
         track: Track,
         reason: TrackEndReason,
     },
@@ -55,7 +55,7 @@ pub enum KizunaLinkEvent {
     #[serde(rename = "TrackExceptionEvent")]
     TrackException {
         #[serde(rename = "guildId")]
-        guild_id: kizunalink::common::types::GuildId,
+        guild_id: crate::common::types::GuildId,
         track: Track,
         exception: TrackException,
     },
@@ -63,7 +63,7 @@ pub enum KizunaLinkEvent {
     #[serde(rename = "TrackStuckEvent")]
     TrackStuck {
         #[serde(rename = "guildId")]
-        guild_id: kizunalink::common::types::GuildId,
+        guild_id: crate::common::types::GuildId,
         track: Track,
         #[serde(rename = "thresholdMs")]
         threshold_ms: u64,
@@ -72,20 +72,20 @@ pub enum KizunaLinkEvent {
     #[serde(rename = "LyricsFoundEvent")]
     LyricsFound {
         #[serde(rename = "guildId")]
-        guild_id: kizunalink::common::types::GuildId,
+        guild_id: crate::common::types::GuildId,
         lyrics: super::models::KizunaLinkLyrics,
     },
 
     #[serde(rename = "LyricsNotFoundEvent")]
     LyricsNotFound {
         #[serde(rename = "guildId")]
-        guild_id: kizunalink::common::types::GuildId,
+        guild_id: crate::common::types::GuildId,
     },
 
     #[serde(rename = "LyricsLineEvent")]
     LyricsLine {
         #[serde(rename = "guildId")]
-        guild_id: kizunalink::common::types::GuildId,
+        guild_id: crate::common::types::GuildId,
         line_index: i32,
         line: super::models::KizunaLinkLyricsLine,
         skipped: bool,
@@ -94,7 +94,7 @@ pub enum KizunaLinkEvent {
     #[serde(rename = "WebSocketClosedEvent")]
     WebSocketClosed {
         #[serde(rename = "guildId")]
-        guild_id: kizunalink::common::types::GuildId,
+        guild_id: crate::common::types::GuildId,
         code: u16,
         reason: String,
         /// `true` if Discord closed the connection; `false` if Lavalink/KizunaLink did.
@@ -140,7 +140,7 @@ pub enum TrackEndReason {
 #[serde(rename_all = "camelCase")]
 pub struct TrackException {
     pub message: Option<String>,
-    pub severity: kizunalink::common::Severity,
+    pub severity: crate::common::Severity,
     pub cause: String,
     pub cause_stack_trace: Option<String>,
 }
