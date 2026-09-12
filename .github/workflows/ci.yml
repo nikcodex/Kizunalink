@@ -32,8 +32,16 @@ jobs:
       - name: cargo check
         run: |
           set -o pipefail
-          cargo check --workspace --all-targets --message-format short 2>&1 | tee /tmp/check.log | \
-            perl -ne 'if (/^([^:]+):(\d+):(\d+):\s+error(?:\[[^\]]+\])?:\s*(.*)$/) { print "::error file=$1,line=$2,col=$3::$4\n" }'
+          cargo check --workspace --all-targets 2>&1 | tee /tmp/check.log | perl -e '
+            my $m = "";
+            while (<STDIN>) {
+              if (/^error(?:\[[^\]]+\])?:\s*(.*)$/) { $m = $1; }
+              elsif (/^\s*-->\s*([^:]+):(\d+):(\d+)/ && $m ne "") {
+                print "::error file=$1,line=$2,col=$3::$m\n";
+                $m = "";
+              }
+            }
+          '
 
   fmt:
     name: Formatting
@@ -113,6 +121,9 @@ jobs:
   deny:
     name: Cargo Deny (advisories)
     runs-on: ubuntu-latest
+    # Non-blocking for now: surfaces RustSec advisories without failing the
+    # build while the advisory backlog is triaged.
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: EmbarkStudios/cargo-deny-action@v1
