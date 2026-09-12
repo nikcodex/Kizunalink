@@ -17,7 +17,7 @@ pub async fn destroy_player(
         kizunalink::common::types::SessionId,
         kizunalink::common::types::GuildId,
     )>,
-    State(state): State<Arc<AppState>>,
+    State(state): State<Arc<dyn ServerContext>>,
 ) -> impl IntoResponse {
     tracing::info!("DELETE /v4/sessions/{}/players/{}", session_id, guild_id);
 

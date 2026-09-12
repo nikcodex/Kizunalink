@@ -41,14 +41,14 @@ pub struct PlayerContext {
     pub lyrics_data: Arc<Mutex<Option<crate::lavalink::protocol::models::LyricsData>>>,
     pub last_lyric_index: Arc<AtomicI64>,
     pub tape_stop: Arc<AtomicBool>,
-    pub state: Arc<AppState>,
+    pub state: Arc<dyn ServerContext>,
 }
 
 impl PlayerContext {
     pub fn new(
         guild_id: crate::common::types::GuildId,
         config: &PlayerConfig,
-        state: Arc<AppState>,
+        state: Arc<dyn ServerContext>,
     ) -> Self {
         Self {
             guild_id,

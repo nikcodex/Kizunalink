@@ -21,7 +21,7 @@ use crate::{
 pub async fn websocket_handler(
     headers: HeaderMap,
     ws: WebSocketUpgrade,
-    State(state): State<Arc<AppState>>,
+    State(state): State<Arc<dyn ServerContext>>,
 ) -> Result<Response, (StatusCode, &'static str)> {
     // 1. Authorization Check
     let auth_header = headers.get("authorization").and_then(|h| h.to_str().ok());

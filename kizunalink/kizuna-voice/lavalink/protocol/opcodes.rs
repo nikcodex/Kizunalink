@@ -34,7 +34,7 @@ pub enum IncomingMessage {
 
 pub async fn handle_op(
     op: IncomingMessage,
-    state: &Arc<AppState>,
+    state: &Arc<dyn ServerContext>,
     session_id: &kizunalink::common::types::SessionId,
 ) -> Result<(), String> {
     let session: Arc<Session> = state
@@ -79,7 +79,7 @@ pub async fn handle_op(
 
 async fn handle_voice_update(
     session: &Arc<Session>,
-    state: &Arc<AppState>,
+    state: &Arc<dyn ServerContext>,
     guild_id: kizunalink::common::types::GuildId,
     voice_session_id: String,
     channel_id: Option<String>,
@@ -176,7 +176,7 @@ async fn handle_voice_update(
 
 async fn handle_play(
     session: &Arc<Session>,
-    state: &Arc<AppState>,
+    state: &Arc<dyn ServerContext>,
     guild_id: kizunalink::common::types::GuildId,
     track: String,
 ) -> Result<(), String> {

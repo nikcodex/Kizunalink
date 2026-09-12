@@ -21,7 +21,7 @@ pub async fn update_player(
         kizunalink::common::types::GuildId,
     )>,
     Query(params): Query<std::collections::HashMap<String, String>>,
-    State(state): State<Arc<AppState>>,
+    State(state): State<Arc<dyn ServerContext>>,
     Json(body): Json<PlayerUpdate>,
 ) -> impl IntoResponse {
     tracing::debug!(
@@ -368,7 +368,7 @@ async fn start_playback(
 /// PATCH /v4/sessions/{sessionId}
 pub async fn update_session(
     Path(session_id): Path<kizunalink::common::types::SessionId>,
-    State(state): State<Arc<AppState>>,
+    State(state): State<Arc<dyn ServerContext>>,
     Json(body): Json<protocol::SessionUpdate>,
 ) -> impl IntoResponse {
     tracing::debug!("PATCH /v4/sessions/{}: body={:?}", session_id, body);

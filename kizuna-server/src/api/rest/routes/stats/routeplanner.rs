@@ -12,7 +12,7 @@ use axum::{
 use crate::{protocol, server::AppState};
 
 /// GET /v4/routeplanner/status
-pub async fn routeplanner_status(State(state): State<Arc<AppState>>) -> impl IntoResponse {
+pub async fn routeplanner_status(State(state): State<Arc<dyn ServerContext>>) -> impl IntoResponse {
     tracing::info!("GET /v4/routeplanner/status");
     match &state.routeplanner {
         Some(rp) => (StatusCode::OK, Json(rp.get_status())).into_response(),
@@ -21,7 +21,7 @@ pub async fn routeplanner_status(State(state): State<Arc<AppState>>) -> impl Int
 }
 
 pub async fn routeplanner_free_address(
-    State(state): State<Arc<AppState>>,
+    State(state): State<Arc<dyn ServerContext>>,
     Json(body): Json<protocol::FreeAddressRequest>,
 ) -> impl IntoResponse {
     tracing::info!(
@@ -46,7 +46,7 @@ pub async fn routeplanner_free_address(
     StatusCode::NO_CONTENT.into_response()
 }
 
-pub async fn routeplanner_free_all(State(state): State<Arc<AppState>>) -> impl IntoResponse {
+pub async fn routeplanner_free_all(State(state): State<Arc<dyn ServerContext>>) -> impl IntoResponse {
     tracing::info!("POST /v4/routeplanner/free/all");
 
     let Some(rp) = &state.routeplanner else {

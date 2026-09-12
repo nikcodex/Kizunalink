@@ -7,7 +7,7 @@ pub mod engine;
 pub mod session;
 pub mod udp_link;
 
-pub use crypto::DaveHandler;
+pub use crate::discord::crypto::DaveHandler;
 pub use engine::VoiceEngine;
 pub use session::VoiceGateway;
 pub use udp_link::UDPVoiceTransport;

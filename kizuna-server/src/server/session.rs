@@ -81,7 +81,7 @@ impl Session {
     pub fn get_or_create_player(
         &self,
         guild_id: GuildId,
-        state: Arc<AppState>,
+        state: Arc<dyn ServerContext>,
     ) -> Arc<tokio::sync::RwLock<PlayerContext>> {
         self.players
             .entry(guild_id.clone())

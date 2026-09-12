@@ -17,7 +17,7 @@ use crate::{
     sources::youtube::clients::common::{resolve_format_url, select_best_audio_format},
 };
 
-pub async fn get_youtube_info(State(state): State<Arc<AppState>>) -> impl IntoResponse {
+pub async fn get_youtube_info(State(state): State<Arc<dyn ServerContext>>) -> impl IntoResponse {
     tracing::info!("GET /youtube");
 
     let ctx = match &state.youtube {
@@ -43,7 +43,7 @@ pub async fn get_youtube_info(State(state): State<Arc<AppState>>) -> impl IntoRe
 
 pub async fn youtube_oauth_refresh(
     Path(refresh_token): Path<String>,
-    State(state): State<Arc<AppState>>,
+    State(state): State<Arc<dyn ServerContext>>,
 ) -> impl IntoResponse {
     tracing::info!("GET /youtube/oauth/{}", refresh_token);
 
@@ -103,7 +103,7 @@ pub async fn youtube_stream(
     Path(video_id): Path<String>,
     Query(params): Query<StreamQuery>,
     headers: HeaderMap,
-    State(state): State<Arc<AppState>>,
+    State(state): State<Arc<dyn ServerContext>>,
 ) -> impl IntoResponse {
     tracing::info!(
         "GET /youtube/stream/{} itag={:?} withClient={:?} Range={:?}",

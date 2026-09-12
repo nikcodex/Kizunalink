@@ -24,7 +24,7 @@ use crate::{
 
 pub async fn handle_socket(
     mut socket: WebSocket,
-    state: Arc<AppState>,
+    state: Arc<dyn ServerContext>,
     user_id: Option<UserId>,
     client_session_id: Option<SessionId>,
 ) {
@@ -173,7 +173,7 @@ pub async fn handle_socket(
 }
 
 fn resolve_session(
-    state: &Arc<AppState>,
+    state: &Arc<dyn ServerContext>,
     user_id: Option<UserId>,
     client_session_id: Option<&SessionId>,
     tx: flume::Sender<Message>,
@@ -242,7 +242,7 @@ async fn send_initial_state(socket: &mut WebSocket, session: &Arc<Session>, resu
 }
 
 async fn handle_session_close(
-    state: &Arc<AppState>,
+    state: &Arc<dyn ServerContext>,
     session: Arc<Session>,
     tx: &flume::Sender<Message>,
 ) {

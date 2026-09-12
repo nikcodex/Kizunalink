@@ -18,7 +18,7 @@ use crate::{
 };
 
 pub async fn subscribe_lyrics(
-    State(state): State<Arc<AppState>>,
+    State(state): State<Arc<dyn ServerContext>>,
     Path((session_id, guild_id)): Path<(String, String)>,
 ) -> axum::http::StatusCode {
     let session_id = kizunalink::common::types::SessionId(session_id);
@@ -94,7 +94,7 @@ pub async fn subscribe_lyrics(
 }
 
 pub async fn unsubscribe_lyrics(
-    State(state): State<Arc<AppState>>,
+    State(state): State<Arc<dyn ServerContext>>,
     Path((session_id, guild_id)): Path<(String, String)>,
 ) -> axum::http::StatusCode {
     let session_id = kizunalink::common::types::SessionId(session_id);
@@ -119,7 +119,7 @@ pub async fn unsubscribe_lyrics(
 }
 
 pub async fn get_lyrics(
-    State(state): State<Arc<AppState>>,
+    State(state): State<Arc<dyn ServerContext>>,
     Query(query): Query<GetLyricsQuery>,
 ) -> impl IntoResponse {
     tracing::info!(
@@ -166,7 +166,7 @@ pub async fn get_lyrics(
 }
 
 pub async fn get_player_lyrics(
-    State(state): State<Arc<AppState>>,
+    State(state): State<Arc<dyn ServerContext>>,
     Path((session_id, guild_id)): Path<(String, String)>,
     Query(query): Query<GetPlayerLyricsQuery>,
 ) -> impl IntoResponse {

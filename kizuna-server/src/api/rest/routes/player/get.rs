@@ -14,7 +14,7 @@ use crate::{player::Players, protocol, server::AppState};
 /// GET /v4/sessions/{sessionId}/players
 pub async fn get_players(
     Path(session_id): Path<kizunalink::common::types::SessionId>,
-    State(state): State<Arc<AppState>>,
+    State(state): State<Arc<dyn ServerContext>>,
 ) -> impl IntoResponse {
     tracing::info!("GET /v4/sessions/{}/players", session_id);
 
@@ -49,7 +49,7 @@ pub async fn get_players(
 /// GET /v4/sessions/{sessionId}
 pub async fn get_session(
     Path(session_id): Path<kizunalink::common::types::SessionId>,
-    State(state): State<Arc<AppState>>,
+    State(state): State<Arc<dyn ServerContext>>,
 ) -> impl IntoResponse {
     tracing::info!("GET /v4/sessions/{}", session_id);
 
@@ -79,7 +79,7 @@ pub async fn get_player(
         kizunalink::common::types::SessionId,
         kizunalink::common::types::GuildId,
     )>,
-    State(state): State<Arc<AppState>>,
+    State(state): State<Arc<dyn ServerContext>>,
 ) -> impl IntoResponse {
     tracing::info!("GET /v4/sessions/{}/players/{}", session_id, guild_id);
 
