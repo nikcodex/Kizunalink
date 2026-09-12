@@ -52,6 +52,9 @@ impl HttpClientPool {
                     builder = builder.proxy(proxy_obj);
                 }
                 Err(e) => {
+                    // B18: Proxy config failure is logged loudly. If privacy is critical,
+                    // users should validate their proxy config at startup. We do NOT make
+                    // this fatal because some deployments may intentionally not need proxy.
                     warn!(
                         "HttpClientPool: failed to parse proxy URL '{}': {} — proxy will be ignored",
                         url, e
