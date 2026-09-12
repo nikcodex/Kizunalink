@@ -209,3 +209,82 @@ fn extract_youtube_itag(url: &str) -> Option<u32> {
         if k == "itag" { v.parse().ok() } else { None }
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn audio_format_from_ext() {
+        assert_eq!(AudioFormat::from_ext("mp3"), AudioFormat::Mp3);
+        assert_eq!(AudioFormat::from_ext("opus"), AudioFormat::Opus);
+        assert_eq!(AudioFormat::from_ext("webm"), AudioFormat::Webm);
+        assert_eq!(AudioFormat::from_ext("m4a"), AudioFormat::Mp4);
+        assert_eq!(AudioFormat::from_ext("flac"), AudioFormat::Flac);
+        assert_eq!(AudioFormat::from_ext("wav"), AudioFormat::Wav);
+        assert_eq!(AudioFormat::from_ext("xyz"), AudioFormat::Unknown);
+    }
+
+    #[test]
+    fn audio_format_from_url() {
+        assert_eq!(
+            AudioFormat::from_url("https://example.com/song.mp3"),
+            AudioFormat::Mp3
+        );
+        assert_eq!(
+            AudioFormat::from_url("https://example.com/stream.webm"),
+            AudioFormat::Webm
+        );
+        assert_eq!(
+            AudioFormat::from_url("https://example.com/playlist.m3u8"),
+            AudioFormat::Aac
+        );
+    }
+
+    #[test]
+    fn audio_format_youtube_itag() {
+        // itag 251 = webm opus
+        assert_eq!(
+            AudioFormat::from_url("https://googlevideo.com/videoplayback?itag=251"),
+            AudioFormat::Webm
+        );
+        // itag 140 = mp4 aac
+        assert_eq!(
+            AudioFormat::from_url("https://googlevideo.com/videoplayback?itag=140"),
+            AudioFormat::Mp4
+        );
+    }
+
+    #[test]
+    fn audio_format_is_opus_passthrough() {
+        assert!(AudioFormat::Webm.is_opus_passthrough());
+        assert!(AudioFormat::Ogg.is_opus_passthrough());
+        assert!(AudioFormat::Opus.is_opus_passthrough());
+        assert!(!AudioFormat::Mp3.is_opus_passthrough());
+        assert!(!AudioFormat::Mp4.is_opus_passthrough());
+    }
+
+    #[test]
+    fn audio_format_as_ext_roundtrip() {
+        for fmt in [
+            AudioFormat::Aac,
+            AudioFormat::Opus,
+            AudioFormat::Webm,
+            AudioFormat::Mp4,
+            AudioFormat::Mp3,
+            AudioFormat::Ogg,
+            AudioFormat::Flac,
+            AudioFormat::Wav,
+        ] {
+            let ext = fmt.as_ext();
+            assert_eq!(AudioFormat::from_ext(ext), fmt, "roundtrip failed for {ext}");
+        }
+    }
+
+    #[test]
+    fn session_id_generate_length() {
+        let id = SessionId::generate();
+        assert_eq!(id.0.len(), 16);
+        assert!(id.0.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit()));
+    }
+}
