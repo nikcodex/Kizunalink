@@ -1,3 +1,11 @@
+# ╔════════════════════════════════════════════════════════════════╗
+# ║  KizunaLink — Example Configuration                          ║
+# ║                                                              ║
+# ║  Copy this file to config.toml and customize for production. ║
+# ║  Tokens shown as "your-*-token" must be replaced.            ║
+# ║  Leave values empty or commented out to disable features.     ║
+# ╚════════════════════════════════════════════════════════════════╝
+
 [server]
 address = "0.0.0.0"
 port = 2333
