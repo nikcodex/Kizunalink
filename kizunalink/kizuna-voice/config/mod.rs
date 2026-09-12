@@ -90,6 +90,37 @@ impl AppConfig {
         }
 
         let config: Self = toml::from_str(&raw)?;
+
+        // P06: Validate configuration at startup so bad values fail fast.
+        config.validate()?;
+
         Ok(config)
+    }
+
+    /// Validate configuration values. Called at startup to catch errors early.
+    fn validate(&self) -> AnyResult<()> {
+        // Validate opus encoding quality range
+        if self.player.opus_encoding_quality == 0 || self.player.opus_encoding_quality > 10 {
+            return Err(format!(
+                "player.opus_encoding_quality must be 1-10, got {}",
+                self.player.opus_encoding_quality
+            )
+            .into());
+        }
+
+        // Validate port is not zero
+        if self.server.port == 0 {
+            return Err("server.port must be non-zero".into());
+        }
+
+        // Warn if authorization is the default
+        if self.server.authorization == "youshallnotpass" {
+            tracing::warn!(
+                "server.authorization is set to the default 'youshallnotpass'. \
+                 Change this for production deployments!"
+            );
+        }
+
+        Ok(())
     }
 }
