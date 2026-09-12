@@ -28,7 +28,7 @@ fn url_regex() -> &'static Regex {
 pub struct JioSaavnSource {
     pub(crate) client: Arc<reqwest::Client>,
     pub(crate) secret_key: Vec<u8>,
-    pub(crate) proxy: Option<crate::config::HttpProxyConfig>,
+    pub(crate) proxy: Option<crate::config::sources::HttpProxyConfig>,
     // Limits
     pub(crate) search_limit: usize,
     pub(crate) recommendations_limit: usize,
@@ -186,7 +186,7 @@ impl crate::media::sources::plugin::SourcePlugin for JioSaavnSource {
         }))
     }
 
-    fn get_proxy_config(&self) -> Option<crate::config::HttpProxyConfig> {
+    fn get_proxy_config(&self) -> Option<crate::config::sources::HttpProxyConfig> {
         self.proxy.clone()
     }
 

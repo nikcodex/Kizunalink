@@ -10,7 +10,7 @@ use crate::{
         AudioFrame,
         processor::{AudioProcessor, DecoderCommand},
     },
-    config::HttpProxyConfig,
+    config::sources::HttpProxyConfig,
     media::sources::{
         gaana::crypto::decrypt_stream_path,
         plugin::{DecoderOutput, PlayableTrack},

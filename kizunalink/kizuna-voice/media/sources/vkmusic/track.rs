@@ -11,7 +11,7 @@ use crate::media::sources::{
 pub struct VkMusicTrack {
     pub stream_url: String,
     pub local_addr: Option<IpAddr>,
-    pub proxy: Option<crate::config::HttpProxyConfig>,
+    pub proxy: Option<crate::config::sources::HttpProxyConfig>,
 }
 
 impl PlayableTrack for VkMusicTrack {

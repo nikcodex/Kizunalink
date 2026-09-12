@@ -917,7 +917,7 @@ impl SourcePlugin for SoundCloudSource {
         self.get_track_from_url(&url, &client_id, local_addr).await
     }
 
-    fn get_proxy_config(&self) -> Option<crate::config::HttpProxyConfig> {
+    fn get_proxy_config(&self) -> Option<crate::config::sources::HttpProxyConfig> {
         self.config.proxy.clone()
     }
 }

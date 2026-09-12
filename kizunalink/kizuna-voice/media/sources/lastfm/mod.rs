@@ -51,7 +51,7 @@ pub struct LastFMSource {
 
 impl LastFMSource {
     pub fn new(
-        config: Option<crate::config::sources::sources::LastFmConfig>,
+        config: Option<crate::config::sources::LastFmConfig>,
         http: Arc<reqwest::Client>,
     ) -> Result<Self, String> {
         let (api_key, search_limit) = if let Some(c) = config {

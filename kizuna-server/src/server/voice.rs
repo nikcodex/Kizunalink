@@ -12,7 +12,7 @@ use crate::{
     audio::filters::FilterChain,
     common::types::{ChannelId, GuildId, Shared, UserId},
     gateway::{VoiceEngine, VoiceGateway},
-    player::VoiceConnectionState,
+    discord::player::VoiceConnectionState,
     protocol::KizunaLinkEvent,
 };
 

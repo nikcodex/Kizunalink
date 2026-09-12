@@ -27,7 +27,7 @@ pub struct YandexMusicSource {
     playlist_load_limit: usize,
     album_load_limit: usize,
     artist_load_limit: usize,
-    proxy: Option<crate::config::HttpProxyConfig>,
+    proxy: Option<crate::config::sources::HttpProxyConfig>,
 }
 
 const API_BASE: &str = "https://api.music.yandex.net";
@@ -557,7 +557,7 @@ impl SourcePlugin for YandexMusicSource {
         }))
     }
 
-    fn get_proxy_config(&self) -> Option<crate::config::HttpProxyConfig> {
+    fn get_proxy_config(&self) -> Option<crate::config::sources::HttpProxyConfig> {
         self.proxy.clone()
     }
 }

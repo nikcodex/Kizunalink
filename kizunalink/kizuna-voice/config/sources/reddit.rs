@@ -3,7 +3,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::config::sources::sources::HttpProxyConfig;
+use crate::config::sources::HttpProxyConfig;
 
 #[derive(Debug, Deserialize, Serialize, Clone, Default)]
 #[serde(default)]

@@ -121,7 +121,7 @@ fn register_core_sources(
     register!(
         config.sources.spotify.as_ref().is_some_and(|c| c.enabled),
         "Spotify",
-        None::<crate::config::HttpProxyConfig>,
+        None::<crate::config::sources::HttpProxyConfig>,
         SpotifySource::new(config.sources.spotify.clone(), http_pool.get(None))
     );
 
@@ -312,7 +312,7 @@ fn register_core_sources(
     register!(
         config.sources.lastfm.as_ref().is_some_and(|c| c.enabled),
         "Last.fm",
-        None::<crate::config::HttpProxyConfig>,
+        None::<crate::config::sources::HttpProxyConfig>,
         LastFMSource::new(config.sources.lastfm.clone(), http_pool.get(None))
     );
 

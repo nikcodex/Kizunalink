@@ -30,7 +30,7 @@ fn url_regex() -> &'static Regex {
 pub struct GaanaSource {
     client: Arc<reqwest::Client>,
     stream_quality: String,
-    proxy: Option<crate::config::HttpProxyConfig>,
+    proxy: Option<crate::config::sources::HttpProxyConfig>,
     // Limits
     search_limit: usize,
     playlist_load_limit: usize,
@@ -600,7 +600,7 @@ impl SourcePlugin for GaanaSource {
         }))
     }
 
-    fn get_proxy_config(&self) -> Option<crate::config::HttpProxyConfig> {
+    fn get_proxy_config(&self) -> Option<crate::config::sources::HttpProxyConfig> {
         self.proxy.clone()
     }
 }

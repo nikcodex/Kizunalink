@@ -20,7 +20,7 @@ use crate::{
 
 pub struct VkMusicSource {
     api: VkApiClient,
-    proxy: Option<crate::config::HttpProxyConfig>,
+    proxy: Option<crate::config::sources::HttpProxyConfig>,
     search_limit: usize,
     playlist_track_limit: usize,
     artist_track_limit: usize,
@@ -549,7 +549,7 @@ impl SourcePlugin for VkMusicSource {
         }))
     }
 
-    fn get_proxy_config(&self) -> Option<crate::config::HttpProxyConfig> {
+    fn get_proxy_config(&self) -> Option<crate::config::sources::HttpProxyConfig> {
         self.proxy.clone()
     }
 }

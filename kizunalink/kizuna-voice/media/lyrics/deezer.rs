@@ -9,7 +9,7 @@ use super::{
     utils::{self, TokenManager},
 };
 use crate::{
-    config::HttpProxyConfig,
+    config::sources::HttpProxyConfig,
     lavalink::protocol::{
         models::{LyricsData, LyricsLine},
         tracks::TrackInfo,

@@ -30,7 +30,7 @@ impl DeezerReader {
         track_id: &str,
         master_key: &str,
         local_addr: Option<std::net::IpAddr>,
-        proxy: Option<crate::config::HttpProxyConfig>,
+        proxy: Option<crate::config::sources::HttpProxyConfig>,
     ) -> AnyResult<Self> {
         debug!("Initializing DeezerReader for track {}", track_id);
 

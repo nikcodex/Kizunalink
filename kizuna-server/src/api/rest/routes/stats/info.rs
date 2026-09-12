@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use axum::{extract::State, response::Json};
 
-use crate::{player::Filters, protocol, server::AppState};
+use crate::{discord::player::Filters, protocol, server::AppState};
 
 /// GET /v4/info
 pub async fn get_info(State(state): State<Arc<dyn ServerContext>>) -> Json<protocol::Info> {

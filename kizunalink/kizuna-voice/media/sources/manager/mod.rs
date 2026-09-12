@@ -126,7 +126,7 @@ impl SourceManager {
     }
 
     /// Retrieves proxy configuration for a specific source by name.
-    pub fn get_proxy_config(&self, source_name: &str) -> Option<crate::config::HttpProxyConfig> {
+    pub fn get_proxy_config(&self, source_name: &str) -> Option<crate::config::sources::HttpProxyConfig> {
         self.sources
             .iter()
             .find(|s| s.name() == source_name)

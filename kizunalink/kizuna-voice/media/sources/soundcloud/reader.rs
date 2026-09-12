@@ -14,7 +14,7 @@ use tracing::debug;
 use crate::{
     engine::source::{HttpSource, create_client},
     common::types::AnyResult,
-    config::HttpProxyConfig,
+    config::sources::HttpProxyConfig,
     media::sources::youtube::hls::{
         fetcher::fetch_segment_into, resolver::resolve_playlist, ts_demux::extract_adts_from_ts,
         types::Resource,

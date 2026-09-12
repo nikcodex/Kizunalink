@@ -561,7 +561,7 @@ impl SourcePlugin for AudiomackSource {
         }))
     }
 
-    fn get_proxy_config(&self) -> Option<crate::config::HttpProxyConfig> {
+    fn get_proxy_config(&self) -> Option<crate::config::sources::HttpProxyConfig> {
         None
     }
 }

@@ -8,9 +8,9 @@ use flume::{Receiver, Sender};
 
 use crate::{
     engine::{AudioFrame, processor::DecoderCommand},
-    config::HttpProxyConfig,
+    config::sources::HttpProxyConfig,
     lavalink::protocol::tracks::{LoadResult, SearchResult},
-    routeplanner::RoutePlanner,
+    lavalink::routeplanner::RoutePlanner,
 };
 
 /// Returns `(frame_rx, cmd_tx, error_rx)` where:

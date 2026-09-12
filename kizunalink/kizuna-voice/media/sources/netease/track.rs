@@ -4,7 +4,7 @@
 use std::net::IpAddr;
 
 use crate::{
-    config::HttpProxyConfig,
+    config::sources::HttpProxyConfig,
     media::sources::{
         http::HttpTrack,
         plugin::{DecoderOutput, PlayableTrack},

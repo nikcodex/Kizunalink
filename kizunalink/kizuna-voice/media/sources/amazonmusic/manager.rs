@@ -37,7 +37,7 @@ const DOMAIN_RE: &str = r"(?i)^https?://(?:www\.)?music\.amazon\.";
 pub struct AmazonMusicSource {
     client: Arc<AmazonMusicClient>,
     search_limit: usize,
-    proxy: Option<crate::config::HttpProxyConfig>,
+    proxy: Option<crate::config::sources::HttpProxyConfig>,
     track_re: Regex,
     album_re: Regex,
     artist_re: Regex,
@@ -495,7 +495,7 @@ impl SourcePlugin for AmazonMusicSource {
         None
     }
 
-    fn get_proxy_config(&self) -> Option<crate::config::HttpProxyConfig> {
+    fn get_proxy_config(&self) -> Option<crate::config::sources::HttpProxyConfig> {
         self.proxy.clone()
     }
 }

@@ -21,7 +21,7 @@ const TWITCH_IMAGE_PREVIEW_URL: &str =
 
 pub struct TwitchSource {
     gql: Arc<TwitchGqlClient>,
-    proxy: Option<crate::config::HttpProxyConfig>,
+    proxy: Option<crate::config::sources::HttpProxyConfig>,
     stream_name_regex: Regex,
     twitch_domain_regex: Regex,
 }
@@ -208,7 +208,7 @@ impl SourcePlugin for TwitchSource {
         }))
     }
 
-    fn get_proxy_config(&self) -> Option<crate::config::HttpProxyConfig> {
+    fn get_proxy_config(&self) -> Option<crate::config::sources::HttpProxyConfig> {
         self.proxy.clone()
     }
 }

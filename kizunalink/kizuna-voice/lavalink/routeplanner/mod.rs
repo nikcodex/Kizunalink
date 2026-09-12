@@ -15,7 +15,7 @@ use tracing::{debug, info};
 
 use crate::lavalink::protocol::{
     BalancingIpDetails,
-    routeplanner::{FailingAddress, IpBlock, RotatingIpDetails, RoutePlannerStatus},
+    lavalink::routeplanner::{FailingAddress, IpBlock, RotatingIpDetails, RoutePlannerStatus},
 };
 
 #[async_trait]

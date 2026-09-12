@@ -15,7 +15,7 @@ use crate::{
         processor::{AudioProcessor, DecoderCommand},
     },
     common::types::AudioFormat,
-    config::HttpProxyConfig,
+    config::sources::HttpProxyConfig,
     media::sources::{
         plugin::{DecoderOutput, PlayableTrack},
         youtube::hls::{

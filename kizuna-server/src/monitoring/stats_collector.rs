@@ -7,7 +7,7 @@ use sysinfo::{CpuRefreshKind, MemoryRefreshKind, ProcessRefreshKind, RefreshKind
 
 use crate::{
     protocol,
-    server::{AppState, session::Session},
+    common::server_hooks::{ServerContext, session::Session},
 };
 
 /// Collects system and process-level metrics.

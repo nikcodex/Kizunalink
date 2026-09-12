@@ -20,7 +20,7 @@ impl DeezerRemoteReader {
     pub fn new(
         url: &str,
         local_addr: Option<std::net::IpAddr>,
-        proxy: Option<crate::config::HttpProxyConfig>,
+        proxy: Option<crate::config::sources::HttpProxyConfig>,
     ) -> AnyResult<Self> {
         let client = create_client(USER_AGENT.to_owned(), local_addr, proxy, None)?;
         let inner = HttpSource::new(client, url)?;

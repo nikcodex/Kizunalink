@@ -7,7 +7,7 @@ use tracing::{debug, error, info, warn};
 
 use crate::{
     engine::{AudioFrame, processor::DecoderCommand},
-    config::HttpProxyConfig,
+    config::sources::HttpProxyConfig,
     media::sources::{
         plugin::{DecoderOutput, PlayableTrack},
         youtube::{

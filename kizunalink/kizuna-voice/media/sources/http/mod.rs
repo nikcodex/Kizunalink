@@ -206,7 +206,7 @@ impl SourcePlugin for HttpSource {
 pub struct HttpTrack {
     pub url: String,
     pub local_addr: Option<std::net::IpAddr>,
-    pub proxy: Option<crate::config::HttpProxyConfig>,
+    pub proxy: Option<crate::config::sources::HttpProxyConfig>,
 }
 
 impl PlayableTrack for HttpTrack {

@@ -3,11 +3,11 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::config::sources::sources::{default_false, default_zero};
+use crate::config::sources::{default_false, default_zero};
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct FloweryConfig {
-    #[serde(default = "crate::config::sources::sources::default_true")]
+    #[serde(default = "crate::config::sources::default_true")]
     pub enabled: bool,
     #[serde(default = "default_voice")]
     pub voice: String,

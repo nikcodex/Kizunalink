@@ -7,8 +7,8 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use crate::{
-    player::VoiceConnectionState,
-    server::{AppState, Session},
+    discord::player::VoiceConnectionState,
+    common::server_hooks::{ServerContext, Session},
 };
 
 #[derive(Deserialize, Debug)]

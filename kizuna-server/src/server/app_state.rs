@@ -9,7 +9,7 @@ use sysinfo::System;
 
 use crate::{
     common::types::SessionId,
-    routeplanner::RoutePlanner,
+    lavalink::routeplanner::RoutePlanner,
     server::session::Session,
     sources::{SourceManager, youtube::YoutubeStreamContext},
 };

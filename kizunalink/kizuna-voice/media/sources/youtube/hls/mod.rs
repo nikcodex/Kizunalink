@@ -26,7 +26,7 @@ use self::{
     ts_demux::extract_adts_from_ts,
     types::Resource,
 };
-use crate::{config::HttpProxyConfig, media::sources::youtube::cipher::YouTubeCipherManager};
+use crate::{config::sources::HttpProxyConfig, media::sources::youtube::cipher::YouTubeCipherManager};
 
 /// Number of segments fetched into the look-ahead buffer by the background thread.
 /// Increased to 4 to provide a deeper buffer against network jitter.

@@ -18,7 +18,7 @@ impl HttpReader {
     pub fn new(
         url: &str,
         local_addr: Option<std::net::IpAddr>,
-        proxy: Option<crate::config::HttpProxyConfig>,
+        proxy: Option<crate::config::sources::HttpProxyConfig>,
     ) -> AnyResult<Self> {
         let user_agent = crate::common::utils::default_user_agent();
 

@@ -6,7 +6,7 @@ use std::{net::IpAddr, time::Duration};
 use reqwest::{Client, Proxy, header::HeaderMap};
 use tracing::warn;
 
-use crate::{common::types::AnyResult, config::HttpProxyConfig};
+use crate::{common::types::AnyResult, config::sources::HttpProxyConfig};
 
 pub fn create_client(
     user_agent: String,

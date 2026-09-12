@@ -4,7 +4,7 @@
 use serde::{Deserialize, Serialize};
 
 use super::HttpProxyConfig;
-use crate::config::sources::sources::{default_false, default_true};
+use crate::config::sources::{default_false, default_true};
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct DeezerConfig {
