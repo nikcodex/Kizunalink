@@ -33,3 +33,30 @@ pub enum GatewayError {
     #[error("{0}")]
     Other(String),
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn heartbeat_timeout_display() {
+        let err = GatewayError::HeartbeatTimeout(5000);
+        assert!(err.to_string().contains("5000"));
+    }
+
+    #[test]
+    fn closed_display() {
+        let err = GatewayError::Closed {
+            code: 4014,
+            reason: "disconnected".into(),
+        };
+        assert!(err.to_string().contains("4014"));
+        assert!(err.to_string().contains("disconnected"));
+    }
+
+    #[test]
+    fn websocket_display() {
+        let err = GatewayError::WebSocket("connection reset".into());
+        assert!(err.to_string().contains("connection reset"));
+    }
+}
