@@ -102,7 +102,7 @@ pub async fn monitor_loop(ctx: MonitorCtx) {
                 cur_pos,
                 &ctx.last_lyric_index,
                 &ctx.lyrics_data,
-                &ctx.session,
+                ctx.session.as_ref(),
             )
             .await;
         }

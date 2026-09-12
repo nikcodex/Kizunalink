@@ -9,6 +9,9 @@ pub enum SourceError {
     #[error("HTTP error: {0}")]
     Http(#[from] reqwest::Error),
 
+    #[error("HTTP status error: {0}")]
+    HttpStatus(#[from] reqwest::StatusCode),
+
     #[error("JSON error: {0}")]
     Json(#[from] serde_json::Error),
 

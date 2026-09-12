@@ -36,7 +36,7 @@ pub struct PlaybackStartConfig {
 
 /// Start playing a new track on `player`.
 pub async fn start_playback(player: &mut PlayerContext, config: PlaybackStartConfig) {
-    stop_current_track(player, &config.session).await;
+    stop_current_track(player, config.session.as_ref()).await;
 
     player.track_info = crate::lavalink::protocol::tracks::Track::decode(&config.track);
     player.track = Some(config.track.clone());
@@ -79,14 +79,14 @@ pub async fn start_playback(player: &mut PlayerContext, config: PlaybackStartCon
         Ok(Ok(t)) => t,
         Ok(Err(e)) => {
             error!("Failed to resolve track: {} (Error: {})", identifier, e);
-            send_load_failed(player, &config.session, e).await;
+            send_load_failed(player, config.session.as_ref(), e).await;
             return;
         }
         Err(_) => {
             error!("Track resolution timed out (30 s): {}", identifier);
             send_load_failed(
                 player,
-                &config.session,
+                config.session.as_ref(),
                 format!("Track resolution timed out: {identifier}"),
             )
             .await;
@@ -206,11 +206,11 @@ async fn stop_current_track(player: &mut PlayerContext, session: &(dyn crate::co
     player.position = 0;
     player.end_time = None;
 
-    session.total_sent_historical.fetch_add(
+    session.total_sent_historical().fetch_add(
         player.frames_sent.swap(0, Ordering::Relaxed),
         Ordering::Relaxed,
     );
-    session.total_nulled_historical.fetch_add(
+    session.total_nulled_historical().fetch_add(
         player.frames_nulled.swap(0, Ordering::Relaxed),
         Ordering::Relaxed,
     );
