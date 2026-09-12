@@ -16,7 +16,8 @@ use crate::{
     engine::{Mixer, engine::Encoder, filters::FilterChain},
     common::types::Shared,
     discord::crypto::DaveHandler,
-    discord::gateway::constants::{
+    discord::gateway::{
+        constants::{
             DISCOVERY_PACKET_SIZE, FRAME_DURATION_MS, IP_DISCOVERY_RETRIES,
             IP_DISCOVERY_RETRY_INTERVAL_MS, IP_DISCOVERY_TIMEOUT_SECS, MAX_OPUS_FRAME_SIZE,
             MAX_SILENCE_FRAMES, PCM_FRAME_SAMPLES, SILENCE_FRAME, UDP_KEEPALIVE_GAP_MS,
