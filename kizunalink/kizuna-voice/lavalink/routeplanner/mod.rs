@@ -142,6 +142,10 @@ impl BalancingIpRoutePlanner {
         let mut b_idx = self.block_index.lock().unwrap_or_else(|e| e.into_inner());
         let mut indices = self.ip_indices.lock().unwrap_or_else(|e| e.into_inner());
 
+        // B06: Defensive check against empty blocks (would cause division by zero)
+        if self.parsed_blocks.is_empty() {
+            return std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST);
+        }
         let block_idx = *b_idx % self.parsed_blocks.len();
         let block = &self.parsed_blocks[block_idx];
 
@@ -213,7 +217,9 @@ impl RoutePlanner for BalancingIpRoutePlanner {
             .collect();
 
         if self.ip_blocks.len() == 1 {
-            let index = self.ip_indices.lock().unwrap_or_else(|e| e.into_inner())[0];
+            let indices = self.ip_indices.lock().unwrap_or_else(|e| e.into_inner());
+            let index = indices.first().copied().unwrap_or(0);
+            drop(indices); // B06: release lock before computing IP
             let current_ip = Self::calculate_ip(&self.parsed_blocks[0], index).to_string();
 
             RoutePlannerStatus::RotatingIpRoutePlanner(RotatingIpDetails {

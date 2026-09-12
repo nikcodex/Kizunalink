@@ -7,6 +7,12 @@ pub const FRAME_SIZE_SAMPLES: usize = 960 * 2;
 pub const MIXER_CHANNELS: usize = 2;
 pub const OPUS_SAMPLE_RATE: u64 = 48_000;
 
+// Q13: Compile-time assertion — if you change TARGET_SAMPLE_RATE, these modules break:
+// - EQ biquad coefficients (hardcoded 48 kHz)
+// - Sinc resampler (assumes 48 kHz)
+// - Opus encoder (960 samples = 20ms at 48 kHz)
+const _: () = assert!(TARGET_SAMPLE_RATE == 48_000, "TARGET_SAMPLE_RATE must be 48000");
+
 // ── i16 PCM clip boundaries ──────────────────────────────────────────────────
 
 pub const INT16_MAX_F: f32 = 32_767.0;
