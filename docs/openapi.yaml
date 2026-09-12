@@ -1,0 +1,497 @@
+openapi: 3.0.3
+info:
+  title: KizunaLink
+  version: 1.1.0
+  description: |
+    KizunaLink is a Lavalink v4-compatible standalone audio sending node for
+    Discord bots. It provides a REST API for track loading, session/player
+    management, and a WebSocket endpoint for real-time player events.
+
+    ## Authentication
+    Every REST and WebSocket request must include the configured password in
+    the `Authorization` header (e.g. `Authorization: youshallnotpass`).
+    WebSocket connections additionally send `User-Id` and `Client-Name` headers.
+  license:
+    name: MIT
+    url: https://github.com/nikcodex/Kizunalink/blob/main/LICENSE
+
+servers:
+  - url: http://localhost:2333
+    description: Local development server
+
+tags:
+  - name: Info
+    description: Version and instance information
+  - name: Track Loading
+    description: Resolve tracks/searches and decode track strings
+  - name: Players
+    description: Session and player (guild) playback management
+  - name: Lyrics
+    description: Lyrics providers and subscription
+  - name: RoutePlanner
+    description: IP rotation/balancing for source APIs
+  - name: YouTube
+    description: YouTube-specific endpoints (streams, OAuth)
+  - name: WebSocket
+    description: Real-time player events
+
+security:
+  - passwordAuth: []
+
+paths:
+  /version:
+    get:
+      tags: [Info]
+      summary: Get server version and build information
+      responses:
+        "200":
+          description: Version details
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /v4/info:
+    get:
+      tags: [Info]
+      summary: Get node info (version, git commit, system info)
+      responses:
+        "200":
+          description: Node information
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /v4/stats:
+    get:
+      tags: [Info]
+      summary: Get current statistics (players, CPU, memory, uptime)
+      responses:
+        "200":
+          description: Statistics payload
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /v4/loadtracks:
+    get:
+      tags: [Track Loading]
+      summary: Resolve an identifier (URL, search query, or track code)
+      parameters:
+        - name: identifier
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Track URL, search query (e.g. "ytsearch:..."), or provider URI
+      responses:
+        "200":
+          description: Track load result (tracks, playlist info, or error reason)
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /v4/loadsearch:
+    get:
+      tags: [Track Loading]
+      summary: Search for tracks using the default search prefix
+      parameters:
+        - name: query
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Search result
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /v4/decodetrack:
+    get:
+      tags: [Track Loading]
+      summary: Decode a single encoded track string
+      parameters:
+        - name: track
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Base64-encoded track
+      responses:
+        "200":
+          description: Decoded track info
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /v4/decodetracks:
+    post:
+      tags: [Track Loading]
+      summary: Decode multiple encoded track strings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                type: string
+      responses:
+        "200":
+          description: Decoded track info list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+
+  /v4/sessions/{sessionId}:
+    get:
+      tags: [Players]
+      summary: Get a session
+      parameters:
+        - $ref: "#/components/parameters/sessionId"
+      responses:
+        "200":
+          description: Session details
+        "404":
+          description: Session not found
+    patch:
+      tags: [Players]
+      summary: Update session (resuming / timeout)
+      parameters:
+        - $ref: "#/components/parameters/sessionId"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                resuming:
+                  type: boolean
+                timeout:
+                  type: integer
+      responses:
+        "200":
+          description: Updated session info
+        "404":
+          description: Session not found
+
+  /v4/sessions/{sessionId}/players:
+    get:
+      tags: [Players]
+      summary: List players in a session
+      parameters:
+        - $ref: "#/components/parameters/sessionId"
+      responses:
+        "200":
+          description: List of players
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+
+  /v4/sessions/{sessionId}/players/{guildId}:
+    parameters:
+      - $ref: "#/components/parameters/sessionId"
+      - $ref: "#/components/parameters/guildId"
+    get:
+      tags: [Players]
+      summary: Get a player (guild playback state)
+      responses:
+        "200":
+          description: Player state
+          content:
+            application/json:
+              schema:
+                type: object
+        "404":
+          description: Player or session not found
+    patch:
+      tags: [Players]
+      summary: Update a player (track, filters, voice, volume, position)
+      parameters:
+        - name: noReplace
+          in: query
+          schema:
+            type: boolean
+          description: If true, do not replace a currently playing track
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PlayerUpdate"
+      responses:
+        "200":
+          description: Updated player state
+          content:
+            application/json:
+              schema:
+                type: object
+        "400":
+          description: Invalid request (disabled filters, partial voice state)
+        "404":
+          description: Session not found
+    delete:
+      tags: [Players]
+      summary: Destroy a player
+      responses:
+        "204":
+          description: Player destroyed
+        "404":
+          description: Session not found
+
+  /v4/lyrics:
+    get:
+      tags: [Lyrics]
+      summary: Search for lyrics for a track
+      parameters:
+        - name: track
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Track title/artist, or encoded track
+      responses:
+        "200":
+          description: Lyrics result
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /v4/sessions/{sessionId}/players/{guildId}/lyrics/subscribe:
+    parameters:
+      - $ref: "#/components/parameters/sessionId"
+      - $ref: "#/components/parameters/guildId"
+    post:
+      tags: [Lyrics]
+      summary: Subscribe to synchronized lyrics for the current track
+      responses:
+        "200":
+          description: Subscription started
+        "204":
+          description: No lyrics available
+    delete:
+      tags: [Lyrics]
+      summary: Unsubscribe from synchronized lyrics
+      responses:
+        "204":
+          description: Subscription removed
+
+  /v4/sessions/{sessionId}/players/{guildId}/track/lyrics:
+    get:
+      tags: [Lyrics]
+      summary: Get lyrics for the currently playing track
+      parameters:
+        - $ref: "#/components/parameters/sessionId"
+        - $ref: "#/components/parameters/guildId"
+      responses:
+        "200":
+          description: Lyrics for the current track
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /v4/routeplanner/status:
+    get:
+      tags: [RoutePlanner]
+      summary: Get route planner status (current IP block/address)
+      responses:
+        "200":
+          description: Route planner status
+          content:
+            application/json:
+              schema:
+                type: object
+        "204":
+          description: No route planner configured
+
+  /v4/routeplanner/free/address:
+    post:
+      tags: [RoutePlanner]
+      summary: Free a failing address
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                address:
+                  type: string
+      responses:
+        "204":
+          description: Address freed
+
+  /v4/routeplanner/free/all:
+    post:
+      tags: [RoutePlanner]
+      summary: Free all failing addresses
+      responses:
+        "204":
+          description: All addresses freed
+
+  /youtube:
+    get:
+      tags: [YouTube]
+      summary: Get YouTube source status/statistics
+      responses:
+        "200":
+          description: YouTube client information
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /youtube/stream/{videoId}:
+    get:
+      tags: [YouTube]
+      summary: Stream a YouTube video (audio)
+      parameters:
+        - name: videoId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Audio stream
+
+  /youtube/oauth/{refreshToken}:
+    get:
+      tags: [YouTube]
+      summary: Refresh a YouTube OAuth token
+      parameters:
+        - name: refreshToken
+          in: path
+          required: true
+          schema:
+            type: string
+          description: OAuth refresh token
+      responses:
+        "200":
+          description: Refreshed token payload
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /v4/websocket:
+    get:
+      tags: [WebSocket]
+      summary: Open a WebSocket connection for player events
+      parameters:
+        - name: User-Id
+          in: header
+          required: false
+          schema:
+            type: string
+        - name: Client-Name
+          in: header
+          required: false
+          schema:
+            type: string
+      responses:
+        "101":
+          description: WebSocket upgraded
+
+components:
+  securitySchemes:
+    passwordAuth:
+      type: apiKey
+      in: header
+      name: Authorization
+      description: The configured server password (sent as a plain header value)
+
+  parameters:
+    sessionId:
+      name: sessionId
+      in: path
+      required: true
+      schema:
+        type: string
+      description: The Lavalink session ID
+    guildId:
+      name: guildId
+      in: path
+      required: true
+      schema:
+        type: string
+      description: The Discord guild (server) ID
+
+  schemas:
+    PlayerUpdate:
+      type: object
+      description: Partial player update — all fields optional.
+      properties:
+        track:
+          $ref: "#/components/schemas/Track"
+          description: Encoded track to play
+        encodedTrack:
+          type: string
+          description: Base64-encoded track (or null/clear)
+        identifier:
+          type: string
+          description: Track URL or search query to load
+        position:
+          type: integer
+          description: Seek position in milliseconds
+        endTime:
+          type: integer
+          nullable: true
+          description: Track end time in milliseconds (or null to clear)
+        volume:
+          type: integer
+          description: Volume (0-1000)
+        paused:
+          type: boolean
+        filters:
+          type: object
+          description: Audio filter configuration
+        voice:
+          type: object
+          description: Voice state update
+          properties:
+            token:
+              type: string
+            endpoint:
+              type: string
+            sessionId:
+              type: string
+    Track:
+      type: object
+      properties:
+        encoded:
+          type: string
+        info:
+          type: object
+          properties:
+            identifier:
+              type: string
+            title:
+              type: string
+            author:
+              type: string
+            length:
+              type: integer
+            isStream:
+              type: boolean
+            uri:
+              type: string
+            artworkUrl:
+              type: string
+            isrc:
+              type: string
+            sourceName:
+              type: string

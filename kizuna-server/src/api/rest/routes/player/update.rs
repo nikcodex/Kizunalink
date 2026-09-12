@@ -303,7 +303,10 @@ async fn apply_track_update(
 }
 
 async fn stop_player(player: &mut PlayerContext, session: &Arc<Session>) {
+    // B08: capture the real track info *before* mutating player state so the
+    // TrackEnd event carries the actual track rather than a default stub.
     let track_data = player.track.clone();
+    let track_info = player.track_info.clone();
     if let Some(handle) = &player.track_handle {
         player
             .stop_signal
@@ -317,10 +320,10 @@ async fn stop_player(player: &mut PlayerContext, session: &Arc<Session>) {
     }
     player.track_handle = None;
     player.track = None;
+    player.track_info = None;
 
     if let Some(encoded) = track_data {
-        // B08 fix: use the real track info instead of default
-        let track_info = player.track_info.clone().unwrap_or_else(|| {
+        let track_info = track_info.unwrap_or_else(|| {
             protocol::tracks::Track {
                 encoded: encoded.clone(),
                 info: protocol::tracks::TrackInfo::default(),

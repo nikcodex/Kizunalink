@@ -1,0 +1,26 @@
+# taplo — TOML formatter/linter configuration for KizunaLink
+# Run locally with: taplo format --check
+
+include = ["**/Cargo.toml", "**/*.toml"]
+exclude = ["target/**", "**/Cargo.lock"]
+
+[formatting]
+align_entries = false
+align_comments = true
+array_trailing_comma = true
+array_auto_expand = true
+array_auto_collapse = false
+compact_arrays = true
+compact_inline_tables = false
+inline_table_expand = true
+reorder_keys = true
+reorder_arrays = false
+allowed_blank_lines = 1
+indent_string = "    "
+trailing_newline = true
+crlf = false
+
+[[rule]]
+# Keep header comments at the top of Cargo.toml and config files.
+include = ["Cargo.toml", "**/Cargo.toml"]
+keys = []
