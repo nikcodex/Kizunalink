@@ -13,8 +13,8 @@ use super::{
     utils::{extract_thumbnail, unmask_vk_url},
 };
 use crate::{
-    crate::config::sources::VkMusicConfig,
-    crate::lavalink::protocol::tracks::{LoadResult, PlaylistData, PlaylistInfo, Track, TrackInfo},
+    config::sources::VkMusicConfig,
+    lavalink::protocol::tracks::{LoadResult, PlaylistData, PlaylistInfo, Track, TrackInfo},
     media::sources::{SourcePlugin, plugin::BoxedTrack},
 };
 

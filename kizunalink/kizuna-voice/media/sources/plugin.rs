@@ -6,6 +6,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use flume::{Receiver, Sender};
 
+use crate::lavalink::protocol::routeplanner::RoutePlanner;
 use crate::{
     engine::{AudioFrame, processor::DecoderCommand},
     config::sources::HttpProxyConfig,

@@ -11,7 +11,7 @@ use async_trait::async_trait;
 use regex::Regex;
 
 use crate::{
-    crate::lavalink::protocol::tracks::LoadResult,
+    lavalink::protocol::tracks::LoadResult,
     media::sources::plugin::{BoxedTrack, SourcePlugin},
 };
 

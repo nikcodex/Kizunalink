@@ -7,7 +7,7 @@ use async_trait::async_trait;
 use regex::Regex;
 
 use crate::{
-    crate::lavalink::protocol::tracks::{LoadResult, Track},
+    lavalink::protocol::tracks::{LoadResult, Track},
     media::sources::{SourcePlugin, spotify::token::SpotifyTokenTracker},
 };
 

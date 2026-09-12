@@ -8,8 +8,8 @@ use regex::Regex;
 use tracing::debug;
 
 use crate::{
-    crate::config::sources::FloweryConfig,
-    crate::lavalink::protocol::tracks::{LoadResult, Track, TrackInfo},
+    config::sources::FloweryConfig,
+    lavalink::protocol::tracks::{LoadResult, Track, TrackInfo},
     media::sources::{
         http::HttpTrack,
         plugin::{BoxedTrack, SourcePlugin},

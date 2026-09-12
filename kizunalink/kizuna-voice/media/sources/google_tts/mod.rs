@@ -8,8 +8,8 @@ use regex::Regex;
 use tracing::debug;
 
 use crate::{
-    crate::config::sources::GoogleTtsConfig,
-    crate::lavalink::protocol::tracks::{LoadResult, Track, TrackInfo},
+    config::sources::GoogleTtsConfig,
+    lavalink::protocol::tracks::{LoadResult, Track, TrackInfo},
     media::sources::{
         http::HttpTrack,
         plugin::{BoxedTrack, SourcePlugin},

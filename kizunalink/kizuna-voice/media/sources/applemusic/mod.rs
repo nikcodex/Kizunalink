@@ -14,7 +14,7 @@ use regex::Regex;
 use token::AppleMusicTokenTracker;
 
 use crate::{
-    crate::lavalink::protocol::tracks::LoadResult, media::sources::SourcePlugin};
+    lavalink::protocol::tracks::LoadResult, media::sources::SourcePlugin};
 
 const API_BASE: &str = "https://api.music.apple.com/v1";
 

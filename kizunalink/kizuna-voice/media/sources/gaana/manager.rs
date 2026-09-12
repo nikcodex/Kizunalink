@@ -10,7 +10,7 @@ use tracing::warn;
 
 use super::track::GaanaTrack;
 use crate::{
-    crate::lavalink::protocol::tracks::{LoadError, LoadResult, PlaylistData, PlaylistInfo, Track, TrackInfo},
+    lavalink::protocol::tracks::{LoadError, LoadResult, PlaylistData, PlaylistInfo, Track, TrackInfo},
     media::sources::{SourcePlugin, plugin::PlayableTrack},
 };
 

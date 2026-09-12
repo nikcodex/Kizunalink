@@ -9,7 +9,7 @@ use regex::Regex;
 use tracing::debug;
 
 use crate::{
-    crate::lavalink::protocol::tracks::{LoadResult, SearchResult},
+    lavalink::protocol::tracks::{LoadResult, SearchResult},
     media::sources::{SourcePlugin, plugin::BoxedTrack},
 };
 

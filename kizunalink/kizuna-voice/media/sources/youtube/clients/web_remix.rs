@@ -9,7 +9,7 @@ use serde_json::{Value, json};
 use super::YouTubeClient;
 use crate::{
     common::types::AnyResult,
-    crate::lavalink::protocol::tracks::{Track, TrackInfo},
+    lavalink::protocol::tracks::{Track, TrackInfo},
     media::sources::youtube::{
         cipher::YouTubeCipherManager,
         clients::common::{ClientConfig, extract_thumbnail, is_duration, parse_duration},

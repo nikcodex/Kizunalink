@@ -9,9 +9,10 @@ use tracing::{error, info};
 use super::{
     super::context::PlayerContext,
     error::send_load_failed,
-    discord::player::manager::lyrics::spawn_lyrics_fetch,
+
     monitor::{MonitorCtx, monitor_loop},
 };
+use crate::discord::player::manager::lyrics::spawn_lyrics_fetch;
 use crate::{
     engine::playback::{PlaybackState, TrackHandle},
     lavalink::protocol::{

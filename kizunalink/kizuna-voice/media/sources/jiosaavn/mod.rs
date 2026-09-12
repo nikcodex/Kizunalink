@@ -8,7 +8,7 @@ use regex::Regex;
 
 use self::track::JioSaavnTrack;
 use crate::{
-    crate::lavalink::protocol::tracks::LoadResult, media::sources::plugin::PlayableTrack};
+    lavalink::protocol::tracks::LoadResult, media::sources::plugin::PlayableTrack};
 
 pub mod helpers;
 pub mod metadata;

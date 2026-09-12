@@ -14,7 +14,7 @@ use tracing::{error, warn};
 
 use super::{track::AudiomackTrack, utils::build_auth_header};
 use crate::{
-    crate::lavalink::protocol::tracks::{LoadResult, PlaylistData, PlaylistInfo, Track, TrackInfo},
+    lavalink::protocol::tracks::{LoadResult, PlaylistData, PlaylistInfo, Track, TrackInfo},
     media::sources::plugin::{PlayableTrack, SourcePlugin},
 };
 

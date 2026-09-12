@@ -18,7 +18,7 @@ use token::DeezerTokenTracker;
 use track::DeezerTrack;
 
 use crate::{
-    crate::lavalink::protocol::tracks::LoadResult,
+    lavalink::protocol::tracks::LoadResult,
     media::sources::{SourcePlugin, plugin::PlayableTrack},
 };
 

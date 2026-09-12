@@ -21,10 +21,11 @@ use super::{
     VoiceGateway,
     backoff::Backoff,
     heartbeat::HeartbeatTracker,
-    lavalink::protocol::{GatewayPayload, OpCode},
+
     types::{GatewayError, PersistentSessionState, SessionOutcome},
     voice::{SpeakConfig, discover_ip, speak_loop},
 };
+use crate::lavalink::protocol::{GatewayPayload, OpCode};
 use crate::{
     common::types::{Shared, UserId},
     discord::crypto::DaveHandler,

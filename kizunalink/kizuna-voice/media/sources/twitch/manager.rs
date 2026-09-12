@@ -9,8 +9,8 @@ use tracing::{debug, warn};
 
 use super::{api::TwitchGqlClient, track::TwitchTrack};
 use crate::{
-    crate::config::sources::TwitchConfig,
-    crate::lavalink::protocol::tracks::{LoadError, LoadResult, Track, TrackInfo},
+    config::sources::TwitchConfig,
+    lavalink::protocol::tracks::{LoadError, LoadResult, Track, TrackInfo},
     media::sources::{SourcePlugin, plugin::BoxedTrack},
 };
 
