@@ -1,86 +1,9 @@
-[package]
-name = "kizunalink"
-version = "1.1.0"
-edition = "2024"
-license = "MIT"
-authors = ["Nikhil"]
-repository = "https://github.com/nikcodex/Kizunalink"
-
-[dependencies]
-base64 = "^0.22.1"
-bytes = "1.11.1"
-flume = "^0.11.1"
-dashmap = "^6.1.0"
-tracing = "^0.1.41"
-futures = "^0.3.31"
-async-trait = "^0.1.89"
-serde_json = "^1.0.145"
-byteorder = "^1.5.0"
-regex = "^1.12.2"
-ipnet = "2.11.0"
-rand = "^0.8"
-toml = "1.0.2"
-davey = "0.1.4"
-audiopus = "0.3.0-rc.0"
-xsalsa20poly1305 = "0.9.1"
-aes = "0.8"
-des = "0.8.1"
-cipher = "0.5.0"
-block-padding = "0.4.2"
-hex = "0.4.3"
-blowfish = "0.9"
-md-5 = "0.10"
-cbc = "0.1"
-urlencoding = "2.1.3"
-hmac = "0.12"
-sha1 = "0.10"
-sha2 = "0.10"
-parking_lot = "0.12.5"
-thiserror = "2.0.18"
-sysinfo = "0.38.3"
-perf_monitor = "0.2.1"
-prometheus = "0.13"
-
-tracing-subscriber = { version = "^0.3.20", features = [
-    "env-filter",
-    "registry",
-    "time",
-    "local-time",
-] }
-serde = { version = "^1.0.145", features = ["derive"] }
-time = { version = "0.3", features = ["formatting", "macros", "local-offset"] }
-symphonia = { version = "0.5.5", features = [
-    "aac",
-    "mp3",
-    "ogg",
-    "flac",
-    "wav",
-    "isomp4",
-    "mkv",
-    "alac",
-] }
-tokio-tungstenite = { version = "0.26.2", features = [
-    "rustls-tls-native-roots",
-] }
-tokio-util = { version = "0.7.13", features = ["codec"] }
-uuid = { version = "1.21.0", features = ["v4", "serde"] }
-reqwest = { version = "0.12", default-features = false, features = [
-    "json",
-    "rustls-tls",
-    "stream",
-    "cookies",
-    "gzip",
-    "deflate",
-] }
-tokio = { version = "1.49.0", features = [
-    "tracing",
-    "macros",
-    "signal",
-    "rt-multi-thread",
-] }
-axum = { version = "0.8.1", features = ["ws"] }
-tower-http = { version = "0.6.2", features = ["trace", "cors"] }
-
+[workspace]
+members = [
+    "kizunalink",
+    "kizuna-server",
+]
+resolver = "2"
 
 [profile.dev]
 opt-level = 1
@@ -91,7 +14,7 @@ lto = false
 codegen-units = 256
 
 [profile.dev.package."*"]
-opt-level = 3 # fully optimize all dependencies in dev mode
+opt-level = 3
 
 [profile.release]
 lto = "fat"
