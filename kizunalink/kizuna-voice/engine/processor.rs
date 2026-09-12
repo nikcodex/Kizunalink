@@ -23,7 +23,7 @@ use crate::{
         resample::Resampler,
     },
     common::types::AudioFormat,
-    config::discord::player::{PlayerConfig, ResamplingQuality},
+    crate::config::player::{PlayerConfig, ResamplingQuality},
 };
 
 #[derive(Debug, Clone, PartialEq)]

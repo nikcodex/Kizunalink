@@ -175,9 +175,9 @@ pub async fn handle_socket(
 fn resolve_session(
     state: &Arc<dyn ServerContext>,
     user_id: Option<UserId>,
-    client_session_id: Option<&SessionId>,
+    client_session_id: Option<&(dyn crate::Context)Id>,
     tx: flume::Sender<Message>,
-) -> (Arc<Session>, bool) {
+) -> (Arc<dyn crate::Context>, bool) {
     if let Some(sid) = client_session_id
         && let Some((_, existing)) = state.resumable_sessions.remove(sid)
     {
@@ -200,7 +200,7 @@ fn resolve_session(
     (session, false)
 }
 
-async fn send_initial_state(socket: &mut WebSocket, session: &Arc<Session>, resumed: bool) {
+async fn send_initial_state(socket: &mut WebSocket, session: &Arc<dyn crate::Context>, resumed: bool) {
     let ready = protocol::OutgoingMessage::Ready {
         resumed,
         session_id: session.session_id.clone(),
@@ -243,7 +243,7 @@ async fn send_initial_state(socket: &mut WebSocket, session: &Arc<Session>, resu
 
 async fn handle_session_close(
     state: &Arc<dyn ServerContext>,
-    session: Arc<Session>,
+    session: Arc<dyn crate::Context>,
     tx: &flume::Sender<Message>,
 ) {
     let session_id = session.session_id.clone();

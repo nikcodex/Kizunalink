@@ -9,7 +9,7 @@ use tracing::{error, info};
 use super::{
     super::context::PlayerContext,
     error::send_load_failed,
-    media::lyrics::spawn_lyrics_fetch,
+    crate::discord::player::manager::lyrics::spawn_lyrics_fetch,
     monitor::{MonitorCtx, monitor_loop},
 };
 use crate::{
@@ -18,12 +18,12 @@ use crate::{
         self,
         events::{KizunaLinkEvent, TrackEndReason},
     },
-    common::server_hooks::Session,
+    
 };
 
 pub struct PlaybackStartConfig {
     pub track: String,
-    pub session: Arc<Session>,
+    pub session: Arc<dyn crate::Context>,
     pub source_manager: Arc<crate::media::sources::SourceManager>,
     pub lyrics_manager: Arc<crate::media::lyrics::LyricsManager>,
     pub routeplanner: Option<Arc<dyn crate::lavalink::routeplanner::RoutePlanner>>,
@@ -177,7 +177,7 @@ pub async fn start_playback(player: &mut PlayerContext, config: PlaybackStartCon
 }
 
 /// Stop the currently playing track and emit `TrackEnd: Replaced` if needed.
-async fn stop_current_track(player: &mut PlayerContext, session: &Session) {
+async fn stop_current_track(player: &mut PlayerContext, session: &(dyn crate::Context)) {
     if let Some(handle) = &player.track_handle
         && handle.get_state() != PlaybackState::Stopped
         && let Some(track) = player.to_player_response().await.track

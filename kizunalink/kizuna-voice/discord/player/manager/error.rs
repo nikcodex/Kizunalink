@@ -7,11 +7,11 @@ use crate::{
         self,
         events::{KizunaLinkEvent, TrackEndReason, TrackException},
     },
-    common::server_hooks::Session,
+    
 };
 
 /// Emit `TrackException` followed by `TrackEnd: LoadFailed`.
-pub async fn send_load_failed(player: &PlayerContext, session: &Session, message: String) {
+pub async fn send_load_failed(player: &PlayerContext, session: &(dyn crate::Context), message: String) {
     let Some(track) = player.to_player_response().await.track else {
         return;
     };

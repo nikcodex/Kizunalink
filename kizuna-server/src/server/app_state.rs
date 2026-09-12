@@ -14,7 +14,7 @@ use crate::{
     sources::{SourceManager, youtube::YoutubeStreamContext},
 };
 
-pub type SessionMap = DashMap<SessionId, Arc<Session>>;
+pub type SessionMap = DashMap<SessionId, Arc<dyn crate::Context>>;
 
 pub struct AppState {
     pub start_time: std::time::Instant,

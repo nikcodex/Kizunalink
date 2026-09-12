@@ -37,7 +37,7 @@ pub async fn handle_op(
     state: &Arc<dyn ServerContext>,
     session_id: &kizunalink::common::types::SessionId,
 ) -> Result<(), String> {
-    let session: Arc<Session> = state
+    let session: Arc<dyn crate::Context> = state
         .sessions
         .get(session_id)
         .map(|s| s.clone())
@@ -78,7 +78,7 @@ pub async fn handle_op(
 }
 
 async fn handle_voice_update(
-    session: &Arc<Session>,
+    session: &Arc<dyn crate::Context>,
     state: &Arc<dyn ServerContext>,
     guild_id: kizunalink::common::types::GuildId,
     voice_session_id: String,
@@ -175,7 +175,7 @@ async fn handle_voice_update(
 }
 
 async fn handle_play(
-    session: &Arc<Session>,
+    session: &Arc<dyn crate::Context>,
     state: &Arc<dyn ServerContext>,
     guild_id: kizunalink::common::types::GuildId,
     track: String,

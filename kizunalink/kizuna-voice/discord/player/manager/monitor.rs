@@ -5,7 +5,7 @@ use std::sync::{Arc, atomic::Ordering};
 
 use tracing::warn;
 
-use crate::media::lyrics::sync_lyrics;
+use crate::discord::player::manager::lyrics::sync_lyrics;
 use crate::{
     engine::playback::{PlaybackState, TrackHandle},
     common::types::GuildId,
@@ -16,14 +16,14 @@ use crate::{
         models::LyricsData,
         tracks::Track,
     },
-    common::server_hooks::Session,
+    
 };
 
 pub struct MonitorCtx {
     pub guild_id: GuildId,
     pub handle: TrackHandle,
     pub err_rx: flume::Receiver<String>,
-    pub session: Arc<Session>,
+    pub session: Arc<dyn crate::Context>,
     pub track: Track,
     pub stop_signal: Arc<std::sync::atomic::AtomicBool>,
     pub ping: Arc<std::sync::atomic::AtomicI64>,

@@ -100,7 +100,7 @@ fn handle_player_state(
     body: &PlayerUpdate,
     loading_new_track: bool,
     guild_id: &kizunalink::common::types::GuildId,
-    session: &Arc<crate::server::Session>,
+    session: &Arc<crate::>,
 ) {
     if !loading_new_track {
         if let Some(pos) = body.position {
@@ -136,7 +136,7 @@ async fn handle_filters(
     filters: kizunalink::discord::player::Filters,
     state: &AppState,
     guild_id: &kizunalink::common::types::GuildId,
-    session: &Arc<crate::server::Session>,
+    session: &Arc<crate::>,
 ) -> Result<(), (StatusCode, Json<kizunalink::common::KizunaLinkError>)> {
     let invalid_filters = kizunalink::engine::filters::validate_filters(&filters, &state.config.filters);
     if !invalid_filters.is_empty() {
@@ -180,7 +180,7 @@ async fn handle_filters(
 async fn handle_voice(
     player: &mut PlayerContext,
     voice: kizunalink::discord::player::VoiceState,
-    session: &Arc<crate::server::Session>,
+    session: &Arc<crate::>,
     _player_arc: &Arc<tokio::sync::RwLock<PlayerContext>>,
 ) -> Result<(), (StatusCode, Json<kizunalink::common::KizunaLinkError>)> {
     if voice.token.is_empty() || voice.endpoint.is_empty() || voice.session_id.is_empty() {
@@ -256,7 +256,7 @@ fn resolve_track_update(body: &PlayerUpdate) -> Option<kizunalink::discord::play
 async fn apply_track_update(
     player: &mut PlayerContext,
     track_update: kizunalink::discord::player::PlayerUpdateTrack,
-    session: Arc<crate::server::Session>,
+    session: Arc<crate::>,
     state: &AppState,
     no_replace: bool,
     end_time_input: Option<kizunalink::discord::player::state::EndTime>,
@@ -302,7 +302,7 @@ async fn apply_track_update(
     }
 }
 
-async fn stop_player(player: &mut PlayerContext, session: &Arc<crate::server::Session>) {
+async fn stop_player(player: &mut PlayerContext, session: &Arc<crate::>) {
     let track_data = player.track.clone();
     if let Some(handle) = &player.track_handle {
         player
@@ -338,7 +338,7 @@ async fn start_playback(
     player: &mut PlayerContext,
     track: String,
     user_data: Option<serde_json::Value>,
-    session: Arc<crate::server::Session>,
+    session: Arc<crate::>,
     state: &AppState,
     end_time_input: Option<kizunalink::discord::player::state::EndTime>,
     start_time_ms: Option<u64>,

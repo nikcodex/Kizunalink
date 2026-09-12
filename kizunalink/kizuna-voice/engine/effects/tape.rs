@@ -1,7 +1,7 @@
 // Copyright (c) 2026 nikcodex (KizunaLink)
 // Licensed under the MIT License
 
-use crate::discord::player::TapeCurve;
+use crate::config::player::TapeCurve;
 
 struct TapeState {
     start_rate: f32,

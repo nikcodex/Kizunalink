@@ -11,7 +11,7 @@ use tokio::sync::Mutex;
 use crate::{
     engine::{filters::FilterChain, playback::TrackHandle},
     common::types::Shared,
-    config::discord::player::PlayerConfig,
+    crate::config::player::PlayerConfig,
     discord::player::state::{Filters, Player, PlayerState, VoiceConnectionState, VoiceState},
     common::server_hooks::ServerContext,
 };

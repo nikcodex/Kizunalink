@@ -20,7 +20,7 @@ use crate::{
         flow::FlowController,
         playback::handle::PlaybackState,
     },
-    config::discord::player::PlayerConfig,
+    crate::config::player::PlayerConfig,
 };
 
 pub struct AudioMixer {
