@@ -74,12 +74,18 @@ pub async fn websocket_handler(
     let upgrade_callback = move |socket| handle_socket(socket, state, user_id, client_session_id);
     let mut response = ws.on_upgrade(upgrade_callback).into_response();
 
+    let resumed_val = if resuming {
+        axum::http::HeaderValue::from_static("true")
+    } else {
+        axum::http::HeaderValue::from_static("false")
+    };
     response
         .headers_mut()
-        .insert("Session-Resumed", resuming.to_string().parse().unwrap());
-    response
-        .headers_mut()
-        .insert("Lavalink-Major-Version", "4".parse().unwrap());
+        .insert("Session-Resumed", resumed_val);
+    response.headers_mut().insert(
+        "Lavalink-Major-Version",
+        axum::http::HeaderValue::from_static("4"),
+    );
 
     Ok(response)
 }
