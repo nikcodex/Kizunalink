@@ -1,7 +1,10 @@
 // Copyright (c) 2026 nikcodex (KizunaLink)
 // Licensed under the MIT License
 
+use std::sync::OnceLock;
+
 use async_trait::async_trait;
+use regex::Regex;
 use serde_json::{Value, json};
 
 use super::{LyricsProvider, utils};
@@ -149,10 +152,10 @@ impl LyricsProvider for YoutubeMusicLyricsProvider {
 
                 if video_id.is_none() {
                     let search_str = search_results.to_string();
-                    if let Some(caps) = regex::Regex::new(r#""videoId":"([^"]+)""#)
-                        .unwrap()
-                        .captures(&search_str)
-                    {
+                    static VIDEO_ID_REGEX: OnceLock<Regex> = OnceLock::new();
+                    let video_id_re = VIDEO_ID_REGEX
+                        .get_or_init(|| Regex::new(r#""videoId":"([^"]+)""#).expect("valid regex"));
+                    if let Some(caps) = video_id_re.captures(&search_str) {
                         video_id = Some(caps[1].to_string());
                     }
                 }

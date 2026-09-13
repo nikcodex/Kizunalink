@@ -70,7 +70,7 @@ impl TwitchSource {
             return None;
         }
 
-        let chosen = streams.last().unwrap();
+        let chosen = streams.last()?;
         debug!(
             "Twitch: chose stream with quality {} from url {}",
             chosen.quality, chosen.url
