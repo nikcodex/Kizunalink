@@ -12,8 +12,8 @@
 | `[ ]` | Not done yet |
 | `[!]` | Deferred — needs a compiler/crates.io or is otherwise risky to do without one |
 
-**Last verified:** 2026-09-12 (static verification via `grep`/file review — `cargo` is not
-available in the dev sandbox, so nothing below was compiler-verified in this session).
+**Last verified:** 2026-09-13 (compile status verified via GitHub Actions CI — `cargo check`
+and `cargo test` pass on `main`; local `cargo`/rustfmt still unavailable in the sandbox).
 
 **Quick summary**
 
@@ -189,11 +189,25 @@ available in the dev sandbox, so nothing below was compiler-verified in this ses
     `tidal.rs`, unused `OpusError` in `engine/engine/encoder.rs`, unused `use super::ffi` in
     `opus/error.rs`) and removed redundant `&(dyn …)` parens / trailing blank lines in
     `manager/{error,lyrics,start}.rs`.
-  - **Status**: pushed to `arena/01a09610-kizunalink` and merged to `main` via PR #11 (the
-    final fixes + warning cleanup + CI warning-annotations landed as one consolidated commit
-    after the sandbox re-cloned the repo mid-session). Remaining CI jobs still red at merge
-    time: Clippy (`-D warnings`), Formatting (`cargo fmt --check`), Cargo Deny (dependency
-    advisories). Check/Tests/Build are expected to clear once the compile error fix lands.
+  - **Status**: merged to `main` via PR #11 + PR #12. **`cargo check --workspace
+    --all-targets` PASSES and `cargo test --workspace --all-targets` PASSES** (confirmed by
+    CI on `3b0d170`). Remaining CI reds: Clippy (`-D warnings`), Formatting
+    (`cargo fmt --check`), `Build (windows-latest)` release build, and Cargo Deny
+    (advisories, non-blocking). These are pre-existing/known and need a Rust toolchain
+    (rustfmt/clippy iteration) and Windows log access to resolve.
+
+### 2026-09-13 (continuation)
+
+- Sandbox re-cloned the repo between turns (local git history reset to `main`, working tree
+  preserved as uncommitted changes); recovered by re-pointing the branch at the remote head
+  and committing the preserved diff as one consolidated commit (`572e361`).
+- Pushed everything and merged **PR #11** (all compile fixes) and **PR #12** (perf_monitor
+  dep + remaining warnings + `main.rs` `kizuna_server::` paths) to `main`.
+- `kizunalink` lib: added `SourceError::HttpStatus` + manual `From<StatusCode>`; removed
+  unused imports; removed `mut` on `&self`-method encoder bindings; dropped dead
+  `build_filters` stub; CI now also surfaces warnings as annotations.
+- `kizuna-server`: declared `perf_monitor` as a direct dep; fixed the binary's `crate::` →
+  `kizuna_server::` module paths (the bin crate root is `main.rs`, not `lib.rs`).
 
 ### Prior sessions (PR #10)
 
