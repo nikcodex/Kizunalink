@@ -238,9 +238,7 @@ impl DaveHandler {
         // The group is retained: record the version we are transitioning to and let
         // the caller announce readiness so the gateway can execute the transition.
         self.prepared_protocol_version = protocol_version;
-        debug!(
-            "DAVE epoch {epoch} retains the MLS group; pending protocol v{protocol_version}"
-        );
+        debug!("DAVE epoch {epoch} retains the MLS group; pending protocol v{protocol_version}");
         EpochOutcome::Ready
     }
 
@@ -506,11 +504,20 @@ mod tests {
         assert!(handler.session.is_some());
 
         // epoch > 1 retains the group and only reports readiness to transition.
-        assert_eq!(handler.prepare_epoch(4, DAVE_INITIAL_VERSION), EpochOutcome::Ready);
+        assert_eq!(
+            handler.prepare_epoch(4, DAVE_INITIAL_VERSION),
+            EpochOutcome::Ready
+        );
 
         // Invalid epochs and unsupported versions are ignored, never "ready".
-        assert_eq!(handler.prepare_epoch(0, DAVE_INITIAL_VERSION), EpochOutcome::Ignored);
-        assert_eq!(handler.prepare_epoch(4, DAVE_INITIAL_VERSION + 1), EpochOutcome::Ignored);
+        assert_eq!(
+            handler.prepare_epoch(0, DAVE_INITIAL_VERSION),
+            EpochOutcome::Ignored
+        );
+        assert_eq!(
+            handler.prepare_epoch(4, DAVE_INITIAL_VERSION + 1),
+            EpochOutcome::Ignored
+        );
         assert_eq!(handler.prepare_epoch(1, 0), EpochOutcome::Ignored);
     }
 

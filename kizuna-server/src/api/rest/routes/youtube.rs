@@ -155,19 +155,23 @@ pub async fn youtube_stream(
 
         if let Err(e) = check_playability(&body, &video_id, client.name()) {
             last_error = Some(e);
-            tracing::warn!("{}", last_error.as_deref().unwrap());
+            tracing::warn!(
+                "{}",
+                last_error.as_deref().unwrap_or("Playability check failed")
+            );
             continue;
         }
 
         let streaming_data = match body.get("streamingData") {
             Some(sd) => sd,
             None => {
-                last_error = Some(format!(
+                let err_str = format!(
                     "Client '{}' returned no streamingData for video '{}'",
                     client.name(),
                     video_id
-                ));
-                tracing::warn!("{}", last_error.as_deref().unwrap());
+                );
+                tracing::warn!("{}", err_str);
+                last_error = Some(err_str);
                 continue;
             }
         };
@@ -185,13 +189,14 @@ pub async fn youtube_stream(
             match found {
                 Some(f) => f,
                 None => {
-                    last_error = Some(format!(
+                    let err_str = format!(
                         "itag {} not found in formats returned by client '{}' for video '{}'",
                         target_itag,
                         client.name(),
                         video_id
-                    ));
-                    tracing::debug!("{}", last_error.as_deref().unwrap());
+                    );
+                    tracing::debug!("{}", err_str);
+                    last_error = Some(err_str);
                     continue;
                 }
             }
@@ -199,12 +204,13 @@ pub async fn youtube_stream(
             match select_best_audio_format(adaptive, formats) {
                 Some(f) => f,
                 None => {
-                    last_error = Some(format!(
+                    let err_str = format!(
                         "Client '{}' returned no suitable audio formats for video '{}'",
                         client.name(),
                         video_id
-                    ));
-                    tracing::warn!("{}", last_error.as_deref().unwrap());
+                    );
+                    tracing::warn!("{}", err_str);
+                    last_error = Some(err_str);
                     continue;
                 }
             }
@@ -215,25 +221,27 @@ pub async fn youtube_stream(
             match resolve_format_url(format, &player_page_url, &ctx.cipher_manager).await {
                 Ok(Some(url)) => url,
                 Ok(None) => {
-                    last_error = Some(format!(
+                    let err_str = format!(
                         "Client '{}' could not resolve a URL for video '{}' itag={:?}",
                         client.name(),
                         video_id,
                         selected_itag
-                    ));
+                    );
                     last_was_exception = true;
-                    tracing::warn!("{}", last_error.as_deref().unwrap());
+                    tracing::warn!("{}", err_str);
+                    last_error = Some(err_str);
                     continue;
                 }
                 Err(e) => {
-                    last_error = Some(format!(
+                    let err_str = format!(
                         "Client '{}' cipher/n-param resolution failed for video '{}': {}",
                         client.name(),
                         video_id,
                         e
-                    ));
+                    );
                     last_was_exception = true;
-                    tracing::error!("{}", last_error.as_deref().unwrap());
+                    tracing::error!("{}", err_str);
+                    last_error = Some(err_str);
                     continue;
                 }
             };
@@ -252,12 +260,13 @@ pub async fn youtube_stream(
         let mut final_url = match reqwest::Url::parse(&resolved_url) {
             Ok(u) => u,
             Err(e) => {
-                last_error = Some(format!(
+                let err_str = format!(
                     "Failed to parse resolved URL for video '{}': {}",
                     video_id, e
-                ));
+                );
                 last_was_exception = true;
-                tracing::error!("{}", last_error.as_deref().unwrap());
+                tracing::error!("{}", err_str);
+                last_error = Some(err_str);
                 continue;
             }
         };
@@ -280,25 +289,27 @@ pub async fn youtube_stream(
         let upstream = match ctx.http.get(final_url.as_str()).send().await {
             Ok(r) => r,
             Err(e) => {
-                last_error = Some(format!(
+                let err_str = format!(
                     "Upstream request failed for client '{}': {}",
                     client.name(),
                     e
-                ));
+                );
                 last_was_exception = true;
-                tracing::error!("{}", last_error.as_deref().unwrap());
+                tracing::error!("{}", err_str);
+                last_error = Some(err_str);
                 continue;
             }
         };
 
         if !upstream.status().is_success() {
-            last_error = Some(format!(
+            let err_str = format!(
                 "Upstream returned {} for client '{}'",
                 upstream.status(),
                 client.name()
-            ));
+            );
             last_was_exception = true;
-            tracing::warn!("{}", last_error.as_deref().unwrap());
+            tracing::warn!("{}", err_str);
+            last_error = Some(err_str);
             continue;
         }
 

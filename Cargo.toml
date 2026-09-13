@@ -22,7 +22,7 @@ toml = "1.0.2"
 parking_lot = "0.12.5"
 thiserror = "2.0.18"
 sysinfo = "0.38.3"
-prometheus = "0.13"
+prometheus = { version = "0.13", default-features = false }
 perf_monitor = "0.2"
 
 [profile.dev]
