@@ -13,11 +13,16 @@ const CLIENT_ID: &str = "861556708454-d6dlm3lh05idd8npek18k6be8ba3oc68.apps.goog
 const CLIENT_SECRET_ENV: &str = "YOUTUBE_OAUTH_CLIENT_SECRET";
 const SCOPES: &str = "http://gdata.youtube.com https://www.googleapis.com/auth/youtube";
 
+struct CachedAccessToken {
+    refresh_token: String,
+    access_token: String,
+    expires_at: u64,
+}
+
 pub struct YouTubeOAuth {
     refresh_tokens: RwLock<Vec<String>>,
     current_token_index: RwLock<usize>,
-    access_token: RwLock<Option<String>>,
-    token_expiry: RwLock<u64>,
+    access_tokens: RwLock<Vec<Option<CachedAccessToken>>>,
     client_secret: Option<String>,
     client: reqwest::Client,
 }
@@ -27,8 +32,7 @@ impl YouTubeOAuth {
         Self {
             refresh_tokens: RwLock::new(refresh_tokens),
             current_token_index: RwLock::new(0),
-            access_token: RwLock::new(None),
-            token_expiry: RwLock::new(0),
+            access_tokens: RwLock::new(Vec::new()),
             client_secret: std::env::var(CLIENT_SECRET_ENV)
                 .ok()
                 .filter(|secret| !secret.is_empty()),
@@ -214,44 +218,51 @@ impl YouTubeOAuth {
     }
 
     pub async fn get_access_token(&self, idx: usize) -> Option<String> {
-        let tokens = self.refresh_tokens.read().await;
-        let max_tokens = tokens.len();
-        if max_tokens == 0 {
+        let (cache_index, refresh_token) = {
+            let tokens = self.refresh_tokens.read().await;
+            let max_tokens = tokens.len();
+            if max_tokens == 0 {
+                return None;
+            }
+
+            let cache_index = idx % max_tokens;
+            let refresh_token = tokens[cache_index].clone();
+            (cache_index, refresh_token)
+        };
+
+        if refresh_token.is_empty() {
             return None;
         }
 
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
+            .map_or(0, |duration| duration.as_secs());
 
+        if let Some(Some(cached)) = self.access_tokens.read().await.get(cache_index)
+            && cached.refresh_token == refresh_token
+            && now < cached.expires_at
         {
-            let expiry = self.token_expiry.read().await;
-            let token = self.access_token.read().await;
-            if let Some(t) = token.as_ref()
-                && now < *expiry
-            {
-                return Some(t.clone());
-            }
+            return Some(cached.access_token.clone());
         }
 
-        let refresh_token = &tokens[idx % max_tokens];
-        if refresh_token.is_empty() {
-            return None;
-        }
-
-        match self.refresh_token_request(refresh_token).await {
+        match self.refresh_token_request(&refresh_token).await {
             Ok((new_token, expires_in)) => {
-                let mut token_store = self.access_token.write().await;
-                let mut expiry_store = self.token_expiry.write().await;
-                *token_store = Some(new_token.clone());
-                *expiry_store = now + expires_in - 30; // 30s buffer
+                let expires_at = now.saturating_add(expires_in.saturating_sub(30));
+                let mut cache = self.access_tokens.write().await;
+                if cache.len() <= cache_index {
+                    cache.resize_with(cache_index + 1, || None);
+                }
+                cache[cache_index] = Some(CachedAccessToken {
+                    refresh_token,
+                    access_token: new_token.clone(),
+                    expires_at,
+                });
                 Some(new_token)
             }
             Err(e) => {
                 tracing::error!(
                     "Failed to refresh YouTube token for index {}: {}",
-                    idx % max_tokens,
+                    cache_index,
                     e
                 );
                 None

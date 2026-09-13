@@ -58,6 +58,13 @@ fn parse_u16_field(payload: &Value, field: &str) -> Option<u16> {
         .and_then(|value| u16::try_from(value).ok())
 }
 
+fn parse_dave_protocol_version(payload: &Value) -> Result<u16, u64> {
+    match payload.get("dave_protocol_version").and_then(Value::as_u64) {
+        None => Ok(0),
+        Some(value) => u16::try_from(value).map_err(|_| value),
+    }
+}
+
 impl<'a> SessionState<'a> {
     pub async fn new(
         gateway: &'a VoiceGateway,
@@ -422,25 +429,29 @@ impl<'a> SessionState<'a> {
         self.start_voice(addr, key).await;
 
         if self.gateway.channel_id.0 > 0 {
-            let protocol_version = match d["dave_protocol_version"].as_u64() {
-                None => DAVE_INITIAL_VERSION,
-                Some(value) => match u16::try_from(value) {
-                    Ok(version) => version,
-                    Err(_) => {
-                        error!(
-                            "[{}] Invalid dave_protocol_version: {value}",
-                            self.gateway.guild_id
-                        );
-                        return Some(SessionOutcome::Reconnect);
-                    }
-                },
+            let protocol_version = match parse_dave_protocol_version(&d) {
+                Ok(version) => version,
+                Err(value) => {
+                    error!(
+                        "[{}] Invalid dave_protocol_version: {value}",
+                        self.gateway.guild_id
+                    );
+                    return Some(SessionOutcome::Reconnect);
+                }
             };
             let mls_group_id = d["mls_group_id"].as_u64().unwrap_or(0);
 
             let mut dave = self.dave.lock().await;
             if protocol_version > 0 {
-                if let Ok(kp) = dave.setup_session(protocol_version) {
-                    self.send_binary(26, &kp);
+                match dave.setup_session(protocol_version) {
+                    Ok(kp) => self.send_binary(26, &kp),
+                    Err(e) => {
+                        warn!(
+                            "[{}] DAVE session setup failed for protocol version {}: {e}",
+                            self.gateway.guild_id, protocol_version
+                        );
+                        dave.reset();
+                    }
                 }
             } else {
                 dave.reset();
@@ -749,5 +760,22 @@ mod tests {
         assert_eq!(parse_u16_field(&payload, "valid"), Some(u16::MAX));
         assert_eq!(parse_u16_field(&payload, "overflow"), None);
         assert_eq!(parse_u16_field(&payload, "missing"), None);
+    }
+
+    #[test]
+    fn missing_dave_protocol_version_disables_dave() {
+        assert_eq!(parse_dave_protocol_version(&serde_json::json!({})), Ok(0));
+        assert_eq!(
+            parse_dave_protocol_version(&serde_json::json!({
+                "dave_protocol_version": 1
+            })),
+            Ok(1)
+        );
+        assert_eq!(
+            parse_dave_protocol_version(&serde_json::json!({
+                "dave_protocol_version": u64::from(u16::MAX) + 1
+            })),
+            Err(u64::from(u16::MAX) + 1)
+        );
     }
 }

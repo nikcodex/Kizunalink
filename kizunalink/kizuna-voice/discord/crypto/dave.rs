@@ -94,6 +94,11 @@ impl DaveHandler {
             self.reset();
             return Ok(Vec::new());
         }
+        if version != DAVE_INITIAL_VERSION {
+            return Err(map_boxed_err(format!(
+                "Unsupported DAVE protocol version: {version}"
+            )));
+        }
 
         let nz_version = NonZeroU16::new(version).unwrap_or(DAVE_MIN_VERSION);
 
@@ -144,6 +149,11 @@ impl DaveHandler {
     }
 
     pub fn prepare_transition(&mut self, transition_id: u16, protocol_version: u16) -> bool {
+        if protocol_version != 0 && protocol_version != DAVE_INITIAL_VERSION {
+            warn!("Ignoring unsupported DAVE transition protocol version: {protocol_version}");
+            return false;
+        }
+
         self.pending_transitions
             .insert(transition_id, protocol_version);
 
@@ -265,6 +275,15 @@ impl DaveHandler {
 
     fn do_process_handshake(&mut self, data: &[u8], is_welcome: bool) -> AnyResult<()> {
         let transition_id = u16::from_be_bytes([data[0], data[1]]);
+        let transition_version = if transition_id == 0 {
+            self.prepared_protocol_version
+        } else {
+            self.pending_transitions
+                .get(&transition_id)
+                .copied()
+                .unwrap_or(self.prepared_protocol_version)
+        };
+
         if let Some(session) = &mut self.session {
             if transition_id == 0 {
                 if is_welcome {
@@ -272,7 +291,7 @@ impl DaveHandler {
                 } else {
                     session.process_commit(&data[2..]).map_err(map_boxed_err)?;
                 }
-                self.protocol_version = self.prepared_protocol_version;
+                self.protocol_version = transition_version;
             } else if is_welcome {
                 session
                     .process_welcome_for_transition(&data[2..], transition_id)
@@ -285,7 +304,7 @@ impl DaveHandler {
 
             if transition_id != 0 {
                 self.pending_transitions
-                    .insert(transition_id, self.prepared_protocol_version);
+                    .insert(transition_id, transition_version);
             }
             debug!(
                 "DAVE {} processed (tid {})",
@@ -436,6 +455,15 @@ mod tests {
 
         handler.execute_transition(42);
         assert_eq!(handler.protocol_version(), 1);
+    }
+
+    #[test]
+    fn unsupported_transition_versions_are_not_acknowledged() {
+        let mut handler = DaveHandler::new(UserId(1), ChannelId(1));
+
+        assert!(!handler.prepare_transition(42, 2));
+        assert!(!handler.pending_transitions.contains_key(&42));
+        assert!(handler.setup_session(2).is_err());
     }
 
     #[test]
