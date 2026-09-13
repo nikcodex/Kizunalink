@@ -51,6 +51,13 @@ pub struct SessionState<'a> {
     backoff: &'a mut Backoff,
 }
 
+fn parse_u16_field(payload: &Value, field: &str) -> Option<u16> {
+    payload
+        .get(field)
+        .and_then(Value::as_u64)
+        .and_then(|value| u16::try_from(value).ok())
+}
+
 impl<'a> SessionState<'a> {
     pub async fn new(
         gateway: &'a VoiceGateway,
@@ -400,9 +407,19 @@ impl<'a> SessionState<'a> {
         self.start_voice(addr, key).await;
 
         if self.gateway.channel_id.0 > 0 {
-            let protocol_version = d["dave_protocol_version"]
-                .as_u64()
-                .unwrap_or(DAVE_INITIAL_VERSION as u64) as u16;
+            let protocol_version = match d["dave_protocol_version"].as_u64() {
+                None => DAVE_INITIAL_VERSION,
+                Some(value) => match u16::try_from(value) {
+                    Ok(version) => version,
+                    Err(_) => {
+                        error!(
+                            "[{}] Invalid dave_protocol_version: {value}",
+                            self.gateway.guild_id
+                        );
+                        return Some(SessionOutcome::Reconnect);
+                    }
+                },
+            };
             let mls_group_id = d["mls_group_id"].as_u64().unwrap_or(0);
 
             let mut dave = self.dave.lock().await;
@@ -509,8 +526,20 @@ impl<'a> SessionState<'a> {
     }
 
     async fn on_dave_prepare_transition(&mut self, d: Value) -> Option<SessionOutcome> {
-        let tid = d["transition_id"].as_u64().unwrap_or(0) as u16;
-        let ver = d["protocol_version"].as_u64().unwrap_or(0) as u16;
+        let Some(tid) = parse_u16_field(&d, "transition_id") else {
+            warn!(
+                "[{}] Ignoring DAVE Prepare Transition with invalid transition_id",
+                self.gateway.guild_id
+            );
+            return None;
+        };
+        let Some(ver) = parse_u16_field(&d, "protocol_version") else {
+            warn!(
+                "[{}] Ignoring DAVE Prepare Transition with invalid protocol_version",
+                self.gateway.guild_id
+            );
+            return None;
+        };
 
         debug!(
             "[{}] DAVE Prepare Transition: id={}, version={}",
@@ -528,7 +557,13 @@ impl<'a> SessionState<'a> {
     }
 
     async fn on_dave_execute_transition(&mut self, d: Value) -> Option<SessionOutcome> {
-        let tid = d["transition_id"].as_u64().unwrap_or(0) as u16;
+        let Some(tid) = parse_u16_field(&d, "transition_id") else {
+            warn!(
+                "[{}] Ignoring DAVE Execute Transition with invalid transition_id",
+                self.gateway.guild_id
+            );
+            return None;
+        };
         debug!(
             "[{}] DAVE Execute Transition: id={}",
             self.gateway.guild_id, tid
@@ -538,8 +573,20 @@ impl<'a> SessionState<'a> {
     }
 
     async fn on_dave_prepare_epoch(&mut self, d: Value) -> Option<SessionOutcome> {
-        let epoch = d["epoch"].as_u64().unwrap_or(0);
-        let ver = d["protocol_version"].as_u64().unwrap_or(0) as u16;
+        let Some(epoch) = d["epoch"].as_u64() else {
+            warn!(
+                "[{}] Ignoring DAVE Prepare Epoch with invalid epoch",
+                self.gateway.guild_id
+            );
+            return None;
+        };
+        let Some(ver) = parse_u16_field(&d, "protocol_version") else {
+            warn!(
+                "[{}] Ignoring DAVE Prepare Epoch with invalid protocol_version",
+                self.gateway.guild_id
+            );
+            return None;
+        };
         debug!(
             "[{}] DAVE Prepare Epoch: epoch={}, version={}",
             self.gateway.guild_id, epoch, ver
@@ -551,12 +598,21 @@ impl<'a> SessionState<'a> {
     }
 
     async fn on_mls_transition(&mut self, d: Value) -> Option<SessionOutcome> {
-        let tid = d["transition_id"].as_u64().unwrap_or(0) as u16;
+        let Some(tid) = parse_u16_field(&d, "transition_id") else {
+            warn!(
+                "[{}] Ignoring DAVE MLS transition with invalid transition_id",
+                self.gateway.guild_id
+            );
+            return None;
+        };
         debug!(
             "[{}] DAVE MLS Announce Commit Transition: tid={}",
             self.gateway.guild_id, tid
         );
-        let ver = d["protocol_version"].as_u64().map(|v| v as u16);
+        let ver = d
+            .get("protocol_version")
+            .and_then(|value| value.as_u64())
+            .and_then(|value| u16::try_from(value).ok());
         if let Some(v) = ver {
             let mut dave = self.dave.lock().await;
             if dave.prepare_transition(tid, v) && tid != 0 {
@@ -652,5 +708,23 @@ impl<'a> Drop for SessionState<'a> {
         if let Some(t) = self.speak_task.take() {
             t.abort();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn u16_payload_fields_reject_overflow() {
+        let payload = serde_json::json!({
+            "valid": u16::MAX,
+            "overflow": u64::from(u16::MAX) + 1,
+            "missing": null
+        });
+
+        assert_eq!(parse_u16_field(&payload, "valid"), Some(u16::MAX));
+        assert_eq!(parse_u16_field(&payload, "overflow"), None);
+        assert_eq!(parse_u16_field(&payload, "missing"), None);
     }
 }
