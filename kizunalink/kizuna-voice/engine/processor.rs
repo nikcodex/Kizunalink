@@ -57,6 +57,25 @@ pub struct AudioProcessor {
 }
 
 impl AudioProcessor {
+    /// Builds the resampler for a given source rate, honoring the configured
+    /// quality. Passthrough (linear) is used when no resampling is needed.
+    fn build_resampler(source_rate: u32, quality: ResamplingQuality) -> Resampler {
+        if source_rate == TARGET_SAMPLE_RATE {
+            return Resampler::linear(source_rate, TARGET_SAMPLE_RATE, MIXER_CHANNELS);
+        }
+        match quality {
+            ResamplingQuality::Low => {
+                Resampler::linear(source_rate, TARGET_SAMPLE_RATE, MIXER_CHANNELS)
+            }
+            ResamplingQuality::Medium => {
+                Resampler::hermite(source_rate, TARGET_SAMPLE_RATE, MIXER_CHANNELS)
+            }
+            ResamplingQuality::High => {
+                Resampler::sinc(source_rate, TARGET_SAMPLE_RATE, MIXER_CHANNELS)
+            }
+        }
+    }
+
     pub fn new(
         source: Box<dyn MediaSource>,
         kind: Option<AudioFormat>,
@@ -96,21 +115,7 @@ impl AudioProcessor {
             sample_rate, channels
         );
 
-        let resampler = if sample_rate == TARGET_SAMPLE_RATE {
-            Resampler::linear(sample_rate, TARGET_SAMPLE_RATE, MIXER_CHANNELS)
-        } else {
-            match config.resampling_quality {
-                ResamplingQuality::Low => {
-                    Resampler::linear(sample_rate, TARGET_SAMPLE_RATE, MIXER_CHANNELS)
-                }
-                ResamplingQuality::Medium => {
-                    Resampler::hermite(sample_rate, TARGET_SAMPLE_RATE, MIXER_CHANNELS)
-                }
-                ResamplingQuality::High => {
-                    Resampler::sinc(sample_rate, TARGET_SAMPLE_RATE, MIXER_CHANNELS)
-                }
-            }
-        };
+        let resampler = Self::build_resampler(sample_rate, config.resampling_quality);
 
         Ok(Self {
             format,
@@ -178,31 +183,8 @@ impl AudioProcessor {
                                 frame_rate, self.source_rate
                             );
                             self.source_rate = frame_rate;
-                            self.resampler = if self.source_rate == TARGET_SAMPLE_RATE {
-                                Resampler::linear(
-                                    self.source_rate,
-                                    TARGET_SAMPLE_RATE,
-                                    MIXER_CHANNELS,
-                                )
-                            } else {
-                                match self.config.resampling_quality {
-                                    ResamplingQuality::Low => Resampler::linear(
-                                        self.source_rate,
-                                        TARGET_SAMPLE_RATE,
-                                        MIXER_CHANNELS,
-                                    ),
-                                    ResamplingQuality::Medium => Resampler::hermite(
-                                        self.source_rate,
-                                        TARGET_SAMPLE_RATE,
-                                        MIXER_CHANNELS,
-                                    ),
-                                    ResamplingQuality::High => Resampler::sinc(
-                                        self.source_rate,
-                                        TARGET_SAMPLE_RATE,
-                                        MIXER_CHANNELS,
-                                    ),
-                                }
-                            };
+                            self.resampler =
+                                Self::build_resampler(frame_rate, self.config.resampling_quality);
                         }
 
                         let pcm_data = if frame_channels == MIXER_CHANNELS {

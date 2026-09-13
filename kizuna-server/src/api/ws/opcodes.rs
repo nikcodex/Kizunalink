@@ -80,46 +80,47 @@ async fn handle_voice_update(
         return Ok(());
     };
 
-    let mut changed = false;
-    {
+    // Update the voice state and decide whether a gateway task must be (re)spawned
+    // under a single write lock, so the decision cannot race with a concurrent
+    // voice update between the check and the spawn.
+    let spawn = {
         let mut player = player_arc.write().await;
-        if player.voice.token != token
+        let changed = player.voice.token != token
             || player.voice.endpoint != endpoint
             || player.voice.session_id != voice_session_id
-            || player.voice.channel_id != channel_id
-        {
+            || player.voice.channel_id != channel_id;
+
+        if changed {
             player.voice = VoiceConnectionState {
                 token,
                 endpoint,
                 session_id: voice_session_id,
                 channel_id,
             };
-            changed = true;
         }
-    }
 
-    let needs_task = {
-        let player = player_arc.read().await;
-        player.gateway_task.is_none()
+        if changed || player.gateway_task.is_none() {
+            if let Some(task) = player.gateway_task.take() {
+                task.abort();
+            }
+
+            Some((
+                player.engine.clone(),
+                player.guild_id.clone(),
+                player.voice.clone(),
+                player.filter_chain.clone(),
+                player.ping.clone(),
+                player.frames_sent.clone(),
+                player.frames_nulled.clone(),
+            ))
+        } else {
+            None
+        }
     };
 
-    if changed || needs_task {
-        let mut player = player_arc.write().await;
-        let engine = player.engine.clone();
-        let guild = player.guild_id.clone();
-        let voice_state = player.voice.clone();
-        let filter_chain = player.filter_chain.clone();
-        let ping = player.ping.clone();
-
-        if let Some(task) = player.gateway_task.take() {
-            task.abort();
-        }
-
-        let frames_sent = player.frames_sent.clone();
-        let frames_nulled = player.frames_nulled.clone();
-
-        drop(player);
-
+    if let Some((engine, guild, voice_state, filter_chain, ping, frames_sent, frames_nulled)) =
+        spawn
+    {
         let session_clone = session.clone();
         let (event_tx, mut event_rx) = tokio::sync::mpsc::unbounded_channel();
         tokio::spawn(async move {
@@ -144,9 +145,16 @@ async fn handle_voice_update(
         })
         .await;
 
-        let mut player_w = player_arc.write().await;
-        session.register_task(new_task.abort_handle());
-        player_w.gateway_task = Some(new_task);
+        // Re-acquire the lock to install. If a concurrent voice update spawned a
+        // newer task while we were connecting, keep theirs and drop ours — the
+        // later update is authoritative.
+        let mut player = player_arc.write().await;
+        if player.gateway_task.is_some() {
+            new_task.abort();
+        } else {
+            session.register_task(new_task.abort_handle());
+            player.gateway_task = Some(new_task);
+        }
     }
 
     Ok(())

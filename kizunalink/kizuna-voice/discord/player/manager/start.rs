@@ -205,6 +205,10 @@ async fn stop_current_track(
 
     if let Some(handle) = player.track_handle.take() {
         handle.stop();
+        // Remove only this track from the mixer — `stop_all` would also kill any
+        // other mixer tracks and active sound-effect layers.
+        let engine = player.engine.lock().await;
+        engine.mixer.lock().await.stop_track(&handle.state_arc());
     }
     player.track = None;
     player.track_info = None;
@@ -219,7 +223,4 @@ async fn stop_current_track(
         player.frames_nulled.swap(0, Ordering::Relaxed),
         Ordering::Relaxed,
     );
-
-    let engine = player.engine.lock().await;
-    engine.mixer.lock().await.stop_all();
 }

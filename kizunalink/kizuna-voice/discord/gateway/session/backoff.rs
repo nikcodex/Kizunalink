@@ -18,6 +18,9 @@ impl Backoff {
     }
 
     /// Computes and returns the next delay duration, incrementing the attempt counter.
+    ///
+    /// The exponent is capped at 3, so delays stop growing from the fourth attempt
+    /// onward (`8 * base`) while `attempt` keeps counting toward [`Self::is_exhausted`].
     pub fn next_delay(&mut self) -> Duration {
         let exponent = self.attempt.min(3);
         let ms = BACKOFF_BASE_MS * 2u64.pow(exponent);
@@ -25,7 +28,9 @@ impl Backoff {
         Duration::from_millis(ms)
     }
 
-    /// Returns `true` if the retry limit has been reached.
+    /// Returns `true` once `MAX_RECONNECT_ATTEMPTS` consecutive attempts have been
+    /// made. Note this reports the *attempt limit*, not backoff saturation — delays
+    /// are already capped at `8 * base` from the fourth attempt on.
     #[inline]
     pub const fn is_exhausted(&self) -> bool {
         self.attempt >= MAX_RECONNECT_ATTEMPTS

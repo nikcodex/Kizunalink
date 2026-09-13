@@ -55,7 +55,12 @@ pub(crate) fn soft_clip_i16(sum: i32) -> i16 {
     let sign = if sum < 0 { -1.0 } else { 1.0 };
     let over = mag as f32 / 32768.0 - THRESHOLD;
     let y = THRESHOLD + HEADROOM * (1.0 - (-over / HEADROOM).exp());
-    ((y * 32768.0).min(i16::MAX as f32) as i16 as f32 * sign) as i16
+    let magnitude = (y * 32768.0).min(i16::MAX as f32) as i16;
+    if sign < 0.0 {
+        -magnitude
+    } else {
+        magnitude
+    }
 }
 
 impl AudioMixer {
@@ -213,6 +218,31 @@ impl Mixer {
         }
         self.tracks.clear();
         self.audio_mixer.enabled = false;
+    }
+
+    /// Stops and removes only the track sharing `state`, leaving other tracks and
+    /// audio-mixer (sound-effect) layers untouched — unlike [`Mixer::stop_all`],
+    /// which tears down everything.
+    pub fn stop_track(&mut self, state: &Arc<AtomicU8>) {
+        let Some(idx) = self
+            .tracks
+            .iter()
+            .position(|t| Arc::ptr_eq(&t.state, state))
+        else {
+            return;
+        };
+
+        let track = self.tracks.remove(idx);
+        track
+            .state
+            .store(PlaybackState::Stopped as u8, Ordering::Release);
+
+        // Keep the passthrough index pointing at the same track after removal.
+        match self.opus_passthrough_track {
+            Some(p) if p == idx => self.opus_passthrough_track = None,
+            Some(ref mut p) if *p > idx => *p -= 1,
+            _ => {}
+        }
     }
 
     pub fn mix(&mut self, buf: &mut [i16]) -> bool {
