@@ -68,11 +68,13 @@ pub async fn subscribe_lyrics(
                             lines: lyrics.lines.map(|lines| {
                                 lines
                                     .into_iter()
-                                    .map(|l| crate::lavalink::protocol::models::KizunaLinkLyricsLine {
-                                        timestamp: l.timestamp,
-                                        duration: Some(l.duration),
-                                        line: l.text,
-                                        plugin: serde_json::json!({}),
+                                    .map(|l| {
+                                        crate::lavalink::protocol::models::KizunaLinkLyricsLine {
+                                            timestamp: l.timestamp,
+                                            duration: Some(l.duration),
+                                            line: l.text,
+                                            plugin: serde_json::json!({}),
+                                        }
                                     })
                                     .collect()
                             }),
@@ -83,7 +85,9 @@ pub async fn subscribe_lyrics(
                 session_clone.send_message(&event);
             } else {
                 let event = crate::lavalink::protocol::OutgoingMessage::Event {
-                    event: Box::new(crate::lavalink::protocol::KizunaLinkEvent::LyricsNotFound { guild_id }),
+                    event: Box::new(crate::lavalink::protocol::KizunaLinkEvent::LyricsNotFound {
+                        guild_id,
+                    }),
                 };
                 session_clone.send_message(&event);
             }
@@ -144,9 +148,8 @@ pub async fn get_lyrics(
                 source_name: track.info.source_name.clone(),
                 provider: Some(lyrics.provider),
                 text: Some(lyrics.text),
-                lines: lyrics
-                    .lines
-                    .map(|lines: Vec<crate::lavalink::protocol::models::LyricsLine>| {
+                lines: lyrics.lines.map(
+                    |lines: Vec<crate::lavalink::protocol::models::LyricsLine>| {
                         lines
                             .into_iter()
                             .map(|l| KizunaLinkLyricsLine {
@@ -156,7 +159,8 @@ pub async fn get_lyrics(
                                 plugin: serde_json::json!({}),
                             })
                             .collect()
-                    }),
+                    },
+                ),
                 plugin: serde_json::json!({}),
             };
             Json(response).into_response()
@@ -193,7 +197,9 @@ pub async fn get_player_lyrics(
         Some(lyrics) => {
             let track_info = player.track_info.as_ref().map(|t| &t.info);
             let response = KizunaLinkLyrics {
-                source_name: track_info.map(|i| i.source_name.clone()).unwrap_or_default(),
+                source_name: track_info
+                    .map(|i| i.source_name.clone())
+                    .unwrap_or_default(),
                 provider: Some(lyrics.provider.clone()),
                 text: Some(lyrics.text.clone()),
                 lines: lyrics.lines.as_ref().map(|lines| {

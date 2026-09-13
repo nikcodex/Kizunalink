@@ -17,10 +17,10 @@ pub mod server;
 pub use kizunalink::common;
 pub use kizunalink::discord;
 pub use kizunalink::engine as audio;
-pub use kizunalink::media::sources as sources;
+pub use kizunalink::media::sources;
 
 // Convenience re-exports matching how the server code references these.
-pub use kizunalink::discord::gateway as gateway;
-pub use kizunalink::discord::player as player;
-pub use kizunalink::lavalink::protocol as protocol;
-pub use kizunalink::lavalink::routeplanner as routeplanner;
+pub use kizunalink::discord::gateway;
+pub use kizunalink::discord::player;
+pub use kizunalink::lavalink::protocol;
+pub use kizunalink::lavalink::routeplanner;

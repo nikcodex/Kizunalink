@@ -12,9 +12,8 @@
 pub mod common;
 pub mod config;
 
-
-pub mod engine;
-pub mod opus;
 pub mod discord;
-pub mod media;
+pub mod engine;
 pub mod lavalink;
+pub mod media;
+pub mod opus;

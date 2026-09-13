@@ -529,12 +529,11 @@ impl SourcePlugin for YandexMusicSource {
         routeplanner: Option<Arc<dyn crate::lavalink::routeplanner::RoutePlanner>>,
     ) -> Option<BoxedTrack> {
         let track_id = if identifier.starts_with("http") {
-            if let Some(caps) = self.url_pattern.captures(identifier) {
+            {
+                let caps = self.url_pattern.captures(identifier)?;
                 caps.name("id2")
                     .or(caps.name("id1"))
                     .map(|m| m.as_str().to_string())?
-            } else {
-                return None;
             }
         } else {
             identifier.to_string()

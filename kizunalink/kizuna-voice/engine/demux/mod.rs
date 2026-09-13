@@ -15,8 +15,8 @@ use symphonia::core::{
 };
 pub use webm_opus::WebmOpusDemuxer;
 
-use crate::engine::constants::{MIXER_CHANNELS, TARGET_SAMPLE_RATE};
 pub use crate::common::types::AudioFormat;
+use crate::engine::constants::{MIXER_CHANNELS, TARGET_SAMPLE_RATE};
 
 pub enum DemuxResult {
     Transcode {

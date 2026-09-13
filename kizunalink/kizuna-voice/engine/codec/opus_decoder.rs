@@ -1,7 +1,7 @@
 // Copyright (c) 2026 nikcodex (KizunaLink)
 // Licensed under the MIT License
 
-use crate::opus::{Channels, SampleRate, Decoder as OpusDecoder};
+use crate::opus::{Channels, Decoder as OpusDecoder, SampleRate};
 use symphonia::core::{
     audio::{AsAudioBufferRef, AudioBuffer, AudioBufferRef, Layout, Signal, SignalSpec},
     codecs::{
@@ -99,11 +99,7 @@ impl Decoder for OpusCodecDecoder {
     fn decode(&mut self, packet: &SymphPacket) -> Result<AudioBufferRef<'_>> {
         let n = self
             .decoder
-            .decode(
-                Some(packet.data.as_ref()),
-                self.pcm.as_mut_slice(),
-                false,
-            )
+            .decode(Some(packet.data.as_ref()), self.pcm.as_mut_slice(), false)
             .map_err(|e| Error::IoError(std::io::Error::other(e.to_string())))?;
 
         self.buf.clear();

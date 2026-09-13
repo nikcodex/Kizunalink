@@ -9,7 +9,11 @@ use crate::config::sources::{
 };
 
 fn default_hifi_qualities() -> Vec<String> {
-    vec!["LOSSLESS".to_string(), "HIGH".to_string(), "LOW".to_string()]
+    vec![
+        "LOSSLESS".to_string(),
+        "HIGH".to_string(),
+        "LOW".to_string(),
+    ]
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]

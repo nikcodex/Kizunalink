@@ -25,7 +25,14 @@ pub async fn check_auth(
 
     use subtle::ConstantTimeEq;
     match auth_header {
-        Some(auth) if bool::from(auth.as_bytes().ct_eq(state.config.server.authorization.as_bytes())) => Ok(next.run(req).await),
+        Some(auth)
+            if bool::from(
+                auth.as_bytes()
+                    .ct_eq(state.config.server.authorization.as_bytes()),
+            ) =>
+        {
+            Ok(next.run(req).await)
+        }
         Some(_) => {
             warn!("REST authorization failed: invalid password");
             Err(StatusCode::UNAUTHORIZED)

@@ -221,7 +221,8 @@ pub async fn resolve_format_url(
 static DURATION_REGEX: OnceLock<Regex> = OnceLock::new();
 
 pub fn is_duration(text: &str) -> bool {
-    let re = DURATION_REGEX.get_or_init(|| Regex::new(r"^\d{1,2}:\d{2}(:\d{2})?$").expect("valid regex"));
+    let re = DURATION_REGEX
+        .get_or_init(|| Regex::new(r"^\d{1,2}:\d{2}(:\d{2})?$").expect("valid regex"));
     re.is_match(text)
 }
 

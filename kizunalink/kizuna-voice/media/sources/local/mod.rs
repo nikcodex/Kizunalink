@@ -18,11 +18,11 @@ use symphonia::core::{
 use tracing::{debug, error, warn};
 
 use crate::{
+    common::Severity,
     engine::{
         AudioFrame,
         processor::{AudioProcessor, DecoderCommand},
     },
-    common::Severity,
     lavalink::protocol::tracks::{LoadError, LoadResult, Track, TrackInfo},
     media::sources::{
         SourcePlugin,

@@ -7,16 +7,15 @@ use tracing::warn;
 
 use crate::discord::player::manager::lyrics::sync_lyrics;
 use crate::{
-    engine::playback::{PlaybackState, TrackHandle},
     common::types::GuildId,
     discord::player::state::PlayerState,
+    engine::playback::{PlaybackState, TrackHandle},
     lavalink::protocol::{
         self,
         events::{KizunaLinkEvent, TrackEndReason, TrackException},
         models::LyricsData,
         tracks::Track,
     },
-    
 };
 
 pub struct MonitorCtx {

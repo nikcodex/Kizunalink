@@ -10,12 +10,12 @@ use std::{
 use symphonia::core::io::MediaSource;
 
 use crate::{
+    common::types::AudioFormat,
+    config::sources::HttpProxyConfig,
     engine::{
         AudioFrame,
         processor::{AudioProcessor, DecoderCommand},
     },
-    common::types::AudioFormat,
-    config::sources::HttpProxyConfig,
     media::sources::{
         plugin::{DecoderOutput, PlayableTrack},
         youtube::hls::{
@@ -277,10 +277,11 @@ impl PlayableTrack for TwitchTrack {
                                     e
                                 );
                             }
-                        }) {
-                            tracing::error!("failed to spawn thread: {e}");
-                            let _ = err_tx.send(format!("Failed to spawn decoder thread: {e}"));
-                        }
+                        })
+                    {
+                        tracing::error!("failed to spawn thread: {e}");
+                        let _ = err_tx.send(format!("Failed to spawn decoder thread: {e}"));
+                    }
                 }
                 Err(e) => {
                     tracing::error!("Twitch HLS processor init failed for {}: {}", url, e);

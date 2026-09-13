@@ -250,7 +250,10 @@ mod tests {
     fn cuts_only_are_unaffected() {
         let mut gains = [0.0f32; BAND_COUNT];
         gains[3] = -0.25;
-        assert_eq!(EqualizerFilter::compute_makeup_gain(&gains), DEFAULT_MAKEUP_GAIN);
+        assert_eq!(
+            EqualizerFilter::compute_makeup_gain(&gains),
+            DEFAULT_MAKEUP_GAIN
+        );
     }
 
     #[test]

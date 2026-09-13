@@ -7,9 +7,12 @@ use async_trait::async_trait;
 use flume::{Receiver, Sender};
 
 use crate::{
-    engine::{AudioFrame, processor::DecoderCommand},
     config::sources::HttpProxyConfig,
-    lavalink::{protocol::{LoadResult, SearchResult}, routeplanner::RoutePlanner},
+    engine::{AudioFrame, processor::DecoderCommand},
+    lavalink::{
+        protocol::{LoadResult, SearchResult},
+        routeplanner::RoutePlanner,
+    },
 };
 
 /// Returns `(frame_rx, cmd_tx, error_rx)` where:

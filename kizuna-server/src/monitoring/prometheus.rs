@@ -157,9 +157,7 @@ static REQUEST_LATENCY: LazyLock<HistogramVec> = LazyLock::new(|| {
         "End-to-end HTTP request latency by method and status code",
     )
     .namespace(NAMESPACE)
-    .buckets(
-        prometheus::exponential_buckets(0.0005, 2.0, 15).expect("constant bucket spec"),
-    );
+    .buckets(prometheus::exponential_buckets(0.0005, 2.0, 15).expect("constant bucket spec"));
     let vec = HistogramVec::new(opts, &["method", "status"]).expect("valid label set");
     REGISTRY
         .register(Box::new(vec.clone()))
@@ -175,9 +173,7 @@ static TRACK_LOAD_DURATION: LazyLock<Histogram> = LazyLock::new(|| {
             "Time spent resolving a track request and arming playback",
         )
         .namespace(NAMESPACE)
-        .buckets(vec![
-            0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0,
-        ]),
+        .buckets(vec![0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0]),
     )
     .expect("constant bucket spec");
     REGISTRY

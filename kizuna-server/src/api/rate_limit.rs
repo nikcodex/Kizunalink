@@ -68,7 +68,9 @@ impl RateLimiter {
             updated_at: now,
         });
 
-        let elapsed = now.saturating_duration_since(entry.updated_at).as_secs_f64();
+        let elapsed = now
+            .saturating_duration_since(entry.updated_at)
+            .as_secs_f64();
         entry.tokens = (entry.tokens + elapsed * self.refill_rate()).min(capacity);
         entry.updated_at = now;
 
@@ -125,7 +127,8 @@ pub async fn rate_limit(
             let mut resp = Response::new("Too Many Requests".into());
             *resp.status_mut() = StatusCode::TOO_MANY_REQUESTS;
             if let Ok(v) = HeaderValue::from_str(&retry_after.as_secs().to_string()) {
-                resp.headers_mut().insert(HeaderName::from_static("retry-after"), v);
+                resp.headers_mut()
+                    .insert(HeaderName::from_static("retry-after"), v);
             }
             Ok(resp)
         }

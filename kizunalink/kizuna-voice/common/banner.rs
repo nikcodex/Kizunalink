@@ -1,7 +1,9 @@
 // Copyright (c) 2026 nikcodex (KizunaLink)
 // Licensed under the MIT License
 
-use crate::common::utils::{BOLD, CYAN, DIM, ORANGE, RESET, YELLOW, colors_enabled, strip_ansi_escapes};
+use crate::common::utils::{
+    BOLD, CYAN, DIM, ORANGE, RESET, YELLOW, colors_enabled, strip_ansi_escapes,
+};
 
 /// Prints one banner line: console *and* log file via `log_println!`, with ANSI codes
 /// stripped when colors are disabled (N07). The allow keeps N05's `print_stdout` gate from
@@ -63,7 +65,9 @@ pub fn print_banner(info: &BannerInfo) {
 "#;
 
     emit(format!("{ORANGE}{BANNER_ART}{RESET}"));
-    emit(format!("{DIM}========================================{RESET}\n"));
+    emit(format!(
+        "{DIM}========================================{RESET}\n"
+    ));
 
     print_row("Version", info.version, CYAN);
     print_row("Build time", info.build_time, RESET);
@@ -86,5 +90,8 @@ pub fn print_banner(info: &BannerInfo) {
 }
 
 fn print_row(label: &str, value: impl AsRef<str>, color: &str) {
-    emit(format!("  {BOLD}{label:<14}{RESET}{color}{}{RESET}", value.as_ref()));
+    emit(format!(
+        "  {BOLD}{label:<14}{RESET}{color}{}{RESET}",
+        value.as_ref()
+    ));
 }

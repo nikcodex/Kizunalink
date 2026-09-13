@@ -15,11 +15,11 @@ use tracing::{debug, trace, warn};
 
 use super::AudioSource;
 use crate::{
+    common::types::AnyResult,
     engine::constants::{
         CHUNK_SIZE, FETCH_WAIT_MS, MAX_CONCURRENT_FETCHES, MAX_FETCH_RETRIES, PREFETCH_CHUNKS,
         PROBE_TIMEOUT_SECS, WORKER_IDLE_MS,
     },
-    common::types::AnyResult,
 };
 
 #[derive(Clone)]

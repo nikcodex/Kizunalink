@@ -86,8 +86,8 @@ impl Encoder {
         }
         let frame_size = i32::try_from(pcm.len() / self.channels.count())
             .map_err(|_| Error::Opus(ErrorCode::BadArgument))?;
-        let max_data_bytes = i32::try_from(output.len())
-            .map_err(|_| Error::Opus(ErrorCode::BadArgument))?;
+        let max_data_bytes =
+            i32::try_from(output.len()).map_err(|_| Error::Opus(ErrorCode::BadArgument))?;
 
         let ret = unsafe {
             ffi::opus_encode(
@@ -125,8 +125,8 @@ impl Encoder {
         }
         let frame_size = i32::try_from(pcm.len() / self.channels.count())
             .map_err(|_| Error::Opus(ErrorCode::BadArgument))?;
-        let max_data_bytes = i32::try_from(output.len())
-            .map_err(|_| Error::Opus(ErrorCode::BadArgument))?;
+        let max_data_bytes =
+            i32::try_from(output.len()).map_err(|_| Error::Opus(ErrorCode::BadArgument))?;
 
         let ret = unsafe {
             ffi::opus_encode_float(
@@ -181,7 +181,10 @@ impl Encoder {
     ///
     /// FEC allows the decoder to recover lost packets when packet loss occurs.
     pub fn set_inband_fec(&self, enabled: bool) -> Result<()> {
-        self.encoder_ctl_set(ffi::OPUS_SET_INBAND_FEC_REQUEST, if enabled { 1 } else { 0 })
+        self.encoder_ctl_set(
+            ffi::OPUS_SET_INBAND_FEC_REQUEST,
+            if enabled { 1 } else { 0 },
+        )
     }
 
     /// Configures the expected packet loss percentage for FEC optimization.

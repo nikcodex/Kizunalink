@@ -450,7 +450,10 @@ mod tests {
         let input: Vec<i16> = (0..960).map(|i| ((i * 31) % 2000) as i16 - 1000).collect();
         let mut samples = input.clone();
         chain.process(&mut samples);
-        assert_eq!(samples, input, "process() must not replace caller samples in-place");
+        assert_eq!(
+            samples, input,
+            "process() must not replace caller samples in-place"
+        );
         assert!(
             !chain.timescale_buffer.is_empty(),
             "speed=1.5 over 960 frames must produce output"
@@ -463,14 +466,22 @@ mod tests {
 
         let mut frame16 = [0i16; 16];
         assert!(chain.fill_frame(&mut frame16), "next 16 must be available");
-        assert_eq!(&frame16[..], &produced[8..24], "drain must continue in order");
+        assert_eq!(
+            &frame16[..],
+            &produced[8..24],
+            "drain must continue in order"
+        );
         assert_eq!(chain.timescale_buffer.len(), produced.len() - 24);
 
         // Short buffer => no partial drain, returns false.
         let before = chain.timescale_buffer.len();
         let mut too_big = vec![0i16; before + 8];
         assert!(!chain.fill_frame(&mut too_big));
-        assert_eq!(chain.timescale_buffer.len(), before, "failed fill must not consume");
+        assert_eq!(
+            chain.timescale_buffer.len(),
+            before,
+            "failed fill must not consume"
+        );
 
         // reset() empties the exchange buffer.
         chain.reset();

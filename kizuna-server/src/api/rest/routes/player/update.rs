@@ -138,7 +138,8 @@ async fn handle_filters(
     guild_id: &kizunalink::common::types::GuildId,
     session: &Arc<Session>,
 ) -> Result<(), (StatusCode, Json<kizunalink::common::KizunaLinkError>)> {
-    let invalid_filters = kizunalink::engine::filters::validate_filters(&filters, &state.config.filters);
+    let invalid_filters =
+        kizunalink::engine::filters::validate_filters(&filters, &state.config.filters);
     if !invalid_filters.is_empty() {
         let message = format!(
             "Following filters are disabled in the config: {}",
@@ -233,7 +234,9 @@ async fn handle_voice(
     Ok(())
 }
 
-fn resolve_track_update(body: &PlayerUpdate) -> Option<kizunalink::discord::player::PlayerUpdateTrack> {
+fn resolve_track_update(
+    body: &PlayerUpdate,
+) -> Option<kizunalink::discord::player::PlayerUpdateTrack> {
     if let Some(t) = &body.track {
         Some(t.clone())
     } else if let Some(et) = &body.encoded_track {
@@ -323,13 +326,11 @@ async fn stop_player(player: &mut PlayerContext, session: &Arc<Session>) {
     player.track_info = None;
 
     if let Some(encoded) = track_data {
-        let track_info = track_info.unwrap_or_else(|| {
-            protocol::tracks::Track {
-                encoded: encoded.clone(),
-                info: protocol::tracks::TrackInfo::default(),
-                plugin_info: serde_json::json!({}),
-                user_data: serde_json::json!({}),
-            }
+        let track_info = track_info.unwrap_or_else(|| protocol::tracks::Track {
+            encoded: encoded.clone(),
+            info: protocol::tracks::TrackInfo::default(),
+            plugin_info: serde_json::json!({}),
+            user_data: serde_json::json!({}),
         });
         session.send_message(&protocol::OutgoingMessage::Event {
             event: Box::new(protocol::KizunaLinkEvent::TrackEnd {

@@ -1,7 +1,7 @@
 // Copyright (c) 2026 nikcodex (KizunaLink)
 // Licensed under the MIT License
 
-use crate::opus::{Application, Bitrate, Channels, SampleRate, Encoder as OpusEncoder};
+use crate::opus::{Application, Bitrate, Channels, Encoder as OpusEncoder, SampleRate};
 
 use crate::common::types::AnyResult;
 
@@ -11,9 +11,8 @@ pub struct Encoder {
 
 impl Encoder {
     pub fn new() -> AnyResult<Self> {
-        let encoder =
-            OpusEncoder::new(SampleRate::Hz48000, Channels::Stereo, Application::Audio)
-                .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?;
+        let encoder = OpusEncoder::new(SampleRate::Hz48000, Channels::Stereo, Application::Audio)
+            .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?;
         encoder
             .set_bitrate(Bitrate::Auto)
             .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?;

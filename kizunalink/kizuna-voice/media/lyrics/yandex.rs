@@ -9,7 +9,7 @@ use sha2::Sha256;
 
 use super::{LyricsProvider, utils};
 use crate::{
-    config::{sources::HttpProxyConfig, lyrics::YandexLyricsConfig},
+    config::{lyrics::YandexLyricsConfig, sources::HttpProxyConfig},
     lavalink::protocol::{models::LyricsData, tracks::TrackInfo},
 };
 

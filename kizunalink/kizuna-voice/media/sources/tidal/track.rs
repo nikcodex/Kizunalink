@@ -6,8 +6,8 @@ use std::sync::Arc;
 use tracing::{debug, error};
 
 use crate::{
-    engine::{AudioFrame, processor::AudioProcessor, source::HttpSource},
     common::types::AudioFormat,
+    engine::{AudioFrame, processor::AudioProcessor, source::HttpSource},
     media::sources::plugin::{DecoderOutput, PlayableTrack},
 };
 
@@ -47,20 +47,23 @@ impl PlayableTrack for TidalTrack {
                     )
                     .map_err(|e| e.to_string()),
                     Err(e) => {
-                        error!("TidalTrack: HttpSource init failed for {}: {}", identifier_for_setup, e);
+                        error!(
+                            "TidalTrack: HttpSource init failed for {}: {}",
+                            identifier_for_setup, e
+                        );
                         Err(format!("Failed to initialize source: {}", e))
                     }
                 }
             })
-                .await;
-                let setup_res = match setup_res_task {
-                    Ok(res) => res,
-                    Err(e) => {
-                        tracing::error!("spawn_blocking failed: {}", e);
-                        let _ = err_tx.send(format!("Failed to spawn task: {e}"));
-                        return;
-                    }
-                };
+            .await;
+            let setup_res = match setup_res_task {
+                Ok(res) => res,
+                Err(e) => {
+                    tracing::error!("spawn_blocking failed: {}", e);
+                    let _ = err_tx.send(format!("Failed to spawn task: {e}"));
+                    return;
+                }
+            };
 
             match setup_res {
                 Ok(mut processor) => {
@@ -73,10 +76,11 @@ impl PlayableTrack for TidalTrack {
                                     identifier, e
                                 );
                             }
-                        }) {
-                            tracing::error!("failed to spawn thread: {e}");
-                            let _ = err_tx.send(format!("Failed to spawn decoder thread: {e}"));
-                        }
+                        })
+                    {
+                        tracing::error!("failed to spawn thread: {e}");
+                        let _ = err_tx.send(format!("Failed to spawn decoder thread: {e}"));
+                    }
                 }
                 Err(e) => {
                     error!(

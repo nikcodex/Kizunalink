@@ -5,8 +5,11 @@ use std::{net::SocketAddr, sync::Arc};
 
 use axum::{Router, routing::get};
 use dashmap::DashMap;
+use kizuna_server::{
+    api::{rest, ws},
+    server::AppState,
+};
 use kizunalink::common::types::AnyResult;
-use kizuna_server::{api::{rest, ws}, server::AppState};
 use tracing::info;
 
 /// Entry point.
@@ -39,11 +42,12 @@ async fn run() -> AnyResult<()> {
     info!("KizunaLink Server starting...");
 
     let routeplanner = if config.route_planner.enabled && !config.route_planner.cidrs.is_empty() {
-        Some(
-            Arc::new(kizuna_server::lavalink::routeplanner::BalancingIpRoutePlanner::new(
+        Some(Arc::new(
+            kizuna_server::lavalink::routeplanner::BalancingIpRoutePlanner::new(
                 config.route_planner.cidrs.clone(),
-            )) as Arc<dyn kizunalink::lavalink::routeplanner::RoutePlanner>,
+            ),
         )
+            as Arc<dyn kizunalink::lavalink::routeplanner::RoutePlanner>)
     } else {
         None
     };
@@ -107,7 +111,10 @@ async fn run() -> AnyResult<()> {
             // Bound memory under IP churn: drop buckets idle for 10+ minutes.
             loop {
                 tokio::time::sleep(std::time::Duration::from_secs(300)).await;
-                limiter.cleanup(std::time::Instant::now(), std::time::Duration::from_secs(600));
+                limiter.cleanup(
+                    std::time::Instant::now(),
+                    std::time::Duration::from_secs(600),
+                );
             }
         });
     }

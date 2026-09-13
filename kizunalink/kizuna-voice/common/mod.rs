@@ -5,9 +5,9 @@ pub mod banner;
 pub mod errors;
 pub mod http;
 pub mod logger;
+pub mod server_hooks;
 pub mod types;
 pub mod utils;
-pub mod server_hooks;
 
 pub use banner::*;
 pub use errors::*;

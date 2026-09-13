@@ -29,7 +29,9 @@ impl Engine for StandardEngine {
         match self.frame_tx.send(frame) {
             Ok(()) => true,
             Err(e) => {
-                warn!("AudioEngine: mixer channel closed while pushing frame ({e}); stopping pipeline");
+                warn!(
+                    "AudioEngine: mixer channel closed while pushing frame ({e}); stopping pipeline"
+                );
                 false
             }
         }

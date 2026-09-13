@@ -36,7 +36,12 @@ impl HifiClient {
                 url.pop();
             }
         }
-        Ok(Self { inner, base_urls, quality_order, country_code })
+        Ok(Self {
+            inner,
+            base_urls,
+            quality_order,
+            country_code,
+        })
     }
 
     pub async fn get(&self, path: &str, params: &[(&str, &str)]) -> TidalResult<Value> {

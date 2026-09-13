@@ -204,7 +204,7 @@ mod tests {
 
         // Output should be clamped to i16 range
         for &sample in &output {
-            assert!(sample >= i16::MIN && sample <= i16::MAX);
+            assert!((i16::MIN..=i16::MAX).contains(&sample));
         }
     }
 

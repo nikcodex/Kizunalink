@@ -13,6 +13,7 @@ use flume::Receiver;
 
 use super::layer::MixLayer;
 use crate::{
+    config::player::PlayerConfig,
     engine::{
         AudioFrame,
         buffer::PooledBuffer,
@@ -20,7 +21,6 @@ use crate::{
         flow::FlowController,
         playback::handle::PlaybackState,
     },
-    config::player::PlayerConfig,
 };
 
 pub struct AudioMixer {
@@ -118,104 +118,6 @@ impl AudioMixer {
         for (out, &sum) in main_frame.iter_mut().zip(self.acc_buf.iter()) {
             *out = soft_clip_i16(sum);
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn audio_mixer_new_is_empty() {
-        let mixer = AudioMixer::new();
-        assert!(mixer.layers.is_empty());
-        assert!(mixer.enabled);
-        assert_eq!(mixer.max_layers, MAX_LAYERS);
-    }
-
-    #[test]
-    fn audio_mixer_disabled_does_not_modify() {
-        let mut mixer = AudioMixer::new();
-        mixer.enabled = false;
-        let mut frame = [100i16, 200, 300, 400];
-        let original = frame;
-        mixer.mix(&mut frame);
-        assert_eq!(frame, original);
-    }
-
-    #[test]
-    fn audio_mixer_empty_layers_does_not_modify() {
-        let mut mixer = AudioMixer::new();
-        let mut frame = [100i16, 200, 300, 400];
-        let original = frame;
-        mixer.mix(&mut frame);
-        assert_eq!(frame, original);
-    }
-
-    #[test]
-    fn audio_mixer_max_layers_enforced() {
-        let mut mixer = AudioMixer::new();
-        for i in 0..MAX_LAYERS {
-            let (_tx, rx) = flume::unbounded();
-            assert!(mixer.add_layer(format!("layer-{i}"), rx, 1.0).is_ok());
-        }
-        let (_tx, rx) = flume::unbounded();
-        assert!(mixer.add_layer("overflow".into(), rx, 1.0).is_err());
-    }
-
-    #[test]
-    fn audio_mixer_remove_layer() {
-        let mut mixer = AudioMixer::new();
-        let (_tx, rx) = flume::unbounded();
-        mixer.add_layer("test".into(), rx, 1.0).unwrap();
-        assert_eq!(mixer.layers.len(), 1);
-        mixer.remove_layer("test");
-        assert!(mixer.layers.is_empty());
-    }
-
-    #[test]
-    fn audio_mixer_set_layer_volume_clamps() {
-        let mut mixer = AudioMixer::new();
-        let (_tx, rx) = flume::unbounded();
-        mixer.add_layer("test".into(), rx, 1.0).unwrap();
-        mixer.set_layer_volume("test", 5.0);
-        assert_eq!(mixer.layers["test"].volume, 1.0);
-        mixer.set_layer_volume("test", -1.0);
-        assert_eq!(mixer.layers["test"].volume, 0.0);
-    }
-
-    #[test]
-    fn soft_clip_is_transparent_below_threshold() {
-        for sum in [-29491i32, -1000, -1, 0, 1, 1000, 29491] {
-            assert_eq!(soft_clip_i16(sum), sum as i16, "transparent at {sum}");
-        }
-    }
-
-    #[test]
-    fn soft_clip_bounds_and_monotonicity() {
-        let mut prev = i16::MIN;
-        for sum in [
-            i32::MIN,
-            -1_000_000,
-            -65536,
-            -29492,
-            29492,
-            65536,
-            1_000_000,
-            i32::MAX,
-        ] {
-            let out = soft_clip_i16(sum);
-            assert!((i16::MIN..=i16::MAX).contains(&out));
-            assert!(out.abs() <= i16::MAX, "never exceeds full scale");
-            if sum > -29492 {
-                assert!(out >= prev, "monotonic at {sum}");
-            }
-            prev = out;
-        }
-        // Beyond the knee the curve saturates but keeps sign and ordering.
-        assert!(soft_clip_i16(-1_000_000) < soft_clip_i16(-29492));
-        assert!(soft_clip_i16(1_000_000) > soft_clip_i16(29492));
-        assert!(soft_clip_i16(1_000_000) < i16::MAX); // asymptotic, not a hard wall
     }
 }
 
@@ -446,5 +348,103 @@ impl Mixer {
 
         buf.copy_from_slice(&self.final_pcm_buf);
         has_audio
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn audio_mixer_new_is_empty() {
+        let mixer = AudioMixer::new();
+        assert!(mixer.layers.is_empty());
+        assert!(mixer.enabled);
+        assert_eq!(mixer.max_layers, MAX_LAYERS);
+    }
+
+    #[test]
+    fn audio_mixer_disabled_does_not_modify() {
+        let mut mixer = AudioMixer::new();
+        mixer.enabled = false;
+        let mut frame = [100i16, 200, 300, 400];
+        let original = frame;
+        mixer.mix(&mut frame);
+        assert_eq!(frame, original);
+    }
+
+    #[test]
+    fn audio_mixer_empty_layers_does_not_modify() {
+        let mut mixer = AudioMixer::new();
+        let mut frame = [100i16, 200, 300, 400];
+        let original = frame;
+        mixer.mix(&mut frame);
+        assert_eq!(frame, original);
+    }
+
+    #[test]
+    fn audio_mixer_max_layers_enforced() {
+        let mut mixer = AudioMixer::new();
+        for i in 0..MAX_LAYERS {
+            let (_tx, rx) = flume::unbounded();
+            assert!(mixer.add_layer(format!("layer-{i}"), rx, 1.0).is_ok());
+        }
+        let (_tx, rx) = flume::unbounded();
+        assert!(mixer.add_layer("overflow".into(), rx, 1.0).is_err());
+    }
+
+    #[test]
+    fn audio_mixer_remove_layer() {
+        let mut mixer = AudioMixer::new();
+        let (_tx, rx) = flume::unbounded();
+        mixer.add_layer("test".into(), rx, 1.0).unwrap();
+        assert_eq!(mixer.layers.len(), 1);
+        mixer.remove_layer("test");
+        assert!(mixer.layers.is_empty());
+    }
+
+    #[test]
+    fn audio_mixer_set_layer_volume_clamps() {
+        let mut mixer = AudioMixer::new();
+        let (_tx, rx) = flume::unbounded();
+        mixer.add_layer("test".into(), rx, 1.0).unwrap();
+        mixer.set_layer_volume("test", 5.0);
+        assert_eq!(mixer.layers["test"].volume, 1.0);
+        mixer.set_layer_volume("test", -1.0);
+        assert_eq!(mixer.layers["test"].volume, 0.0);
+    }
+
+    #[test]
+    fn soft_clip_is_transparent_below_threshold() {
+        for sum in [-29491i32, -1000, -1, 0, 1, 1000, 29491] {
+            assert_eq!(soft_clip_i16(sum), sum as i16, "transparent at {sum}");
+        }
+    }
+
+    #[test]
+    fn soft_clip_bounds_and_monotonicity() {
+        let mut prev = i16::MIN;
+        for sum in [
+            i32::MIN,
+            -1_000_000,
+            -65536,
+            -29492,
+            29492,
+            65536,
+            1_000_000,
+            i32::MAX,
+        ] {
+            let out = soft_clip_i16(sum);
+            assert!((i16::MIN..=i16::MAX).contains(&out));
+            assert!(out.abs() <= i16::MAX, "never exceeds full scale");
+            if sum > -29492 {
+                assert!(out >= prev, "monotonic at {sum}");
+            }
+            prev = out;
+        }
+        // Beyond the knee the curve saturates but keeps sign and ordering.
+        assert!(soft_clip_i16(-1_000_000) < soft_clip_i16(-29492));
+        assert!(soft_clip_i16(1_000_000) > soft_clip_i16(29492));
+        assert!(soft_clip_i16(1_000_000) < i16::MAX); // asymptotic, not a hard wall
     }
 }

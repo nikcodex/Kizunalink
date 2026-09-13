@@ -169,7 +169,8 @@ mod tests {
             d: serde_json::json!({"test": "value"}),
         };
 
-        let json = serde_json::to_string(&payload).expect("GatewayPayload serialization is infallible");
+        let json =
+            serde_json::to_string(&payload).expect("GatewayPayload serialization is infallible");
         assert!(json.contains("\"op\":0"));
         assert!(json.contains("\"test\":\"value\""));
         assert!(!json.contains("\"seq\""));
@@ -183,7 +184,8 @@ mod tests {
             d: serde_json::json!({"t": 123456}),
         };
 
-        let json = serde_json::to_string(&payload).expect("GatewayPayload serialization is infallible");
+        let json =
+            serde_json::to_string(&payload).expect("GatewayPayload serialization is infallible");
         assert!(json.contains("\"op\":3"));
         assert!(json.contains("\"seq\":42"));
     }
@@ -191,7 +193,8 @@ mod tests {
     #[test]
     fn test_gateway_payload_deserialization() {
         let json = r#"{"op":8,"d":{"heartbeat_interval":30000}}"#;
-        let payload: GatewayPayload = serde_json::from_str(json).expect("valid GatewayPayload JSON");
+        let payload: GatewayPayload =
+            serde_json::from_str(json).expect("valid GatewayPayload JSON");
 
         assert_eq!(payload.op, 8);
         assert_eq!(payload.seq, None);
@@ -239,7 +242,7 @@ mod tests {
     #[test]
     fn test_opcode_clone() {
         let op = OpCode::Heartbeat;
-        let cloned = op.clone();
+        let cloned = op;
         assert_eq!(op, cloned);
     }
 

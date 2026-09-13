@@ -51,13 +51,16 @@ fn short_url_re() -> &'static Regex {
 fn mobile_url_re() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     RE.get_or_init(|| {
-        Regex::new(r"^https://soundcloud\.app\.goo\.gl/[a-zA-Z0-9_-]+/?(?:\?.*)?$").expect("valid regex")
+        Regex::new(r"^https://soundcloud\.app\.goo\.gl/[a-zA-Z0-9_-]+/?(?:\?.*)?$")
+            .expect("valid regex")
     })
 }
 
 fn liked_user_urn_re() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
-    RE.get_or_init(|| Regex::new(r#""urn":"soundcloud:users:(\d+)","username":"([^"]+)""#).expect("valid regex"))
+    RE.get_or_init(|| {
+        Regex::new(r#""urn":"soundcloud:users:(\d+)","username":"([^"]+)""#).expect("valid regex")
+    })
 }
 
 fn user_url_re() -> &'static Regex {

@@ -2,15 +2,17 @@
 // Licensed under the MIT License
 
 use super::super::context::PlayerContext;
-use crate::{
-    lavalink::protocol::{
-        self,
-        events::{KizunaLinkEvent, TrackEndReason, TrackException},
-    },
+use crate::lavalink::protocol::{
+    self,
+    events::{KizunaLinkEvent, TrackEndReason, TrackException},
 };
 
 /// Emit `TrackException` followed by `TrackEnd: LoadFailed`.
-pub async fn send_load_failed(player: &PlayerContext, session: &dyn crate::common::server_hooks::SessionContext, message: String) {
+pub async fn send_load_failed(
+    player: &PlayerContext,
+    session: &dyn crate::common::server_hooks::SessionContext,
+    message: String,
+) {
     let Some(track) = player.to_player_response().await.track else {
         return;
     };

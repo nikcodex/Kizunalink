@@ -8,7 +8,7 @@ use crate::{
     lavalink::protocol::{
         self,
         events::KizunaLinkEvent,
-        models::{LyricsData, KizunaLinkLyrics, KizunaLinkLyricsLine},
+        models::{KizunaLinkLyrics, KizunaLinkLyricsLine, LyricsData},
         tracks::TrackInfo,
     },
 };

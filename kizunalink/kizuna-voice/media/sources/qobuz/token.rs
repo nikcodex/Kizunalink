@@ -27,7 +27,8 @@ pub struct QobuzTokenTracker {
 fn bundle_regex() -> &'static Regex {
     static REGEX: std::sync::OnceLock<Regex> = std::sync::OnceLock::new();
     REGEX.get_or_init(|| {
-        Regex::new(r#"<script src="(/resources/\d+\.\d+\.\d+-[a-z]\d{3}/bundle\.js)""#).expect("valid regex")
+        Regex::new(r#"<script src="(/resources/\d+\.\d+\.\d+-[a-z]\d{3}/bundle\.js)""#)
+            .expect("valid regex")
     })
 }
 
@@ -39,7 +40,8 @@ fn app_id_regex() -> &'static Regex {
 fn seed_regex() -> &'static Regex {
     static REGEX: std::sync::OnceLock<Regex> = std::sync::OnceLock::new();
     REGEX.get_or_init(|| {
-        Regex::new(r#"\):[a-z]\.initialSeed\("(.*?)",window\.utimezone\.(.*?)\)"#).expect("valid regex")
+        Regex::new(r#"\):[a-z]\.initialSeed\("(.*?)",window\.utimezone\.(.*?)\)"#)
+            .expect("valid regex")
     })
 }
 
@@ -173,8 +175,8 @@ impl QobuzTokenTracker {
         let timezone_raw = seed_captures.get(2).unwrap().as_str();
         let timezone = format!(
             "{}{}",
-            &timezone_raw[..1].to_uppercase(),
-            &timezone_raw[1..].to_lowercase()
+            timezone_raw[..1].to_uppercase(),
+            timezone_raw[1..].to_lowercase()
         );
 
         let info_extras = info_extras_regex(&timezone)
