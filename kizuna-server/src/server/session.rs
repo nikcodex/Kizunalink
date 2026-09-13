@@ -110,6 +110,10 @@ impl Session {
 
     pub fn send_json(&self, json: impl Into<String>) {
         if self.paused.load(Ordering::Relaxed) {
+            if self.max_queue_size == 0 {
+                return;
+            }
+
             let mut queue = self.event_queue.lock();
             if queue.len() >= self.max_queue_size {
                 queue.pop_front();
@@ -189,5 +193,26 @@ impl kizunalink::common::server_hooks::SessionContext for Session {
     ) -> Option<std::sync::Arc<tokio::sync::RwLock<kizunalink::discord::player::PlayerContext>>>
     {
         self.players.get(guild_id).map(|kv| kv.value().clone())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn zero_event_queue_size_drops_paused_events() {
+        let (sender, _receiver) = flume::unbounded();
+        let session = Session::new(
+            kizunalink::common::types::SessionId("test-session".into()),
+            None,
+            sender,
+            0,
+        );
+        session.paused.store(true, Ordering::Relaxed);
+
+        session.send_json("event");
+
+        assert!(session.event_queue.lock().is_empty());
     }
 }
