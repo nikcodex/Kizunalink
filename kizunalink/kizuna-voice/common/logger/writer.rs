@@ -449,7 +449,7 @@ mod tests {
     #[test]
     fn test_prune_threshold_calculation() {
         let _writer = CircularFileWriter::new("test.log".to_string(), 1000, 0, false);
-        let threshold = (1000 / 10);
+        let threshold = 1000 / 10;
         assert_eq!(threshold, 100);
 
         let _writer = CircularFileWriter::new("test.log".to_string(), 100, 0, false);
