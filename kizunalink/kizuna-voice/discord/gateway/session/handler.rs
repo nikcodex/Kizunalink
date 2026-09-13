@@ -264,6 +264,10 @@ impl<'a> SessionState<'a> {
         None
     }
 
+    /// Applies a READY payload and negotiates the UDP transport.
+    ///
+    /// Returns [`SessionOutcome::Reconnect`] when the advertised endpoint is
+    /// malformed or external address discovery fails.
     async fn on_ready(&mut self, d: Value) -> Option<SessionOutcome> {
         let ssrc = d["ssrc"].as_u64();
         let ip = d["ip"].as_str();
@@ -347,6 +351,11 @@ impl<'a> SessionState<'a> {
         None
     }
 
+    /// Installs the session encryption key, starts voice transport, and attempts
+    /// DAVE setup for a nonzero channel.
+    ///
+    /// Returns [`SessionOutcome::Reconnect`] for a missing or invalid key, or when
+    /// no UDP endpoint was established by READY.
     async fn on_session_description(&mut self, d: Value) -> Option<SessionOutcome> {
         let ka = match d["secret_key"].as_array() {
             Some(a) if a.len() == 32 => a,

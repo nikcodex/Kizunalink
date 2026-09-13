@@ -94,6 +94,11 @@ impl AudioProcessor {
         )
     }
 
+    /// Opens an audio source and creates a processor that writes decoded stereo
+    /// PCM to `engine` at the mixer sample rate.
+    ///
+    /// Returns the format-probing, track-selection, or decoder error encountered
+    /// while opening the source.
     pub fn with_engine(
         source: Box<dyn MediaSource>,
         kind: Option<AudioFormat>,
@@ -134,6 +139,12 @@ impl AudioProcessor {
         })
     }
 
+    /// Processes audio until the source ends, a stop command arrives, or the
+    /// output engine stops accepting frames.
+    ///
+    /// Packet-read and nonrecoverable decode errors are forwarded to the optional
+    /// error channel and returned to the caller. Recoverable decode errors are
+    /// skipped.
     pub fn run(&mut self) -> Result<(), Error> {
         let _span = span!(Level::DEBUG, "audio_processor").entered();
 

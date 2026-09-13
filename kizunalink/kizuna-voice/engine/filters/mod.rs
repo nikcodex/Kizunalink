@@ -339,6 +339,11 @@ impl FilterChain {
         !self.filters.is_empty() || self.timescale.is_some()
     }
 
+    /// Applies enabled filters to `samples` and queues any timescale output for
+    /// [`Self::fill_frame`].
+    ///
+    /// Timescale output does not replace `samples` in place. When its queue
+    /// exceeds the growth cap, the oldest complete stereo samples are discarded.
     pub fn process(&mut self, samples: &mut [i16]) {
         for filter in self.filters.iter_mut() {
             filter.process(samples);

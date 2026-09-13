@@ -15,6 +15,10 @@ use crate::{
     server::{AppState, session::Session},
 };
 
+/// Applies a Lavalink player update and returns the resulting player state.
+///
+/// Creates the guild player when its session exists. Returns `404 Not Found` for
+/// an unknown session and rejects invalid filter or partial voice-state updates.
 pub async fn update_player(
     Path((session_id, guild_id)): Path<(
         kizunalink::common::types::SessionId,

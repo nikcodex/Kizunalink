@@ -148,6 +148,11 @@ impl VoiceGateway {
         Ok(())
     }
 
+    /// Runs one gateway connection using either identification or the supplied
+    /// resume state.
+    ///
+    /// Incoming WebSocket messages and frames are limited to 1 MiB. Returns the
+    /// session's requested outcome, or a transport or session-setup error.
     async fn connect(
         &self,
         is_resume: bool,

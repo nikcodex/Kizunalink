@@ -35,6 +35,11 @@ impl HeartbeatTracker {
         Self::default()
     }
 
+    /// Validates an acknowledgment against the most recently sent heartbeat.
+    ///
+    /// A match clears the missed-ack count and returns the round-trip time in
+    /// milliseconds. A mismatched nonce leaves the count unchanged and returns
+    /// `None`.
     pub fn validate_ack(&self, acked_nonce: u64) -> Option<u64> {
         // Acquire pairs with the Release stores in `spawn`, so the nonce written by
         // the heartbeat task is guaranteed visible to the WS read loop.
@@ -49,6 +54,11 @@ impl HeartbeatTracker {
         Some(now_ms().saturating_sub(self.sent_at.load(Ordering::Acquire)))
     }
 
+    /// Spawns a task that sends heartbeats at `interval_ms` and tracks their
+    /// acknowledgments.
+    ///
+    /// The task cancels `conn_token` after two consecutive heartbeats remain
+    /// unacknowledged, and exits if the message receiver is dropped.
     pub fn spawn(
         &self,
         tx: UnboundedSender<Message>,

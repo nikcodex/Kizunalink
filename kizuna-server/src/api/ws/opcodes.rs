@@ -55,6 +55,11 @@ pub async fn handle_op(
     }
 }
 
+/// Applies a voice-state update and starts a gateway task when the state changed
+/// or no task is running.
+///
+/// Returns an error when the event has no string `token` or `endpoint`. If the
+/// session has no user ID, its voice state is not updated and no task is started.
 async fn handle_voice_update(
     session: &Arc<Session>,
     state: &Arc<AppState>,

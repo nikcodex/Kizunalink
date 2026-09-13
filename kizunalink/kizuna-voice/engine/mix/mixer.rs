@@ -216,9 +216,10 @@ impl Mixer {
         self.audio_mixer.enabled = false;
     }
 
-    /// Stops and removes only the track sharing `state`, leaving other tracks and
-    /// audio-mixer (sound-effect) layers untouched — unlike [`Mixer::stop_all`],
-    /// which tears down everything.
+    /// Stops and removes the track whose state cell is the same allocation as
+    /// `state`, leaving other tracks and sound-effect layers untouched.
+    ///
+    /// Does nothing when no track has that state cell.
     pub fn stop_track(&mut self, state: &Arc<AtomicU8>) {
         let Some(idx) = self
             .tracks
