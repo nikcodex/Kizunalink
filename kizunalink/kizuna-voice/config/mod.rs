@@ -90,7 +90,9 @@ impl AppConfig {
             }
 
             let remote_toml = response.text().await?;
-            return Ok(toml::from_str(&remote_toml)?);
+            let config: Self = toml::from_str(&remote_toml)?;
+            config.validate()?;
+            return Ok(config);
         }
 
         let config: Self = toml::from_str(&raw)?;
