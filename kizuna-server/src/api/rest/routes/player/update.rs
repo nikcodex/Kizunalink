@@ -25,10 +25,14 @@ pub async fn update_player(
     Json(body): Json<PlayerUpdate>,
 ) -> impl IntoResponse {
     tracing::debug!(
-        "PATCH /v4/sessions/{}/players/{}: body={:?}",
+        "PATCH /v4/sessions/{}/players/{}: track={}, encoded_track={}, identifier={}, voice_update={}, filters_update={}",
         session_id,
         guild_id,
-        body
+        body.track.is_some(),
+        body.encoded_track.is_some(),
+        body.identifier.is_some(),
+        body.voice.is_some(),
+        body.filters.is_some(),
     );
 
     let Some(session) = state.sessions.get(&session_id) else {
