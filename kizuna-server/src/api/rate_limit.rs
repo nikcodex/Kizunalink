@@ -100,14 +100,10 @@ impl RateLimiter {
 /// When deployed behind a reverse proxy the socket IP is the proxy itself; run the
 /// proxy-to-client IP extraction (e.g. `tower_http`'s forwarded header layers) in
 /// front of this if you need per-client accounting in that topology.
-pub async fn rate_limit(
-    State(state): State<Arc<AppState>>,
-    req: Request,
-    next: Next,
-) -> Result<Response, Response> {
+pub async fn rate_limit(State(state): State<Arc<AppState>>, req: Request, next: Next) -> Response {
     let limiter = state.rate_limiter.as_ref();
     if limiter.disabled() {
-        return Ok(next.run(req).await);
+        return next.run(req).await;
     }
 
     let peer = req
@@ -117,11 +113,11 @@ pub async fn rate_limit(
 
     let Some(ip) = peer else {
         // No socket info (e.g. synthetic service calls) — never block on missing data.
-        return Ok(next.run(req).await);
+        return next.run(req).await;
     };
 
     match limiter.check(ip, Instant::now()) {
-        None => Ok(next.run(req).await),
+        None => next.run(req).await,
         Some(retry_after) => {
             warn!("rate-limit: throttling {ip} for {retry_after:?}");
             let mut resp = Response::new("Too Many Requests".into());
@@ -130,7 +126,7 @@ pub async fn rate_limit(
                 resp.headers_mut()
                     .insert(HeaderName::from_static("retry-after"), v);
             }
-            Ok(resp)
+            resp
         }
     }
 }

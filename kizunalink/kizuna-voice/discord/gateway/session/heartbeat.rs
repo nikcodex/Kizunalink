@@ -6,7 +6,7 @@ use std::sync::{
     atomic::{AtomicI64, AtomicU32, AtomicU64, Ordering},
 };
 
-use tokio::sync::mpsc::UnboundedSender;
+use tokio::sync::mpsc::Sender;
 use tokio_tungstenite::tungstenite::protocol::Message;
 use tokio_util::sync::CancellationToken;
 use tracing::warn;
@@ -61,7 +61,7 @@ impl HeartbeatTracker {
     /// unacknowledged, and exits if the message receiver is dropped.
     pub fn spawn(
         &self,
-        tx: UnboundedSender<Message>,
+        tx: Sender<Message>,
         seq_ack: Arc<AtomicI64>,
         conn_token: CancellationToken,
         interval_ms: u64,
@@ -100,8 +100,9 @@ impl HeartbeatTracker {
                 };
 
                 if let Ok(json) = serde_json::to_string(&hb)
-                    && tx.send(Message::Text(json.into())).is_err()
+                    && tx.try_send(Message::Text(json.into())).is_err()
                 {
+                    conn_token.cancel();
                     break;
                 }
             }

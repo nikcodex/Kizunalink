@@ -11,7 +11,7 @@ use std::{
 };
 
 use serde_json::Value;
-use tokio::sync::mpsc::UnboundedSender;
+use tokio::sync::mpsc::Sender;
 use tokio_tungstenite::tungstenite::protocol::Message;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, trace, warn};
@@ -33,7 +33,7 @@ use crate::{
 
 pub struct SessionState<'a> {
     gateway: &'a VoiceGateway,
-    tx: UnboundedSender<Message>,
+    tx: Sender<Message>,
     seq_ack: Arc<AtomicI64>,
     ssrc: u32,
     udp_addr: Option<SocketAddr>,
@@ -44,7 +44,7 @@ pub struct SessionState<'a> {
     heartbeat: HeartbeatTracker,
     heartbeat_handle: Option<tokio::task::JoinHandle<()>>,
     conn_token: CancellationToken,
-    speaking_tx: Option<UnboundedSender<bool>>,
+    speaking_tx: Option<Sender<bool>>,
     session_key: Option<[u8; 32]>,
     speak_task: Option<tokio::task::JoinHandle<()>>,
     persistent_state: Arc<tokio::sync::Mutex<PersistentSessionState>>,
@@ -61,7 +61,7 @@ fn parse_u16_field(payload: &Value, field: &str) -> Option<u16> {
 impl<'a> SessionState<'a> {
     pub async fn new(
         gateway: &'a VoiceGateway,
-        tx: UnboundedSender<Message>,
+        tx: Sender<Message>,
         seq_ack: Arc<AtomicI64>,
         conn_token: CancellationToken,
         persistent_state: Arc<tokio::sync::Mutex<PersistentSessionState>>,
@@ -99,14 +99,14 @@ impl<'a> SessionState<'a> {
         })
     }
 
-    pub fn set_speaking_tx(&mut self, tx: UnboundedSender<bool>) {
+    pub fn set_speaking_tx(&mut self, tx: Sender<bool>) {
         self.speaking_tx = Some(tx);
     }
 
     pub fn ssrc(&self) -> u32 {
         self.ssrc
     }
-    pub fn tx(&self) -> &UnboundedSender<Message> {
+    pub fn tx(&self) -> &Sender<Message> {
         &self.tx
     }
     pub fn attempt(&self) -> u32 {
@@ -686,17 +686,25 @@ impl<'a> SessionState<'a> {
     }
 
     fn send_json(&self, op: u8, d: Value) {
-        let _ = self.tx.send(Message::Text(
-            serde_json::to_string(&GatewayPayload { op, seq: None, d })
-                .unwrap()
-                .into(),
-        ));
+        if self
+            .tx
+            .try_send(Message::Text(
+                serde_json::to_string(&GatewayPayload { op, seq: None, d })
+                    .unwrap()
+                    .into(),
+            ))
+            .is_err()
+        {
+            self.conn_token.cancel();
+        }
     }
 
     fn send_binary(&self, op: u8, payload: &[u8]) {
         let mut b = vec![op];
         b.extend_from_slice(payload);
-        let _ = self.tx.send(Message::Binary(b.into()));
+        if self.tx.try_send(Message::Binary(b.into())).is_err() {
+            self.conn_token.cancel();
+        }
     }
 }
 
