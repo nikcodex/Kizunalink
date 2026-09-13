@@ -12,7 +12,7 @@ use axum::{
 use crate::{
     discord::player::Players,
     protocol,
-    server::{AppState, session::Session},
+    server::AppState,
 };
 
 /// GET /v4/sessions/{sessionId}/players

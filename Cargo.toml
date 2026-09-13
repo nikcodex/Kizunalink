@@ -20,6 +20,7 @@ parking_lot = "0.12.5"
 thiserror = "2.0.18"
 sysinfo = "0.38.3"
 prometheus = "0.13"
+perf_monitor = "0.2"
 
 [profile.dev]
 opt-level = 1

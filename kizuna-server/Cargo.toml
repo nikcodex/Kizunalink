@@ -63,6 +63,9 @@ workspace = true
 [dependencies.prometheus]
 workspace = true
 
+[dependencies.perf_monitor]
+workspace = true
+
 [dependencies.tracing-subscriber]
 workspace = true
 

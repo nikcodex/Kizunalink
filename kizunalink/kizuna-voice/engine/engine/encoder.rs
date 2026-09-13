@@ -11,7 +11,7 @@ pub struct Encoder {
 
 impl Encoder {
     pub fn new() -> AnyResult<Self> {
-        let mut encoder =
+        let encoder =
             OpusEncoder::new(SampleRate::Hz48000, Channels::Stereo, Application::Audio)
                 .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?;
         encoder
