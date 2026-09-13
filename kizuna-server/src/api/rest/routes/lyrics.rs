@@ -168,7 +168,7 @@ pub async fn get_lyrics(
 pub async fn get_player_lyrics(
     State(state): State<Arc<AppState>>,
     Path((session_id, guild_id)): Path<(String, String)>,
-    Query(query): Query<GetPlayerLyricsQuery>,
+    Query(_query): Query<GetPlayerLyricsQuery>,
 ) -> impl IntoResponse {
     let session_id = kizunalink::common::types::SessionId(session_id);
     let guild_id = kizunalink::common::types::GuildId(guild_id);

@@ -74,17 +74,6 @@ macro_rules! define_filters {
             invalid
         }
 
-        // ── FilterChain::from_config helper ──────────────────────────────
-        fn build_filters(config: &Filters) -> Vec<ConcreteFilter> {
-            let mut filters = Vec::new();
-            // NOTE: Each filter's constructor is called inside from_config()
-            // because some need special arg extraction. We keep from_config()
-            // explicit for filters with complex constructors (equalizer, etc.)
-            // and use this macro only for the enum/process/reset/validate parts.
-            let _ = &mut filters;
-            let _ = config;
-            filters
-        }
     };
 }
 
