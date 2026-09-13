@@ -70,7 +70,10 @@ impl AppConfig {
         if let Some(cs_val) = raw_val.get("config_server") {
             let cs: ConfigServerConfig = cs_val.clone().try_into()?;
 
-            let client = reqwest::Client::new();
+            let client = reqwest::Client::builder()
+                .connect_timeout(std::time::Duration::from_secs(10))
+                .timeout(std::time::Duration::from_secs(30))
+                .build()?;
             let mut request = client.get(&cs.url);
 
             if let (Some(u), Some(p)) = (&cs.username, &cs.password) {
