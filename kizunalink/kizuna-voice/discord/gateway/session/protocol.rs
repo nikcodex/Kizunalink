@@ -102,7 +102,8 @@ pub mod builders {
                 "user_id": user_id,
                 "session_id": session_id,
                 "token": token,
-                "video": true,
+                // Audio-only node: we never send video or negotiate video codecs.
+                "video": false,
                 "max_dave_protocol_version": dave_version,
             }),
         }
@@ -121,7 +122,7 @@ pub mod builders {
                 "server_id": guild_id,
                 "session_id": session_id,
                 "token": token,
-                "video": true,
+                "video": false,
                 "seq_ack": seq_ack,
             }),
         }
@@ -217,7 +218,7 @@ mod tests {
         assert_eq!(payload.d["user_id"], "456");
         assert_eq!(payload.d["session_id"], "session123");
         assert_eq!(payload.d["token"], "token123");
-        assert_eq!(payload.d["video"], true);
+        assert_eq!(payload.d["video"], false);
         assert_eq!(payload.d["max_dave_protocol_version"], 1);
     }
 
@@ -235,7 +236,7 @@ mod tests {
         assert_eq!(payload.d["server_id"], "123");
         assert_eq!(payload.d["session_id"], "session123");
         assert_eq!(payload.d["token"], "token123");
-        assert_eq!(payload.d["video"], true);
+        assert_eq!(payload.d["video"], false);
         assert_eq!(payload.d["seq_ack"], 42);
     }
 

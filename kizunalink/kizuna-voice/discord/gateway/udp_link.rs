@@ -4,6 +4,7 @@
 use std::{net::SocketAddr, sync::Arc};
 
 use aes_gcm::{Aes256Gcm, KeyInit, aead::AeadInPlace};
+use chacha20poly1305::XChaCha20Poly1305;
 use serde::{Deserialize, Serialize};
 use tokio::net::UdpSocket;
 use xsalsa20poly1305::XSalsa20Poly1305;
@@ -30,7 +31,29 @@ pub struct UDPVoiceTransport {
 
 pub enum CryptoBackend {
     XSalsa20Poly1305(Box<XSalsa20Poly1305>),
+    XChaCha20Poly1305(Box<XChaCha20Poly1305>),
     Aes256Gcm(Box<Aes256Gcm>),
+}
+
+impl CryptoBackend {
+    /// Builds the transport cipher for a Discord encryption-mode name.
+    ///
+    /// `aead_aes256_gcm_rtpsize` and `aead_xchacha20_poly1305_rtpsize` are the
+    /// two modes Discord still supports (the latter is mandatory). Any other
+    /// name — including the discontinued `xsalsa20_poly1305*` modes — falls back
+    /// to XSalsa20-Poly1305 so an unexpected server mode still yields a
+    /// well-defined packet.
+    pub fn from_mode(mode: &str, secret_key: [u8; 32]) -> Self {
+        match mode {
+            "aead_aes256_gcm_rtpsize" => {
+                Self::Aes256Gcm(Box::new(Aes256Gcm::new(&secret_key.into())))
+            }
+            "aead_xchacha20_poly1305_rtpsize" => {
+                Self::XChaCha20Poly1305(Box::new(XChaCha20Poly1305::new(&secret_key.into())))
+            }
+            _ => Self::XSalsa20Poly1305(Box::new(XSalsa20Poly1305::new(&secret_key.into()))),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
@@ -49,14 +72,7 @@ impl UDPVoiceTransport {
         mode: &str,
         rtp_state: Option<RtpState>,
     ) -> AnyResult<Self> {
-        let crypto = match mode {
-            "aead_aes256_gcm_rtpsize" => {
-                CryptoBackend::Aes256Gcm(Box::new(Aes256Gcm::new(&secret_key.into())))
-            }
-            _ => {
-                CryptoBackend::XSalsa20Poly1305(Box::new(XSalsa20Poly1305::new(&secret_key.into())))
-            }
-        };
+        let crypto = CryptoBackend::from_mode(mode, secret_key);
 
         Ok(Self {
             socket,
@@ -99,6 +115,21 @@ impl UDPVoiceTransport {
                     .map_err(|e| map_boxed_err(format!("XSalsa20 error: {e:?}")))?;
 
                 self.buffer.extend_from_slice(&tag);
+            }
+            CryptoBackend::XChaCha20Poly1305(cipher) => {
+                // 24-byte XChaCha20 nonce: the 4-byte counter occupies the leading
+                // bytes and the remainder is zero-padded, matching Discord's
+                // `*_rtpsize` nonce construction. The counter itself is appended to
+                // the packet after the 16-byte tag, as required by the wire format.
+                let mut nonce = [0u8; 24];
+                nonce[0..4].copy_from_slice(&nonce_val.to_be_bytes());
+
+                let tag = cipher
+                    .encrypt_in_place_detached(&nonce.into(), &header, &mut self.buffer[12..])
+                    .map_err(|e| map_boxed_err(format!("XChaCha20 error: {e:?}")))?;
+
+                self.buffer.extend_from_slice(&tag);
+                self.buffer.extend_from_slice(&nonce_val.to_be_bytes());
             }
             CryptoBackend::Aes256Gcm(cipher) => {
                 let mut nonce = [0u8; 12];
@@ -143,6 +174,23 @@ impl RtpState {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn crypto_backend_selects_the_cipher_for_each_supported_mode() {
+        let key = [7u8; 32];
+        assert!(matches!(
+            CryptoBackend::from_mode("aead_aes256_gcm_rtpsize", key),
+            CryptoBackend::Aes256Gcm(_)
+        ));
+        assert!(matches!(
+            CryptoBackend::from_mode("aead_xchacha20_poly1305_rtpsize", key),
+            CryptoBackend::XChaCha20Poly1305(_)
+        ));
+        assert!(matches!(
+            CryptoBackend::from_mode("xsalsa20_poly1305", key),
+            CryptoBackend::XSalsa20Poly1305(_)
+        ));
+    }
 
     #[test]
     fn test_rtp_state_randomize() {

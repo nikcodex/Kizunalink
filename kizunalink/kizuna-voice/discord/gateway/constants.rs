@@ -4,7 +4,10 @@
 pub const VOICE_GATEWAY_VERSION: u8 = 8;
 pub const DEFAULT_SAMPLE_RATE: u32 = 48_000;
 pub const DAVE_INITIAL_VERSION: u16 = 1;
-pub const DEFAULT_VOICE_MODE: &str = "xsalsa20_poly1305";
+/// Discord requires the `aead_xchacha20_poly1305_rtpsize` mode; the legacy
+/// `xsalsa20_poly1305` variants are discontinued. This is only a fallback for a
+/// READY that omits `modes` — negotiation normally decides the mode.
+pub const DEFAULT_VOICE_MODE: &str = "aead_xchacha20_poly1305_rtpsize";
 
 // --- Connection & Reconnect ---
 pub const MAX_RECONNECT_ATTEMPTS: u32 = 15;
