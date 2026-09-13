@@ -79,11 +79,11 @@ async fn handle_voice_update(
         .ok_or("Missing endpoint in voice update event")?
         .to_string();
 
-    let player_arc = session.get_or_create_player(guild_id.clone(), state.clone());
-
     let Some(uid) = session.user_id else {
         return Ok(());
     };
+
+    let player_arc = session.get_or_create_player(guild_id.clone(), state.clone());
 
     // Update the voice state and decide whether a gateway task must be (re)spawned
     // under a single write lock, so the decision cannot race with a concurrent
