@@ -199,9 +199,18 @@ impl<'a> SessionState<'a> {
         match op {
             25 => {
                 // MlsExternalSender
-                if let Ok(res) = dave.process_external_sender(data) {
-                    for r in res {
-                        self.send_binary(28, &r);
+                match dave.process_external_sender(data) {
+                    Ok(responses) => {
+                        for response in responses {
+                            self.send_binary(28, &response);
+                        }
+                    }
+                    Err(e) => {
+                        warn!(
+                            "[{}] DAVE external sender failed: {e}",
+                            self.gateway.guild_id
+                        );
+                        self.reset_dave_locked(&mut dave, 0).await;
                     }
                 }
             }
@@ -248,7 +257,13 @@ impl<'a> SessionState<'a> {
     }
 
     fn on_hello(&mut self, d: Value) -> Option<SessionOutcome> {
-        let interval = d["heartbeat_interval"].as_u64().unwrap_or(30_000);
+        let Some(interval) = d["heartbeat_interval"].as_u64().filter(|&value| value > 0) else {
+            warn!(
+                "[{}] HELLO contained an invalid heartbeat interval",
+                self.gateway.guild_id
+            );
+            return Some(SessionOutcome::Reconnect);
+        };
         if self.heartbeat_handle.is_some() {
             warn!(
                 "[{}] Received unexpected mid-session HELLO. Forcing re-identify.",

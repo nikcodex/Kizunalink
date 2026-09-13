@@ -206,10 +206,10 @@ impl DaveHandler {
                     self.pending_proposals.len()
                 );
                 for prop_data in std::mem::take(&mut self.pending_proposals) {
-                    if let Ok(Some(res)) =
-                        Self::do_process_proposals(session, &prop_data, &self.cached_user_ids)
-                    {
-                        responses.push(res);
+                    match Self::do_process_proposals(session, &prop_data, &self.cached_user_ids) {
+                        Ok(Some(res)) => responses.push(res),
+                        Ok(None) => {}
+                        Err(e) => return Err(e),
                     }
                 }
             }
@@ -220,9 +220,7 @@ impl DaveHandler {
                     self.pending_handshake.len()
                 );
                 for (handshake_data, is_welcome) in std::mem::take(&mut self.pending_handshake) {
-                    if let Err(e) = self.do_process_handshake(&handshake_data, is_welcome) {
-                        warn!("DAVE buffered handshake processing failed: {e}");
-                    }
+                    self.do_process_handshake(&handshake_data, is_welcome)?;
                 }
             }
         }

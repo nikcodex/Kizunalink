@@ -125,6 +125,7 @@ impl VoiceGateway {
                         seq_ack.store(-1, Ordering::Relaxed);
                         *persistent_state.lock().await = PersistentSessionState::default();
                         *self.udp_socket.lock().await = None;
+                        self.dave.lock().await.reset();
                     }
 
                     debug!(
@@ -143,6 +144,10 @@ impl VoiceGateway {
                         "[{}] Connection error: {e}. Retrying in {:?}",
                         self.guild_id, delay
                     );
+                    seq_ack.store(-1, Ordering::Relaxed);
+                    *persistent_state.lock().await = PersistentSessionState::default();
+                    *self.udp_socket.lock().await = None;
+                    self.dave.lock().await.reset();
                     tokio::time::sleep(delay).await;
                     is_resume = false;
                 }
