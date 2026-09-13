@@ -11,7 +11,7 @@ use std::{
 };
 
 use serde_json::Value;
-use tokio::sync::mpsc::UnboundedSender;
+use tokio::sync::mpsc::Sender;
 use tokio_tungstenite::tungstenite::protocol::Message;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, trace, warn};
@@ -33,7 +33,7 @@ use crate::{
 
 pub struct SessionState<'a> {
     gateway: &'a VoiceGateway,
-    tx: UnboundedSender<Message>,
+    tx: Sender<Message>,
     seq_ack: Arc<AtomicI64>,
     ssrc: u32,
     udp_addr: Option<SocketAddr>,
@@ -44,17 +44,24 @@ pub struct SessionState<'a> {
     heartbeat: HeartbeatTracker,
     heartbeat_handle: Option<tokio::task::JoinHandle<()>>,
     conn_token: CancellationToken,
-    speaking_tx: Option<UnboundedSender<bool>>,
+    speaking_tx: Option<Sender<bool>>,
     session_key: Option<[u8; 32]>,
     speak_task: Option<tokio::task::JoinHandle<()>>,
     persistent_state: Arc<tokio::sync::Mutex<PersistentSessionState>>,
     backoff: &'a mut Backoff,
 }
 
+fn parse_u16_field(payload: &Value, field: &str) -> Option<u16> {
+    payload
+        .get(field)
+        .and_then(Value::as_u64)
+        .and_then(|value| u16::try_from(value).ok())
+}
+
 impl<'a> SessionState<'a> {
     pub async fn new(
         gateway: &'a VoiceGateway,
-        tx: UnboundedSender<Message>,
+        tx: Sender<Message>,
         seq_ack: Arc<AtomicI64>,
         conn_token: CancellationToken,
         persistent_state: Arc<tokio::sync::Mutex<PersistentSessionState>>,
@@ -92,14 +99,14 @@ impl<'a> SessionState<'a> {
         })
     }
 
-    pub fn set_speaking_tx(&mut self, tx: UnboundedSender<bool>) {
+    pub fn set_speaking_tx(&mut self, tx: Sender<bool>) {
         self.speaking_tx = Some(tx);
     }
 
     pub fn ssrc(&self) -> u32 {
         self.ssrc
     }
-    pub fn tx(&self) -> &UnboundedSender<Message> {
+    pub fn tx(&self) -> &Sender<Message> {
         &self.tx
     }
     pub fn attempt(&self) -> u32 {
@@ -192,9 +199,18 @@ impl<'a> SessionState<'a> {
         match op {
             25 => {
                 // MlsExternalSender
-                if let Ok(res) = dave.process_external_sender(data) {
-                    for r in res {
-                        self.send_binary(28, &r);
+                match dave.process_external_sender(data) {
+                    Ok(responses) => {
+                        for response in responses {
+                            self.send_binary(28, &response);
+                        }
+                    }
+                    Err(e) => {
+                        warn!(
+                            "[{}] DAVE external sender failed: {e}",
+                            self.gateway.guild_id
+                        );
+                        self.reset_dave_locked(&mut dave, 0).await;
                     }
                 }
             }
@@ -241,7 +257,13 @@ impl<'a> SessionState<'a> {
     }
 
     fn on_hello(&mut self, d: Value) -> Option<SessionOutcome> {
-        let interval = d["heartbeat_interval"].as_u64().unwrap_or(30_000);
+        let Some(interval) = d["heartbeat_interval"].as_u64().filter(|&value| value > 0) else {
+            warn!(
+                "[{}] HELLO contained an invalid heartbeat interval",
+                self.gateway.guild_id
+            );
+            return Some(SessionOutcome::Reconnect);
+        };
         if self.heartbeat_handle.is_some() {
             warn!(
                 "[{}] Received unexpected mid-session HELLO. Forcing re-identify.",
@@ -264,13 +286,17 @@ impl<'a> SessionState<'a> {
         None
     }
 
+    /// Applies a READY payload and negotiates the UDP transport.
+    ///
+    /// Returns [`SessionOutcome::Reconnect`] when the advertised endpoint is
+    /// malformed or external address discovery fails.
     async fn on_ready(&mut self, d: Value) -> Option<SessionOutcome> {
         let ssrc = d["ssrc"].as_u64();
         let ip = d["ip"].as_str();
         let port = d["port"].as_u64();
 
         match (ssrc, ip, port) {
-            (Some(ssrc), Some(ip), Some(port)) if port <= 65535 => {
+            (Some(ssrc), Some(ip), Some(port)) if ssrc <= u32::MAX as u64 && port <= 65535 => {
                 self.ssrc = ssrc as u32;
                 let addr_str = format!("{ip}:{port}");
                 match addr_str.parse::<SocketAddr>() {
@@ -311,20 +337,6 @@ impl<'a> SessionState<'a> {
             state.selected_mode = Some(self.selected_mode.clone());
         }
 
-        if self.gateway.channel_id.0 > 0 {
-            let ver = d["dave_protocol_version"]
-                .as_u64()
-                .unwrap_or(DAVE_INITIAL_VERSION as u64) as u16;
-            let mut dave = self.dave.lock().await;
-            if ver > 0 {
-                if let Ok(kp) = dave.setup_session(ver) {
-                    self.send_binary(26, &kp);
-                }
-            } else {
-                dave.reset();
-            }
-        }
-
         let target_addr = match self.udp_addr {
             Some(a) => a,
             None => return Some(SessionOutcome::Reconnect),
@@ -361,6 +373,11 @@ impl<'a> SessionState<'a> {
         None
     }
 
+    /// Installs the session encryption key, starts voice transport, and attempts
+    /// DAVE setup for a nonzero channel.
+    ///
+    /// Returns [`SessionOutcome::Reconnect`] for a missing or invalid key, or when
+    /// no UDP endpoint was established by READY.
     async fn on_session_description(&mut self, d: Value) -> Option<SessionOutcome> {
         let ka = match d["secret_key"].as_array() {
             Some(a) if a.len() == 32 => a,
@@ -405,9 +422,19 @@ impl<'a> SessionState<'a> {
         self.start_voice(addr, key).await;
 
         if self.gateway.channel_id.0 > 0 {
-            let protocol_version = d["dave_protocol_version"]
-                .as_u64()
-                .unwrap_or(DAVE_INITIAL_VERSION as u64) as u16;
+            let protocol_version = match d["dave_protocol_version"].as_u64() {
+                None => DAVE_INITIAL_VERSION,
+                Some(value) => match u16::try_from(value) {
+                    Ok(version) => version,
+                    Err(_) => {
+                        error!(
+                            "[{}] Invalid dave_protocol_version: {value}",
+                            self.gateway.guild_id
+                        );
+                        return Some(SessionOutcome::Reconnect);
+                    }
+                },
+            };
             let mls_group_id = d["mls_group_id"].as_u64().unwrap_or(0);
 
             let mut dave = self.dave.lock().await;
@@ -514,8 +541,20 @@ impl<'a> SessionState<'a> {
     }
 
     async fn on_dave_prepare_transition(&mut self, d: Value) -> Option<SessionOutcome> {
-        let tid = d["transition_id"].as_u64().unwrap_or(0) as u16;
-        let ver = d["protocol_version"].as_u64().unwrap_or(0) as u16;
+        let Some(tid) = parse_u16_field(&d, "transition_id") else {
+            warn!(
+                "[{}] Ignoring DAVE Prepare Transition with invalid transition_id",
+                self.gateway.guild_id
+            );
+            return None;
+        };
+        let Some(ver) = parse_u16_field(&d, "protocol_version") else {
+            warn!(
+                "[{}] Ignoring DAVE Prepare Transition with invalid protocol_version",
+                self.gateway.guild_id
+            );
+            return None;
+        };
 
         debug!(
             "[{}] DAVE Prepare Transition: id={}, version={}",
@@ -533,7 +572,13 @@ impl<'a> SessionState<'a> {
     }
 
     async fn on_dave_execute_transition(&mut self, d: Value) -> Option<SessionOutcome> {
-        let tid = d["transition_id"].as_u64().unwrap_or(0) as u16;
+        let Some(tid) = parse_u16_field(&d, "transition_id") else {
+            warn!(
+                "[{}] Ignoring DAVE Execute Transition with invalid transition_id",
+                self.gateway.guild_id
+            );
+            return None;
+        };
         debug!(
             "[{}] DAVE Execute Transition: id={}",
             self.gateway.guild_id, tid
@@ -543,8 +588,20 @@ impl<'a> SessionState<'a> {
     }
 
     async fn on_dave_prepare_epoch(&mut self, d: Value) -> Option<SessionOutcome> {
-        let epoch = d["epoch"].as_u64().unwrap_or(0);
-        let ver = d["protocol_version"].as_u64().unwrap_or(0) as u16;
+        let Some(epoch) = d["epoch"].as_u64() else {
+            warn!(
+                "[{}] Ignoring DAVE Prepare Epoch with invalid epoch",
+                self.gateway.guild_id
+            );
+            return None;
+        };
+        let Some(ver) = parse_u16_field(&d, "protocol_version") else {
+            warn!(
+                "[{}] Ignoring DAVE Prepare Epoch with invalid protocol_version",
+                self.gateway.guild_id
+            );
+            return None;
+        };
         debug!(
             "[{}] DAVE Prepare Epoch: epoch={}, version={}",
             self.gateway.guild_id, epoch, ver
@@ -556,12 +613,21 @@ impl<'a> SessionState<'a> {
     }
 
     async fn on_mls_transition(&mut self, d: Value) -> Option<SessionOutcome> {
-        let tid = d["transition_id"].as_u64().unwrap_or(0) as u16;
+        let Some(tid) = parse_u16_field(&d, "transition_id") else {
+            warn!(
+                "[{}] Ignoring DAVE MLS transition with invalid transition_id",
+                self.gateway.guild_id
+            );
+            return None;
+        };
         debug!(
             "[{}] DAVE MLS Announce Commit Transition: tid={}",
             self.gateway.guild_id, tid
         );
-        let ver = d["protocol_version"].as_u64().map(|v| v as u16);
+        let ver = d
+            .get("protocol_version")
+            .and_then(|value| value.as_u64())
+            .and_then(|value| u16::try_from(value).ok());
         if let Some(v) = ver {
             let mut dave = self.dave.lock().await;
             if dave.prepare_transition(tid, v) && tid != 0 {
@@ -635,17 +701,25 @@ impl<'a> SessionState<'a> {
     }
 
     fn send_json(&self, op: u8, d: Value) {
-        let _ = self.tx.send(Message::Text(
-            serde_json::to_string(&GatewayPayload { op, seq: None, d })
-                .unwrap()
-                .into(),
-        ));
+        if self
+            .tx
+            .try_send(Message::Text(
+                serde_json::to_string(&GatewayPayload { op, seq: None, d })
+                    .unwrap()
+                    .into(),
+            ))
+            .is_err()
+        {
+            self.conn_token.cancel();
+        }
     }
 
     fn send_binary(&self, op: u8, payload: &[u8]) {
         let mut b = vec![op];
         b.extend_from_slice(payload);
-        let _ = self.tx.send(Message::Binary(b.into()));
+        if self.tx.try_send(Message::Binary(b.into())).is_err() {
+            self.conn_token.cancel();
+        }
     }
 }
 
@@ -657,5 +731,23 @@ impl<'a> Drop for SessionState<'a> {
         if let Some(t) = self.speak_task.take() {
             t.abort();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn u16_payload_fields_reject_overflow() {
+        let payload = serde_json::json!({
+            "valid": u16::MAX,
+            "overflow": u64::from(u16::MAX) + 1,
+            "missing": null
+        });
+
+        assert_eq!(parse_u16_field(&payload, "valid"), Some(u16::MAX));
+        assert_eq!(parse_u16_field(&payload, "overflow"), None);
+        assert_eq!(parse_u16_field(&payload, "missing"), None);
     }
 }

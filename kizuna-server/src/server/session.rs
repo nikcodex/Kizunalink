@@ -32,6 +32,9 @@ pub struct Session {
     pub resume_timeout: AtomicU64,
     /// True when WS is disconnected but session is kept for resume.
     pub paused: AtomicBool,
+    /// Monotonically changes whenever a resume window starts or is consumed.
+    /// Cleanup tasks use it to avoid expiring a newer window.
+    pub resume_generation: AtomicU64,
     pub event_queue: Mutex<VecDeque<String>>,
     pub max_queue_size: usize,
 
@@ -60,6 +63,7 @@ impl Session {
             resumable: AtomicBool::new(false),
             resume_timeout: AtomicU64::new(60),
             paused: AtomicBool::new(false),
+            resume_generation: AtomicU64::new(0),
             event_queue: Mutex::new(VecDeque::new()),
             max_queue_size,
             last_stats_sent: AtomicU64::new(0),
@@ -110,6 +114,10 @@ impl Session {
 
     pub fn send_json(&self, json: impl Into<String>) {
         if self.paused.load(Ordering::Relaxed) {
+            if self.max_queue_size == 0 {
+                return;
+            }
+
             let mut queue = self.event_queue.lock();
             if queue.len() >= self.max_queue_size {
                 queue.pop_front();
@@ -119,12 +127,17 @@ impl Session {
             let msg = Message::Text(json.into().into());
             // B07: don't silently drop frames — log when the WebSocket sink is
             // gone (e.g. the session disconnected before a detached task ran).
-            if let Err(e) = self.sender.read().send(msg) {
-                tracing::debug!(
-                    "Failed to send WS message for session {}: {}",
-                    self.session_id,
-                    e
-                );
+            if let Err(e) = self.sender.read().try_send(msg) {
+                match e {
+                    flume::TrySendError::Full(_) => tracing::warn!(
+                        "WebSocket output queue full for session {}; dropping message",
+                        self.session_id
+                    ),
+                    flume::TrySendError::Disconnected(_) => tracing::debug!(
+                        "Failed to send WS message for session {}: channel disconnected",
+                        self.session_id
+                    ),
+                }
             }
         }
     }
@@ -189,5 +202,26 @@ impl kizunalink::common::server_hooks::SessionContext for Session {
     ) -> Option<std::sync::Arc<tokio::sync::RwLock<kizunalink::discord::player::PlayerContext>>>
     {
         self.players.get(guild_id).map(|kv| kv.value().clone())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn zero_event_queue_size_drops_paused_events() {
+        let (sender, _receiver) = flume::unbounded();
+        let session = Session::new(
+            kizunalink::common::types::SessionId("test-session".into()),
+            None,
+            sender,
+            0,
+        );
+        session.paused.store(true, Ordering::Relaxed);
+
+        session.send_json("event");
+
+        assert!(session.event_queue.lock().is_empty());
     }
 }

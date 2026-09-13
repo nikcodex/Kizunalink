@@ -229,6 +229,8 @@ pub struct NoDecryptorForUser;
 pub enum DecryptorDecryptError {
   #[error("provided frame was unencrypted when passthrough mode was disabled")]
   UnencryptedWhenPassthroughDisabled,
+  #[error("output frame buffer is too small: required {required} bytes, provided {provided} bytes")]
+  OutputBufferTooSmall { required: usize, provided: usize },
   #[error(
     "no valid cryptor manager could be found for {media_type:?}, encrypted size: {encrypted_size}, plaintext size: {plaintext_size}, num of managers: {manager_count})"
   )]

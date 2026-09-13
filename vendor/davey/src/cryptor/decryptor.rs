@@ -86,9 +86,16 @@ impl Decryptor {
     // Skip decrypting for silence frames
     // This may change in the future, see: https://daveprotocol.com/#silence-packets
     if encrypted_frame.len() == OPUS_SILENCE_PACKET.len()
-      && encrypted_frame.to_vec() == OPUS_SILENCE_PACKET.to_vec()
+      && encrypted_frame == OPUS_SILENCE_PACKET
     {
-      frame[..OPUS_SILENCE_PACKET.len()].clone_from_slice(&OPUS_SILENCE_PACKET);
+      if frame.len() < OPUS_SILENCE_PACKET.len() {
+        self.stats.get_mut(&media_type).unwrap().failures += 1;
+        return Err(DecryptorDecryptError::OutputBufferTooSmall {
+          required: OPUS_SILENCE_PACKET.len(),
+          provided: frame.len(),
+        });
+      }
+      frame[..OPUS_SILENCE_PACKET.len()].copy_from_slice(&OPUS_SILENCE_PACKET);
       return Ok(OPUS_SILENCE_PACKET.len());
     }
 
@@ -103,7 +110,15 @@ impl Decryptor {
 
     // If the frame is not encrypted and we can pass it through, do it
     if !local_frame.encrypted && self.can_passthrough() {
-      frame[..encrypted_frame.len()].clone_from_slice(encrypted_frame);
+      if encrypted_frame.len() > frame.len() {
+        self.stats.get_mut(&media_type).unwrap().failures += 1;
+        self.return_frame_processor(local_frame);
+        return Err(DecryptorDecryptError::OutputBufferTooSmall {
+          required: encrypted_frame.len(),
+          provided: frame.len(),
+        });
+      }
+      frame[..encrypted_frame.len()].copy_from_slice(encrypted_frame);
       let stats = self.stats.get_mut(&media_type).unwrap();
       stats.passthroughs += 1;
       self.return_frame_processor(local_frame);
@@ -125,8 +140,17 @@ impl Decryptor {
     });
 
     let result = if success {
-      stats.successes += 1;
-      Ok(local_frame.reconstruct_frame(frame))
+      let required = local_frame.authenticated.len() + local_frame.plaintext.len();
+      if required > frame.len() {
+        stats.failures += 1;
+        Err(DecryptorDecryptError::OutputBufferTooSmall {
+          required,
+          provided: frame.len(),
+        })
+      } else {
+        stats.successes += 1;
+        Ok(local_frame.reconstruct_frame(frame))
+      }
     } else {
       stats.failures += 1;
       Err(DecryptorDecryptError::NoValidCryptorFound {
@@ -250,5 +274,43 @@ impl Decryptor {
 
   fn return_frame_processor(&mut self, frame_processor: InboundFrameProcessor) {
     self.frame_processors.push(frame_processor);
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn rejects_undersized_passthrough_buffer() {
+    let mut decryptor = Decryptor::new();
+    decryptor.transition_to_passthrough_mode(true, 0);
+    let mut output = [0u8; 2];
+
+    let result = decryptor.decrypt(MediaType::AUDIO, &[1, 2, 3], &mut output);
+
+    assert!(matches!(
+      result,
+      Err(DecryptorDecryptError::OutputBufferTooSmall {
+        required: 3,
+        provided: 2
+      })
+    ));
+  }
+
+  #[test]
+  fn rejects_undersized_silence_buffer() {
+    let mut decryptor = Decryptor::new();
+    let mut output = [0u8; 2];
+
+    let result = decryptor.decrypt(MediaType::AUDIO, &OPUS_SILENCE_PACKET, &mut output);
+
+    assert!(matches!(
+      result,
+      Err(DecryptorDecryptError::OutputBufferTooSmall {
+        required,
+        provided: 2
+      }) if required == OPUS_SILENCE_PACKET.len()
+    ));
   }
 }

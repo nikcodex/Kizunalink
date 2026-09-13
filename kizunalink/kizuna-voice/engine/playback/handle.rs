@@ -130,4 +130,10 @@ impl TrackHandle {
     pub fn is_same(&self, other: &Self) -> bool {
         self.command_tx.same_channel(&other.command_tx)
     }
+
+    /// Shared state cell for this track; used to identify the track inside the
+    /// mixer (the mixer holds a clone of the same `Arc`).
+    pub fn state_arc(&self) -> Arc<AtomicU8> {
+        self.state.clone()
+    }
 }

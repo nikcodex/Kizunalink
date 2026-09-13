@@ -24,7 +24,7 @@ impl AudioFilter for TremoloFilter {
         }
 
         // Process per-frame (both L and R get the same multiplier per frame)
-        for chunk in samples.chunks_exact_mut(2) {
+        for chunk in samples.as_chunks_mut::<2>().0 {
             let multiplier = self.lfo.process();
 
             let left = (chunk[0] as f64 * multiplier) as i32;
