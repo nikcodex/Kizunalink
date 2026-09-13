@@ -26,6 +26,20 @@ const DAVE_MIN_VERSION: NonZeroU16 = match NonZeroU16::new(DAVE_INITIAL_VERSION)
     None => panic!("DAVE_INITIAL_VERSION must be non-zero"),
 };
 
+/// What the caller must do in response to `dave_protocol_prepare_epoch` (24).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EpochOutcome {
+    /// The MLS group is being created (`epoch == 1`): send this key package as
+    /// `dave_mls_key_package` (opcode 26).
+    KeyPackage(Vec<u8>),
+    /// The existing MLS group is retained and only the protocol version is
+    /// changing: report readiness for the pending transition (opcode 23). No key
+    /// package is exchanged in this case.
+    Ready,
+    /// The message was unsupported or arrived before session setup; do nothing.
+    Ignored,
+}
+
 pub struct DaveHandler {
     session: Option<DaveSession>,
     user_id: UserId,
@@ -181,14 +195,53 @@ impl DaveHandler {
         }
     }
 
-    pub fn prepare_epoch(&mut self, epoch: u64, protocol_version: u16) -> Option<Vec<u8>> {
-        if epoch == 1 {
-            match self.setup_session(protocol_version) {
-                Ok(kp) => return Some(kp),
-                Err(e) => warn!("DAVE prepare_epoch setup failed: {e}"),
-            }
+    /// Handles `dave_protocol_prepare_epoch` (24).
+    ///
+    /// The DAVE whitepaper distinguishes two cases:
+    ///
+    /// - `epoch == 1`: the MLS group is being created or re-created, so the client
+    ///   must generate and send a fresh key package (opcode 26). Readiness (opcode
+    ///   23) is reported later, once the group's commit has been processed.
+    /// - `epoch > 1`: the announced epoch is the current one, so the MLS group is
+    ///   retained and only the protocol version is changing. No key package is
+    ///   exchanged; the client prepares the new version and reports readiness
+    ///   immediately (opcode 23).
+    ///
+    /// Previously the `epoch > 1` case was dropped without a reply, which stalled the
+    /// protocol-version transition until the gateway timed out.
+    pub fn prepare_epoch(&mut self, epoch: u64, protocol_version: u16) -> EpochOutcome {
+        if protocol_version == 0 || protocol_version > DAVE_INITIAL_VERSION {
+            warn!("Ignoring unsupported DAVE epoch protocol version: {protocol_version}");
+            return EpochOutcome::Ignored;
         }
-        None
+
+        if epoch == 1 {
+            return match self.setup_session(protocol_version) {
+                Ok(kp) => EpochOutcome::KeyPackage(kp),
+                Err(e) => {
+                    warn!("DAVE prepare_epoch setup failed: {e}");
+                    EpochOutcome::Ignored
+                }
+            };
+        }
+
+        if epoch == 0 {
+            warn!("Ignoring DAVE Prepare Epoch with invalid epoch 0");
+            return EpochOutcome::Ignored;
+        }
+
+        if self.session.is_none() {
+            warn!("DAVE Prepare Epoch (epoch {epoch}) received before session setup; ignoring");
+            return EpochOutcome::Ignored;
+        }
+
+        // The group is retained: record the version we are transitioning to and let
+        // the caller announce readiness so the gateway can execute the transition.
+        self.prepared_protocol_version = protocol_version;
+        debug!(
+            "DAVE epoch {epoch} retains the MLS group; pending protocol v{protocol_version}"
+        );
+        EpochOutcome::Ready
     }
 
     pub fn process_external_sender(&mut self, data: &[u8]) -> AnyResult<Vec<Vec<u8>>> {
@@ -441,6 +494,24 @@ mod tests {
         // reset should clear buffers
         handler.reset();
         assert_eq!(handler.pending_handshake.len(), 0);
+    }
+
+    #[test]
+    fn epoch_one_creates_a_group_while_higher_epochs_only_report_readiness() {
+        let mut handler = DaveHandler::new(UserId(1), ChannelId(1));
+
+        // epoch == 1 asks for (re-)creation: a key package must be sent.
+        let outcome = handler.prepare_epoch(1, DAVE_INITIAL_VERSION);
+        assert!(matches!(outcome, EpochOutcome::KeyPackage(_)));
+        assert!(handler.session.is_some());
+
+        // epoch > 1 retains the group and only reports readiness to transition.
+        assert_eq!(handler.prepare_epoch(4, DAVE_INITIAL_VERSION), EpochOutcome::Ready);
+
+        // Invalid epochs and unsupported versions are ignored, never "ready".
+        assert_eq!(handler.prepare_epoch(0, DAVE_INITIAL_VERSION), EpochOutcome::Ignored);
+        assert_eq!(handler.prepare_epoch(4, DAVE_INITIAL_VERSION + 1), EpochOutcome::Ignored);
+        assert_eq!(handler.prepare_epoch(1, 0), EpochOutcome::Ignored);
     }
 
     #[test]

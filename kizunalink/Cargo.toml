@@ -12,6 +12,9 @@ path = "kizuna-voice/lib.rs"
 
 [dependencies]
 aes-gcm = "0.10.3"
+# XChaCha20-Poly1305 is the transport encryption mode Discord *requires*
+# (`aead_xchacha20_poly1305_rtpsize`).
+chacha20poly1305 = "0.10.1"
 davey = "0.1.4"
 xsalsa20poly1305 = "0.9.1"
 aes = "0.8"

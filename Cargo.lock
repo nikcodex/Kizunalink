@@ -1602,6 +1602,7 @@ dependencies = [
  "byteorder",
  "bytes",
  "cbc",
+ "chacha20poly1305",
  "cipher 0.5.2",
  "dashmap",
  "davey",

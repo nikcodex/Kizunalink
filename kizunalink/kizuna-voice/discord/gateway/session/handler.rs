@@ -27,7 +27,7 @@ use super::{
 };
 use crate::{
     common::types::{Shared, UserId},
-    discord::crypto::DaveHandler,
+    discord::crypto::{DaveHandler, EpochOutcome},
     discord::gateway::constants::{DAVE_INITIAL_VERSION, DEFAULT_VOICE_MODE},
 };
 
@@ -324,12 +324,27 @@ impl<'a> SessionState<'a> {
         }
 
         if let Some(modes) = d["modes"].as_array() {
-            let pref = ["aead_aes256_gcm_rtpsize", "xsalsa20_poly1305"];
-            if let Some(m) = pref
-                .iter()
-                .find(|&&p| modes.iter().any(|m| m.as_str() == Some(p)))
+            // Discord now *requires* `aead_xchacha20_poly1305_rtpsize` and prefers
+            // `aead_aes256_gcm_rtpsize`; the old `xsalsa20_poly1305*` modes were
+            // discontinued. Only fall back to the legacy mode if the server still
+            // advertises it, and never pick a mode the server did not offer.
+            let offered = |mode: &str| modes.iter().any(|m| m.as_str() == Some(mode));
+            match [
+                "aead_aes256_gcm_rtpsize",
+                "aead_xchacha20_poly1305_rtpsize",
+                "xsalsa20_poly1305",
+            ]
+            .into_iter()
+            .find(|&mode| offered(mode))
             {
-                self.selected_mode = m.to_string();
+                Some(mode) => self.selected_mode = mode.to_string(),
+                None => {
+                    error!(
+                        "[{}] Voice server offered no supported encryption mode: {:?}",
+                        self.gateway.guild_id, modes
+                    );
+                    return Some(SessionOutcome::Reconnect);
+                }
             }
         }
 
@@ -613,12 +628,24 @@ impl<'a> SessionState<'a> {
             );
             return None;
         };
+        // Opcode 24 always names the transition it belongs to; the initial transition
+        // is 0 when the field is absent.
+        let transition_id = parse_u16_field(&d, "transition_id").unwrap_or(0);
         debug!(
-            "[{}] DAVE Prepare Epoch: epoch={}, version={}",
-            self.gateway.guild_id, epoch, ver
+            "[{}] DAVE Prepare Epoch: epoch={}, version={}, tid={}",
+            self.gateway.guild_id, epoch, ver, transition_id
         );
-        if let Some(kp) = self.dave.lock().await.prepare_epoch(epoch, ver) {
-            self.send_binary(26, &kp);
+
+        let outcome = self.dave.lock().await.prepare_epoch(epoch, ver);
+        match outcome {
+            // epoch == 1: send the freshly generated key package.
+            EpochOutcome::KeyPackage(kp) => self.send_binary(26, &kp),
+            // epoch > 1: the MLS group is retained, so report readiness so the
+            // gateway can execute the transition instead of timing out.
+            EpochOutcome::Ready => {
+                self.send_json(23, serde_json::json!({ "transition_id": transition_id }));
+            }
+            EpochOutcome::Ignored => {}
         }
         None
     }
