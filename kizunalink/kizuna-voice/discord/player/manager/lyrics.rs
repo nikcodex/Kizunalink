@@ -11,7 +11,6 @@ use crate::{
         models::{LyricsData, KizunaLinkLyrics, KizunaLinkLyricsLine},
         tracks::TrackInfo,
     },
-    
 };
 
 /// Spawn a non-blocking task that fetches lyrics and sends the result.
@@ -70,7 +69,7 @@ pub async fn sync_lyrics(
     pos_ms: u64,
     last_idx: &Arc<std::sync::atomic::AtomicI64>,
     lyrics_data: &Arc<tokio::sync::Mutex<Option<LyricsData>>>,
-    session: &(dyn crate::common::server_hooks::SessionContext),
+    session: &dyn crate::common::server_hooks::SessionContext,
 ) {
     let Ok(lock) = lyrics_data.try_lock() else {
         return;

@@ -26,7 +26,7 @@ pub struct GaanaTrack {
 }
 
 impl PlayableTrack for GaanaTrack {
-    fn start_decoding(&self, config: crate::discord::player::PlayerConfig) -> DecoderOutput {
+    fn start_decoding(&self, config: crate::config::player::PlayerConfig) -> DecoderOutput {
         let (tx, rx) = flume::bounded::<AudioFrame>((config.buffer_duration_ms / 20) as usize);
         let (cmd_tx, cmd_rx) = flume::unbounded::<DecoderCommand>();
         let (err_tx, err_rx) = flume::bounded::<String>(1);
@@ -48,7 +48,7 @@ impl PlayableTrack for GaanaTrack {
                     let is_plugin_hls = url.contains(".m3u8") || url.contains("/api/manifest/hls_");
 
                     let reader = if is_plugin_hls {
-                        media::sources::youtube::hls::HlsReader::new(
+                        crate::media::sources::youtube::hls::HlsReader::new(
                             &url, local_addr, None, None, proxy,
                         )
                         .ok()

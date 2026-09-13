@@ -9,6 +9,9 @@ pub enum SourceError {
     #[error("HTTP error: {0}")]
     Http(#[from] reqwest::Error),
 
+    #[error("HTTP status error: {0}")]
+    HttpStatus(reqwest::StatusCode),
+
     #[error("JSON error: {0}")]
     Json(#[from] serde_json::Error),
 
@@ -46,6 +49,12 @@ impl SourceError {
             Self::RateLimited => "Source rate limited, try again later".to_string(),
             other => format!("Load failed: {other}"),
         }
+    }
+}
+
+impl From<reqwest::StatusCode> for SourceError {
+    fn from(status: reqwest::StatusCode) -> Self {
+        Self::HttpStatus(status)
     }
 }
 

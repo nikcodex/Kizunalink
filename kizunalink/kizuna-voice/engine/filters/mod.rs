@@ -411,7 +411,7 @@ mod tests {
     #[test]
     fn filter_chain_with_volume() {
         let mut filters = Filters::default();
-        filters.volume = Some(50);
+        filters.volume = Some(50.0);
         let chain = FilterChain::from_config(&filters);
         assert!(chain.is_active());
         assert_eq!(chain.filters.len(), 1);
@@ -430,7 +430,7 @@ mod tests {
     #[test]
     fn filter_chain_reset() {
         let mut filters = Filters::default();
-        filters.volume = Some(100);
+        filters.volume = Some(100.0);
         let mut chain = FilterChain::from_config(&filters);
         chain.reset();
         // After reset, process should still work

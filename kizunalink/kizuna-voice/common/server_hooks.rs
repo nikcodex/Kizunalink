@@ -26,4 +26,10 @@ pub trait SessionContext: Send + Sync + 'static {
 
     /// Access the cumulative frames-nulled counter (for stats).
     fn total_nulled_historical(&self) -> &AtomicU64;
+
+    /// Look up a player context lock by guild id, if the session has one.
+    fn get_player(
+        &self,
+        guild_id: &crate::common::types::GuildId,
+    ) -> Option<std::sync::Arc<tokio::sync::RwLock<crate::discord::player::PlayerContext>>>;
 }

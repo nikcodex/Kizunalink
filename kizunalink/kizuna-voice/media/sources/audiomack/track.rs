@@ -17,7 +17,7 @@ pub struct AudiomackTrack {
 }
 
 impl PlayableTrack for AudiomackTrack {
-    fn start_decoding(&self, config: crate::discord::player::PlayerConfig) -> DecoderOutput {
+    fn start_decoding(&self, config: crate::config::player::PlayerConfig) -> DecoderOutput {
         let http_track = HttpTrack {
             url: self.stream_url.clone(),
             local_addr: self.local_addr,

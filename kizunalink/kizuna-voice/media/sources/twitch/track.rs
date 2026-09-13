@@ -235,7 +235,7 @@ impl MediaSource for LiveHlsReader {
 }
 
 impl PlayableTrack for TwitchTrack {
-    fn start_decoding(&self, config: crate::discord::player::PlayerConfig) -> DecoderOutput {
+    fn start_decoding(&self, config: crate::config::player::PlayerConfig) -> DecoderOutput {
         let (tx, rx) = flume::bounded::<AudioFrame>((config.buffer_duration_ms / 20) as usize);
         let (cmd_tx, cmd_rx) = flume::unbounded::<DecoderCommand>();
         let (err_tx, err_rx) = flume::bounded::<String>(1);

@@ -7,7 +7,7 @@ use md5::{Digest, Md5};
 
 use crate::{
     engine::{AudioFrame, processor::DecoderCommand},
-    crate::lavalink::protocol::tracks::TrackInfo,
+    lavalink::protocol::tracks::TrackInfo,
     media::sources::{
         http::HttpTrack,
         plugin::{DecoderOutput, PlayableTrack},
@@ -26,7 +26,7 @@ pub struct QobuzTrack {
 }
 
 impl PlayableTrack for QobuzTrack {
-    fn start_decoding(&self, config: crate::discord::player::PlayerConfig) -> DecoderOutput {
+    fn start_decoding(&self, config: crate::config::player::PlayerConfig) -> DecoderOutput {
         let (tx, rx) = flume::bounded::<AudioFrame>((config.buffer_duration_ms / 20) as usize);
         let (cmd_tx, cmd_rx) = flume::unbounded::<DecoderCommand>();
         let (err_tx, err_rx) = flume::bounded::<String>(1);

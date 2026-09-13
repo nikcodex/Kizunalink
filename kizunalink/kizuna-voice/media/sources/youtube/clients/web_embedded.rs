@@ -78,8 +78,8 @@ impl WebEmbeddedClient {
         _oauth: &Arc<YouTubeOAuth>,
         encrypted_host_flags: Option<String>,
     ) -> AnyResult<Value> {
-        media::sources::youtube::clients::common::make_player_request(
-            media::sources::youtube::clients::common::PlayerRequestOptions {
+        crate::media::sources::youtube::clients::common::make_player_request(
+            crate::media::sources::youtube::clients::common::PlayerRequestOptions {
                 http: &self.http,
                 config: &self.config(),
                 video_id,

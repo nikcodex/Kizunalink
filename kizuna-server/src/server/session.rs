@@ -117,13 +117,26 @@ impl Session {
             queue.push_back(json.into());
         } else {
             let msg = Message::Text(json.into().into());
-            let _ = self.sender.read().send(msg);
+            // B07: don't silently drop frames — log when the WebSocket sink is
+            // gone (e.g. the session disconnected before a detached task ran).
+            if let Err(e) = self.sender.read().send(msg) {
+                tracing::debug!(
+                    "Failed to send WS message for session {}: {}",
+                    self.session_id,
+                    e
+                );
+            }
         }
     }
 
     pub fn send_message(&self, msg: &protocol::OutgoingMessage) {
-        if let Ok(json) = serde_json::to_string(msg) {
-            self.send_json(json);
+        match serde_json::to_string(msg) {
+            Ok(json) => self.send_json(json),
+            Err(e) => tracing::warn!(
+                "Failed to serialize outgoing message for session {}: {}",
+                self.session_id,
+                e
+            ),
         }
     }
 
@@ -168,5 +181,13 @@ impl kizunalink::common::server_hooks::SessionContext for Session {
 
     fn total_nulled_historical(&self) -> &std::sync::atomic::AtomicU64 {
         &self.total_nulled_historical
+    }
+
+    fn get_player(
+        &self,
+        guild_id: &kizunalink::common::types::GuildId,
+    ) -> Option<std::sync::Arc<tokio::sync::RwLock<kizunalink::discord::player::PlayerContext>>>
+    {
+        self.players.get(guild_id).map(|kv| kv.value().clone())
     }
 }

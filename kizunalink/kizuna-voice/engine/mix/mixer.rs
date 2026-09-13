@@ -133,18 +133,19 @@ mod tests {
     #[test]
     fn audio_mixer_max_layers_enforced() {
         let mut mixer = AudioMixer::new();
-        let (tx, _rx) = flume::unbounded();
         for i in 0..MAX_LAYERS {
-            assert!(mixer.add_layer(format!("layer-{i}"), tx.clone(), 1.0).is_ok());
+            let (_tx, rx) = flume::unbounded();
+            assert!(mixer.add_layer(format!("layer-{i}"), rx, 1.0).is_ok());
         }
-        assert!(mixer.add_layer("overflow".into(), tx, 1.0).is_err());
+        let (_tx, rx) = flume::unbounded();
+        assert!(mixer.add_layer("overflow".into(), rx, 1.0).is_err());
     }
 
     #[test]
     fn audio_mixer_remove_layer() {
         let mut mixer = AudioMixer::new();
-        let (tx, _rx) = flume::unbounded();
-        mixer.add_layer("test".into(), tx, 1.0).unwrap();
+        let (_tx, rx) = flume::unbounded();
+        mixer.add_layer("test".into(), rx, 1.0).unwrap();
         assert_eq!(mixer.layers.len(), 1);
         mixer.remove_layer("test");
         assert!(mixer.layers.is_empty());
@@ -153,8 +154,8 @@ mod tests {
     #[test]
     fn audio_mixer_set_layer_volume_clamps() {
         let mut mixer = AudioMixer::new();
-        let (tx, _rx) = flume::unbounded();
-        mixer.add_layer("test".into(), tx, 1.0).unwrap();
+        let (_tx, rx) = flume::unbounded();
+        mixer.add_layer("test".into(), rx, 1.0).unwrap();
         mixer.set_layer_volume("test", 5.0);
         assert_eq!(mixer.layers["test"].volume, 1.0);
         mixer.set_layer_volume("test", -1.0);

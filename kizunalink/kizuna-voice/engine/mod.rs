@@ -41,3 +41,4 @@ pub mod source;
 pub use buffer::{BufferPool, PooledBuffer, RingBuffer, get_byte_pool};
 pub use flow::FlowController;
 pub use frame::AudioFrame;
+pub use mix::{AudioMixer, Mixer};

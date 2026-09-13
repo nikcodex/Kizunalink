@@ -19,7 +19,8 @@ use crate::{
 
 const DAVE_MIN_VERSION: NonZeroU16 = match NonZeroU16::new(DAVE_INITIAL_VERSION) {
     Some(v) => v,
-    None => unreachable!(),
+    // B24: give a clear const-panic message if someone sets DAVE_INITIAL_VERSION = 0.
+    None => panic!("DAVE_INITIAL_VERSION must be non-zero"),
 };
 
 pub struct DaveHandler {

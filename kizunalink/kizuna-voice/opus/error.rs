@@ -7,7 +7,6 @@
 //! covering both codec and configuration failures, and the [`check_opus_error`] helper.
 
 use std::fmt;
-use super::ffi;
 
 /// Standard Opus C library error codes.
 #[repr(i32)]

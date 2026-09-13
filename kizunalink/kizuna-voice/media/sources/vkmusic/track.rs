@@ -15,7 +15,7 @@ pub struct VkMusicTrack {
 }
 
 impl PlayableTrack for VkMusicTrack {
-    fn start_decoding(&self, config: crate::discord::player::PlayerConfig) -> DecoderOutput {
+    fn start_decoding(&self, config: crate::config::player::PlayerConfig) -> DecoderOutput {
         HttpTrack {
             url: self.stream_url.clone(),
             local_addr: self.local_addr,
