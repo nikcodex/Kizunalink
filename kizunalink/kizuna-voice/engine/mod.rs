@@ -40,13 +40,13 @@ pub fn disable_denormals() {
         core::arch::asm!(
             "stmxcsr [{0}]",
             in(reg) &mut csr,
-            options(nomem, nostack)
+            options(nostack)
         );
         csr |= 0x8040;
         core::arch::asm!(
             "ldmxcsr [{0}]",
             in(reg) &csr,
-            options(nomem, nostack)
+            options(readonly, nostack)
         );
     }
     #[cfg(target_arch = "x86")]
@@ -55,13 +55,13 @@ pub fn disable_denormals() {
         core::arch::asm!(
             "stmxcsr [{0}]",
             in(reg) &mut csr,
-            options(nomem, nostack)
+            options(nostack)
         );
         csr |= 0x8040;
         core::arch::asm!(
             "ldmxcsr [{0}]",
             in(reg) &csr,
-            options(nomem, nostack)
+            options(readonly, nostack)
         );
     }
 }
@@ -71,6 +71,8 @@ pub mod codec;
 pub mod constants;
 pub mod demux;
 pub mod effects;
+// The public `engine::engine` path predates the lint and is part of the crate API.
+#[allow(clippy::module_inception)]
 pub mod engine;
 pub mod error;
 pub mod filters;

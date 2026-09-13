@@ -311,7 +311,7 @@ mod tests {
         cleanup_test_file(path);
 
         let mut writer = CircularFileWriter::new(path.to_string(), 1000, 0, false);
-        writer.write(b"line1\nline2\nline3\n").unwrap();
+        writer.write_all(b"line1\nline2\nline3\n").unwrap();
 
         let state = writer.state.lock();
         assert_eq!(state.lines_since_prune, 3);
@@ -325,7 +325,7 @@ mod tests {
         cleanup_test_file(path);
 
         let mut writer = CircularFileWriter::new(path.to_string(), 1000, 0, false);
-        writer.write(b"no newline here").unwrap();
+        writer.write_all(b"no newline here").unwrap();
 
         let state = writer.state.lock();
         assert_eq!(state.lines_since_prune, 0);
@@ -339,7 +339,7 @@ mod tests {
         cleanup_test_file(path);
 
         let mut writer = CircularFileWriter::new(path.to_string(), 100, 0, false);
-        writer.write(b"test\n").unwrap();
+        writer.write_all(b"test\n").unwrap();
 
         let result = writer.flush();
         assert!(result.is_ok());
