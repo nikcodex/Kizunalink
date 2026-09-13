@@ -36,6 +36,28 @@ impl Default for AudioMixer {
     }
 }
 
+/// Transparent below ~0.9 full scale; exponentially compresses the excess above it so that
+/// loud sums saturate smoothly instead of hard-clipping into square-wave distortion (B23).
+/// The asymptote is ±full scale, so the result always fits in `i16`.
+#[inline]
+pub(crate) fn soft_clip_i16(sum: i32) -> i16 {
+    /// Soft-knee threshold at 0.9 of full scale, in the i16 sample domain.
+    const SOFT_LIMIT: i32 = 29491; // (0.9 * 32768) as i32
+    const THRESHOLD: f32 = SOFT_LIMIT as f32 / 32768.0;
+    const HEADROOM: f32 = 1.0 - THRESHOLD;
+
+    // `unsigned_abs` keeps the i32::MIN edge case well-defined (no `abs` overflow).
+    let mag = sum.unsigned_abs();
+    if mag <= SOFT_LIMIT as u32 {
+        return sum as i16;
+    }
+
+    let sign = if sum < 0 { -1.0 } else { 1.0 };
+    let over = mag as f32 / 32768.0 - THRESHOLD;
+    let y = THRESHOLD + HEADROOM * (1.0 - (-over / HEADROOM).exp());
+    ((y * 32768.0).min(i16::MAX as f32) as i16 as f32 * sign) as i16
+}
+
 impl AudioMixer {
     pub fn new() -> Self {
         Self {
@@ -94,7 +116,7 @@ impl AudioMixer {
         }
 
         for (out, &sum) in main_frame.iter_mut().zip(self.acc_buf.iter()) {
-            *out = sum.clamp(i16::MIN as i32, i16::MAX as i32) as i16;
+            *out = soft_clip_i16(sum);
         }
     }
 }
@@ -160,6 +182,40 @@ mod tests {
         assert_eq!(mixer.layers["test"].volume, 1.0);
         mixer.set_layer_volume("test", -1.0);
         assert_eq!(mixer.layers["test"].volume, 0.0);
+    }
+
+    #[test]
+    fn soft_clip_is_transparent_below_threshold() {
+        for sum in [-29491i32, -1000, -1, 0, 1, 1000, 29491] {
+            assert_eq!(soft_clip_i16(sum), sum as i16, "transparent at {sum}");
+        }
+    }
+
+    #[test]
+    fn soft_clip_bounds_and_monotonicity() {
+        let mut prev = i16::MIN;
+        for sum in [
+            i32::MIN,
+            -1_000_000,
+            -65536,
+            -29492,
+            29492,
+            65536,
+            1_000_000,
+            i32::MAX,
+        ] {
+            let out = soft_clip_i16(sum);
+            assert!((i16::MIN..=i16::MAX).contains(&out));
+            assert!(out.abs() <= i16::MAX, "never exceeds full scale");
+            if sum > -29492 {
+                assert!(out >= prev, "monotonic at {sum}");
+            }
+            prev = out;
+        }
+        // Beyond the knee the curve saturates but keeps sign and ordering.
+        assert!(soft_clip_i16(-1_000_000) < soft_clip_i16(-29492));
+        assert!(soft_clip_i16(1_000_000) > soft_clip_i16(29492));
+        assert!(soft_clip_i16(1_000_000) < i16::MAX); // asymptotic, not a hard wall
     }
 }
 
@@ -300,15 +356,16 @@ impl Mixer {
 
             // 1. Drain pending buffer
             if track.pending_pos < track.pending.len() {
-                let n = (out_len - filled).min(track.pending.len() - track.pending_pos);
-                for (acc, &s) in self.mix_buf[filled..filled + n]
-                    .iter_mut()
-                    .zip(&track.pending[track.pending_pos..track.pending_pos + n])
-                {
+                let (_, room) = self.mix_buf.split_at_mut(filled);
+                let avail = (out_len - filled)
+                    .min(room.len())
+                    .min(track.pending.len() - track.pending_pos);
+                let pending = &track.pending[track.pending_pos..track.pending_pos + avail];
+                for (acc, &s) in room.iter_mut().take(avail).zip(pending) {
                     *acc += s as i32;
                 }
-                track.pending_pos += n;
-                filled += n;
+                track.pending_pos += avail;
+                filled += avail;
 
                 if track.pending_pos >= track.pending.len() {
                     track.pending.clear();
@@ -320,10 +377,9 @@ impl Mixer {
             'pull: while filled < out_len && !track.finished {
                 match track.flow.try_pop_frame() {
                     Ok(Some(frame)) => {
-                        let n = frame.len().min(out_len - filled);
-                        for (acc, &s) in
-                            self.mix_buf[filled..filled + n].iter_mut().zip(&frame[..n])
-                        {
+                        let (_, room) = self.mix_buf.split_at_mut(filled);
+                        let n = frame.len().min(room.len());
+                        for (acc, &s) in room.iter_mut().take(n).zip(frame.iter()) {
                             *acc += s as i32;
                         }
 
@@ -380,7 +436,7 @@ impl Mixer {
         }
 
         for (final_pcm, &sum) in self.final_pcm_buf.iter_mut().zip(self.mix_buf.iter()) {
-            *final_pcm = sum.clamp(i16::MIN as i32, i16::MAX as i32) as i16;
+            *final_pcm = soft_clip_i16(sum);
         }
 
         self.audio_mixer.mix(&mut self.final_pcm_buf);

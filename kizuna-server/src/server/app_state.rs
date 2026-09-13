@@ -28,6 +28,8 @@ pub struct AppState {
     pub system_state: parking_lot::Mutex<System>,
     pub last_system_refresh: parking_lot::Mutex<std::time::Instant>,
     pub process_stat: parking_lot::Mutex<ProcessStat>,
+    /// Per-IP token bucket guarding the public HTTP/WS surface (S06).
+    pub rate_limiter: Arc<crate::api::RateLimiter>,
 }
 
 // Implement the library's ServerContext marker trait for AppState.

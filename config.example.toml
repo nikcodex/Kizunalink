@@ -14,6 +14,7 @@ player_update_interval = 5        # seconds
 stats_interval = 30               # seconds
 websocket_ping_interval = 20      # seconds
 max_event_queue_size = 100
+rate_limit_per_minute = 2000      # requests/min per client IP over REST + WS upgrade (0 disables)
 
 [player]
 stuck_threshold_ms = 10000

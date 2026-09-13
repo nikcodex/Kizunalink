@@ -32,6 +32,10 @@ impl YouTubeOAuth {
         }
     }
 
+    /// Interactive device-code enrollment: prints the verification box to the console so an
+    /// operator can complete it in a browser (N05 exception, and it must be visible even
+    /// when logging is misconfigured — hence `log_println!`).
+    #[allow(clippy::print_stdout)]
     pub async fn initialize_access_token(self: std::sync::Arc<Self>) {
         if !self.refresh_tokens.read().await.is_empty() {
             return;
@@ -119,6 +123,7 @@ impl YouTubeOAuth {
         Ok(res.json().await?)
     }
 
+    #[allow(clippy::print_stdout)] // interactive OAuth flow console output (see above)
     async fn poll_for_token(&self, device_code: String, interval: u64) {
         let mut interval_timer = tokio::time::interval(std::time::Duration::from_secs(interval));
         loop {

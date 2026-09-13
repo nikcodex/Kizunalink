@@ -161,6 +161,8 @@ async fn handle_play(
     let player_arc = session.get_or_create_player(guild_id, state.clone());
     let mut player = player_arc.write().await;
 
+    // P10: track-load latency histogram (resolution + arm).
+    let load_start = std::time::Instant::now();
     kizunalink::discord::player::start_playback(
         &mut player,
         kizunalink::discord::player::manager::start::PlaybackStartConfig {
@@ -169,13 +171,14 @@ async fn handle_play(
             source_manager: state.source_manager.clone(),
             lyrics_manager: state.lyrics_manager.clone(),
             routeplanner: state.routeplanner.clone(),
-            update_interval_secs: state.config.server.player_update_interval,
+            update_interval: state.config.server.player_update_interval,
             user_data: None,
             end_time: None,
             start_time_ms: None,
         },
     )
     .await;
+    crate::monitoring::prometheus::observe_track_load(load_start.elapsed().as_secs_f64());
 
     Ok(())
 }

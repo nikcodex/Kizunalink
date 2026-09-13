@@ -148,8 +148,10 @@ impl CircularFileWriter {
         let state_arc = self.state.clone();
 
         std::thread::spawn(move || {
+            // B11: this IS the tracing sink — a `tracing` call here would recurse, so an
+            // `eprintln!` is the only safe reporter; hence the local `print_stderr` allow.
+            #[allow(clippy::print_stderr)]
             if let Err(e) = Self::do_prune(&path, max_lines) {
-                // B11: Use eprintln! (not tracing) since this IS the tracing sink — tracing would recurse.
                 eprintln!("Failed to prune log file '{}': {}", path, e);
             }
             let mut state = state_arc.lock();
@@ -191,6 +193,9 @@ impl CircularFileWriter {
 
         let to_delete = log_files.len() - max_files;
         for path in log_files.iter().take(to_delete) {
+            // B11: same rationale as the prune path — this runs inside the log writer,
+            // so `tracing` is not an option.
+            #[allow(clippy::print_stderr)]
             if let Err(e) = std::fs::remove_file(path) {
                 eprintln!("Failed to delete old log file '{}': {}", path.display(), e);
             }

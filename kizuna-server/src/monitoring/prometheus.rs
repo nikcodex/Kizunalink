@@ -7,10 +7,14 @@ use std::{
 };
 
 use axum::{
+    extract::Request,
     http::StatusCode,
+    middleware::Next,
     response::{IntoResponse, Response},
 };
-use prometheus::{Encoder, Gauge, Opts, Registry, TextEncoder};
+use prometheus::{
+    Encoder, Gauge, Histogram, HistogramOpts, HistogramVec, Opts, Registry, TextEncoder,
+};
 use tokio::time::interval;
 use tracing::{error, info};
 
@@ -143,6 +147,60 @@ fn update_metrics(state: &AppState) {
     METRICS.cpu_cores.set(stats.cpu.cores as f64);
     METRICS.cpu_system_load.set(stats.cpu.system_load);
     METRICS.cpu_lavalink_load.set(stats.cpu.lavalink_load);
+}
+
+/// P10: HTTP latency histogram. Labels are deliberately `{method, status}` only —
+/// request paths contain session/guild ids and would explode label cardinality.
+static REQUEST_LATENCY: LazyLock<HistogramVec> = LazyLock::new(|| {
+    let opts = HistogramOpts::new(
+        "http_request_duration_seconds",
+        "End-to-end HTTP request latency by method and status code",
+    )
+    .namespace(NAMESPACE)
+    .buckets(
+        prometheus::exponential_buckets(0.0005, 2.0, 15).expect("constant bucket spec"),
+    );
+    let vec = HistogramVec::new(opts, &["method", "status"]).expect("valid label set");
+    REGISTRY
+        .register(Box::new(vec.clone()))
+        .expect("first registration");
+    vec
+});
+
+/// P10: time from API request to playback armed (source resolution + decoder start).
+static TRACK_LOAD_DURATION: LazyLock<Histogram> = LazyLock::new(|| {
+    let h = Histogram::with_opts(
+        HistogramOpts::new(
+            "track_load_duration_seconds",
+            "Time spent resolving a track request and arming playback",
+        )
+        .namespace(NAMESPACE)
+        .buckets(vec![
+            0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0,
+        ]),
+    )
+    .expect("constant bucket spec");
+    REGISTRY
+        .register(Box::new(h.clone()))
+        .expect("first registration");
+    h
+});
+
+/// Observe one track-load duration (seconds) from the API layer.
+pub fn observe_track_load(seconds: f64) {
+    TRACK_LOAD_DURATION.observe(seconds);
+}
+
+/// Middleware: record end-to-end latency for every request (P10).
+pub async fn observe_request_latency(req: Request, next: Next) -> Response {
+    let method = req.method().as_str().to_owned();
+    let start = std::time::Instant::now();
+    let resp = next.run(req).await;
+    let status = resp.status().as_u16().to_string();
+    REQUEST_LATENCY
+        .with_label_values(&[&method, &status])
+        .observe(start.elapsed().as_secs_f64());
+    resp
 }
 
 /// Axum handler for Prometheus metrics.

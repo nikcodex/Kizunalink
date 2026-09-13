@@ -27,7 +27,9 @@ pub struct PlaybackStartConfig {
     pub source_manager: Arc<crate::media::sources::SourceManager>,
     pub lyrics_manager: Arc<crate::media::lyrics::LyricsManager>,
     pub routeplanner: Option<Arc<dyn crate::lavalink::routeplanner::RoutePlanner>>,
-    pub update_interval_secs: u64,
+    /// Cadence at which player-state events are pushed to the client (from
+    /// `server.player_update_interval`, N02).
+    pub update_interval: Duration,
     pub user_data: Option<serde_json::Value>,
     pub end_time: Option<u64>,
     pub start_time_ms: Option<u64>,
@@ -164,7 +166,9 @@ pub async fn start_playback(player: &mut PlayerContext, config: PlaybackStartCon
         stop_signal: player.stop_signal.clone(),
         ping: player.ping.clone(),
         stuck_threshold_ms: player.config.stuck_threshold_ms,
-        update_every_n: (config.update_interval_secs * 2).max(1),
+        // one tick == 20 ms; Lavalink semantics keep updates every `interval`, and
+        // the mixer runs at 50 Hz, hence `as_secs() * 2`.
+        update_every_n: (config.update_interval.as_secs() * 2).max(1),
         lyrics_subscribed: player.lyrics_subscribed.clone(),
         lyrics_data: player.lyrics_data.clone(),
         last_lyric_index: player.last_lyric_index.clone(),

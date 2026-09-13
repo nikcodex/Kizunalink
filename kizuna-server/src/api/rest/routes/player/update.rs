@@ -355,6 +355,8 @@ async fn start_playback(
         _ => None,
     };
 
+    // P10: track-load latency histogram (resolution + arm).
+    let load_start = std::time::Instant::now();
     kizunalink::discord::player::start_playback(
         player,
         kizunalink::discord::player::manager::start::PlaybackStartConfig {
@@ -363,13 +365,14 @@ async fn start_playback(
             source_manager: state.source_manager.clone(),
             lyrics_manager: state.lyrics_manager.clone(),
             routeplanner: state.routeplanner.clone(),
-            update_interval_secs: state.config.server.player_update_interval,
+            update_interval: state.config.server.player_update_interval,
             user_data,
             end_time,
             start_time_ms,
         },
     )
     .await;
+    crate::monitoring::prometheus::observe_track_load(load_start.elapsed().as_secs_f64());
 }
 
 /// PATCH /v4/sessions/{sessionId}

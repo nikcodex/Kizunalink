@@ -22,6 +22,30 @@
 //! - [`resample`]: Linear, hermite, and sinc resamplers.
 //! - [`source`]: Audio source abstraction (HTTP, segmented, local).
 
+/// Opt out of denormal (subnormal) float processing for this thread and every thread it
+/// spawns afterwards (Linux `clone` copies the FPU control state to child threads).
+///
+/// Denormals take the x87/SSE microcode slow path, so in steady-state DSP loops (mix,
+/// resample, filters) a handful of subnormal samples can stall whole frames. FTZ flushes
+/// subnormal *outputs* to zero and DAZ treats subnormal *inputs* as zero (P02). Call this
+/// from `main` *before* the tokio runtime is constructed so every worker inherits it.
+///
+/// On non-x86 targets this is a documented no-op: AArch64 needs `FPCR.FZ` via `mrs/msr`,
+/// which we currently only ship to x86 where the slow-path penalty is measured.
+pub fn disable_denormals() {
+    // MXCSR: Flush-To-Zero (bit 15) | Denormals-Are-Zero (bit 6).
+    #[cfg(target_arch = "x86_64")]
+    unsafe {
+        let csr = std::arch::x86_64::_mm_getcsr();
+        std::arch::x86_64::_mm_setcsr(csr | 0x8040);
+    }
+    #[cfg(target_arch = "x86")]
+    unsafe {
+        let csr = std::arch::x86::_mm_getcsr();
+        std::arch::x86::_mm_setcsr(csr | 0x8040);
+    }
+}
+
 pub mod buffer;
 pub mod codec;
 pub mod constants;

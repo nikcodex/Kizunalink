@@ -6,11 +6,16 @@ on:
   pull_request:
     branches: [main]
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
-  CARGO_TERM_COLOR: always
+  CARGO_TERM_COLOR: never
   LIBOPUS_STATIC: "1"
   OPUS_STATIC: "1"
   AUDIOPUS_STATIC: "1"
+  CMAKE_POLICY_VERSION_MINIMUM: "3.5"
 
 jobs:
   check:
@@ -54,7 +59,7 @@ jobs:
                 elsif (/^warning(?:\[[^\]]+\])?:\s*(.*)$/) { print "WARN: $1\n"; }
                 elsif (/^\s*-->\s*([^:]+):(\d+):(\d+)/) { print "  AT $1:$2:$3\n"; }
               }
-            ' < /tmp/check.log | head -c 60000 | tr '\n' ' ' > /tmp/tail.txt
+            ' < /tmp/check.log | head -c 60000 | tr '\n' '~' > /tmp/tail.txt
             echo "::error file=ci-check.log,line=1::$(cat /tmp/tail.txt)"
           fi
 
@@ -66,7 +71,26 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
-      - run: cargo fmt --all -- --check
+      - name: cargo fmt --check
+        run: |
+          set -o pipefail
+          cargo fmt --all -- --check 2>&1 | tee /tmp/fmt.log | perl -e '
+            my $n = 0;
+            while (<STDIN>) {
+              # rustfmt diff headers:Diff in <path> at line N:
+              if (/^Diff in (\S+) at line (\d+)/) {
+                print "::warning file=$1,line=$2::rustfmt diff starts here\n";
+                exit if ++$n >= 45;
+              }
+            }
+          '
+      - name: Surface fmt diff
+        if: failure()
+        run: |
+          if [ -s /tmp/fmt.log ]; then
+            head -c 60000 /tmp/fmt.log | tr '\n' '~' > /tmp/tail.txt
+            echo "::error file=fmt.diff,line=1::$(cat /tmp/tail.txt)"
+          fi
 
   clippy:
     name: Clippy
@@ -86,7 +110,34 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y cmake pkg-config libclang-dev clang build-essential perl libopus-dev
-      - run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: cargo clippy
+        run: |
+          set -o pipefail
+          cargo clippy --workspace --all-targets -- -D warnings --color=never 2>&1 | tee /tmp/clippy.log | perl -e '
+            my ($m, $lvl) = ("", "");
+            while (<STDIN>) {
+              if (/^error(?:\[[^\]]+\])?:\s*(.*)$/) { $m = $1; $lvl = "error"; }
+              elsif (/^warning(?:\[[^\]]+\])?:\s*(.*)$/) { $m = $1; $lvl = "warning"; }
+              elsif (/^\s*-->\s*([^:]+):(\d+):(\d+)/ && $m ne "") {
+                print "::$lvl file=$1,line=$2,col=$3::[clippy] $m\n";
+                $m = ""; $lvl = "";
+              }
+            }
+          '
+      - name: Surface clippy failure
+        if: failure()
+        run: |
+          if [ -f /tmp/clippy.log ]; then
+            perl -e '
+              my $m = "";
+              while (<STDIN>) {
+                if (/^(error|warning)(?:\[[^\]]+\])?:\s*(.*)$/) { print "UP: $1 $2\n"; }
+                elsif (/^\s*-->\s*([^:]+):(\d+)/) { print "  AT $1:$2\n"; }
+                elsif (/^\s*help:\s*(.*)$/) { my $h=$1; $h =~ s/\s+$//; print "  HELP $h\n" if length($h) < 200; }
+              }
+            ' < /tmp/clippy.log | head -c 60000 | tr '\n' '~' > /tmp/tail.txt
+            echo "::error file=ci-clippy.log,line=1::$(cat /tmp/tail.txt)"
+          fi
 
   test:
     name: Tests
@@ -104,12 +155,36 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y cmake pkg-config libclang-dev clang build-essential perl libopus-dev
-      - run: cargo test --workspace --all-targets
+      - name: cargo test
+        run: |
+          set -o pipefail
+          cargo test --workspace --all-targets --color=never 2>&1 | tee /tmp/test.log | perl -e '
+            my $n = 0;
+            while (<STDIN>) {
+              if (/^(.*: FAILED|failures:|.*panicked at .*)$/) {
+                my $msg = $1; $msg =~ s/^\s+//; $msg = substr($msg, 0, 180);
+                print "::error ::$msg\n";
+                exit if ++$n >= 45;
+              }
+            }
+          '
+      - name: Surface test failure
+        if: failure()
+        run: |
+          if [ -f /tmp/test.log ]; then
+            {
+              echo "=== failed tests ==="; grep -E "^(test .* FAILED|failures:)" /tmp/test.log | head -40
+              echo "=== panic excerpts ==="; grep -B2 -A8 "panicked at" /tmp/test.log | head -120
+              echo "=== compile errors ==="; grep -E "^error" /tmp/test.log | head -30
+            } | head -c 60000 | tr '\n' '~' > /tmp/tail.txt
+            echo "::error file=ci-test.log,line=1::$(cat /tmp/tail.txt)"
+          fi
 
   build:
     name: Build (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
@@ -129,18 +204,55 @@ jobs:
       - name: Install system deps (macOS)
         if: runner.os == 'macOS'
         run: brew install opus cmake pkg-config
-      # Windows relies on audiopus_sys building libopus from source via the
-      # LIBOPUS_STATIC/OPUS_STATIC/AUDIOPUS_STATIC env vars set at the top.
-      - run: cargo build --release --workspace
+      - name: cargo build --release
+        shell: bash
+        run: |
+          set -o pipefail
+          cargo build --release --workspace --color=never 2>&1 | tee /tmp/build.log | perl -e '
+            my ($m, $lvl) = ("", "");
+            while (<STDIN>) {
+              if (/^error(?:\[[^\]]+\])?:\s*(.*)$/) { $m = $1; $lvl = "error"; }
+              elsif (/^warning(?:\[[^\]]+\])?:\s*(.*)$/) { $m = $1; $lvl = "warning"; }
+              elsif (/^\s*-->\s*([^:]+):(\d+):(\d+)/ && $m ne "") {
+                print "::$lvl file=$1,line=$2,col=$3::$m\n";
+                $m = ""; $lvl = "";
+              }
+            }
+          '
+      - name: Surface build failure
+        if: failure()
+        run: |
+          if [ -f /tmp/build.log ]; then
+            grep -vE "^\s*(Compiling|Downloaded|Updating|Blocking)" /tmp/build.log | tail -c 50000 | tr '\n' '~' | sed 's/[[:cntrl:]]//g; s/~/ /g' > /tmp/tail.txt
+            echo "::error file=build-${{ matrix.os }}.log,line=1::$(cat /tmp/tail.txt)"
+          fi
 
   deny:
     name: Cargo Deny (advisories)
     runs-on: ubuntu-latest
-    # Non-blocking for now: surfaces RustSec advisories without failing the
-    # build while the advisory backlog is triaged.
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
-      - uses: EmbarkStudios/cargo-deny-action@v1
+      - uses: taiki-e/install-action@v2
         with:
-          command: check advisories
+          tool: cargo-deny
+      - name: cargo deny check advisories
+        run: |
+          set -o pipefail
+          cargo deny check advisories 2>&1 | tee /tmp/deny.log | perl -e '
+            my $n = 0;
+            while (<STDIN>) {
+              s/\e\[[0-9;]*m//g;
+              if (/RUSTSEC-\d{4}-\d{4}/) {
+                my $m = $_; $m =~ s/^\s+//; $m =~ s/\s+$//; $m = substr($m, 0, 200);
+                print "::error ::$m\n";
+                exit if ++$n >= 40;
+              }
+            }
+          '
+      - name: Surface deny summary
+        if: failure()
+        run: |
+          if [ -f /tmp/deny.log ]; then
+            grep -vE "^\s*(Fetching|Advancing|Configuration)" /tmp/deny.log | head -c 60000 | tr '\n' '~' | sed 's/~/ /g' > /tmp/tail.txt
+            echo "::error file=deny.log,line=1::$(cat /tmp/tail.txt)"
+          fi

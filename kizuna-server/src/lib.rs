@@ -1,6 +1,13 @@
 // Copyright (c) 2026 nikcodex (KizunaLink)
 // Licensed under the MIT License
 
+// N05: server library code logs via `tracing`, it never prints (the binary may: `main.rs`
+// delegates to the banner module which is allow-listed inside the `kizunalink` crate).
+#![cfg_attr(
+    not(test),
+    deny(clippy::print_stdout, clippy::print_stderr, clippy::dbg_macro)
+)]
+
 pub mod api;
 pub mod lavalink;
 pub mod monitoring;
