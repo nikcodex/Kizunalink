@@ -397,22 +397,20 @@ impl SourcePlugin for VkMusicSource {
         identifier: &str,
         _routeplanner: Option<Arc<dyn crate::lavalink::routeplanner::RoutePlanner>>,
     ) -> LoadResult {
-        if let Some(prefix) = self
+        if let Some(query) = self
             .search_prefixes()
             .into_iter()
-            .find(|p| identifier.starts_with(p))
+            .find_map(|p| identifier.strip_prefix(p))
         {
-            return self.search(identifier.strip_prefix(prefix).unwrap()).await;
+            return self.search(query).await;
         }
 
-        if let Some(prefix) = self
+        if let Some(target) = self
             .rec_prefixes()
             .into_iter()
-            .find(|p| identifier.starts_with(p))
+            .find_map(|p| identifier.strip_prefix(p))
         {
-            return self
-                .recommendations(identifier.strip_prefix(prefix).unwrap())
-                .await;
+            return self.recommendations(target).await;
         }
 
         if let Some(caps) = self.playlist_z_re.captures(identifier) {

@@ -388,10 +388,9 @@ impl ShazamSource {
     }
 
     fn parse_iso_duration(&self, iso: &str) -> u64 {
-        if !iso.contains('T') {
+        let Some(t_idx) = iso.find('T').map(|i| i + 1) else {
             return 0;
-        }
-        let t_idx = iso.find('T').unwrap() + 1;
+        };
         let mut ms = 0.0;
         let mut current_num = String::new();
 
