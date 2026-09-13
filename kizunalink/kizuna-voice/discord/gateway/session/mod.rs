@@ -163,8 +163,11 @@ impl VoiceGateway {
 
         let url = format!("wss://{}/?v={}", endpoint, VOICE_GATEWAY_VERSION);
         let mut config = WebSocketConfig::default();
-        config.max_message_size = None;
-        config.max_frame_size = None;
+        // Voice control payloads are small; leave room for MLS/DAVE messages without
+        // allowing a remote gateway to force unbounded allocations.
+        const MAX_VOICE_GATEWAY_PAYLOAD: usize = 1024 * 1024;
+        config.max_message_size = Some(MAX_VOICE_GATEWAY_PAYLOAD);
+        config.max_frame_size = Some(MAX_VOICE_GATEWAY_PAYLOAD);
 
         let (ws_stream, _) =
             tokio_tungstenite::connect_async_with_config(&url, Some(config), true).await?;
