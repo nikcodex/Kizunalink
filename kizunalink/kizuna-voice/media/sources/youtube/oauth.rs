@@ -10,7 +10,7 @@ use uuid::Uuid;
 use crate::common::types::AnyResult;
 
 const CLIENT_ID: &str = "861556708454-d6dlm3lh05idd8npek18k6be8ba3oc68.apps.googleusercontent.com";
-const CLIENT_SECRET: &str = "SboVhoG9s0rNafixCSGGKXAT";
+const CLIENT_SECRET_ENV: &str = "YOUTUBE_OAUTH_CLIENT_SECRET";
 const SCOPES: &str = "http://gdata.youtube.com https://www.googleapis.com/auth/youtube";
 
 pub struct YouTubeOAuth {
@@ -18,6 +18,7 @@ pub struct YouTubeOAuth {
     current_token_index: RwLock<usize>,
     access_token: RwLock<Option<String>>,
     token_expiry: RwLock<u64>,
+    client_secret: Option<String>,
     client: reqwest::Client,
 }
 
@@ -28,6 +29,9 @@ impl YouTubeOAuth {
             current_token_index: RwLock::new(0),
             access_token: RwLock::new(None),
             token_expiry: RwLock::new(0),
+            client_secret: std::env::var(CLIENT_SECRET_ENV)
+                .ok()
+                .filter(|secret| !secret.is_empty()),
             client: reqwest::Client::new(),
         }
     }
@@ -38,6 +42,12 @@ impl YouTubeOAuth {
     #[allow(clippy::print_stdout)]
     pub async fn initialize_access_token(self: std::sync::Arc<Self>) {
         if !self.refresh_tokens.read().await.is_empty() {
+            return;
+        }
+        if self.client_secret.is_none() {
+            tracing::error!(
+                "YouTube OAuth is disabled: {CLIENT_SECRET_ENV} is not configured"
+            );
             return;
         }
 
@@ -105,6 +115,12 @@ impl YouTubeOAuth {
                 tracing::error!("Failed to fetch YouTube device code: {}", e);
             }
         }
+    }
+
+    fn client_secret(&self) -> AnyResult<&str> {
+        self.client_secret
+            .as_deref()
+            .ok_or_else(|| format!("{CLIENT_SECRET_ENV} is not configured").into())
     }
 
     async fn fetch_device_code(&self) -> AnyResult<Value> {
@@ -183,12 +199,13 @@ impl YouTubeOAuth {
     }
 
     async fn fetch_refresh_token_from_device_code(&self, device_code: &str) -> AnyResult<Value> {
+        let client_secret = self.client_secret()?;
         let res = self
             .client
             .post("https://www.youtube.com/o/oauth2/token")
             .json(&json!({
                 "client_id": CLIENT_ID,
-                "client_secret": CLIENT_SECRET,
+                "client_secret": client_secret,
                 "code": device_code,
                 "grant_type": "http://oauth.net/grant_type/device/1.0"
             }))
@@ -245,12 +262,13 @@ impl YouTubeOAuth {
     }
 
     async fn refresh_token_request(&self, refresh_token: &str) -> AnyResult<(String, u64)> {
+        let client_secret = self.client_secret()?;
         let res = self
             .client
             .post("https://www.youtube.com/o/oauth2/token")
             .json(&json!({
                 "client_id": CLIENT_ID,
-                "client_secret": CLIENT_SECRET,
+                "client_secret": client_secret,
                 "refresh_token": refresh_token,
                 "grant_type": "refresh_token"
             }))
@@ -298,12 +316,13 @@ impl YouTubeOAuth {
     }
 
     pub async fn refresh_with_token(&self, refresh_token: &str) -> AnyResult<serde_json::Value> {
+        let client_secret = self.client_secret()?;
         let res = self
             .client
             .post("https://www.youtube.com/o/oauth2/token")
             .json(&json!({
                 "client_id": CLIENT_ID,
-                "client_secret": CLIENT_SECRET,
+                "client_secret": client_secret,
                 "refresh_token": refresh_token,
                 "grant_type": "refresh_token"
             }))

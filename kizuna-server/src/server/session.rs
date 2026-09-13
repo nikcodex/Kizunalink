@@ -32,6 +32,9 @@ pub struct Session {
     pub resume_timeout: AtomicU64,
     /// True when WS is disconnected but session is kept for resume.
     pub paused: AtomicBool,
+    /// Monotonically changes whenever a resume window starts or is consumed.
+    /// Cleanup tasks use it to avoid expiring a newer window.
+    pub resume_generation: AtomicU64,
     pub event_queue: Mutex<VecDeque<String>>,
     pub max_queue_size: usize,
 
@@ -60,6 +63,7 @@ impl Session {
             resumable: AtomicBool::new(false),
             resume_timeout: AtomicU64::new(60),
             paused: AtomicBool::new(false),
+            resume_generation: AtomicU64::new(0),
             event_queue: Mutex::new(VecDeque::new()),
             max_queue_size,
             last_stats_sent: AtomicU64::new(0),
