@@ -317,7 +317,6 @@ impl<'a> SessionState<'a> {
                 .unwrap_or(DAVE_INITIAL_VERSION as u64) as u16;
             let mut dave = self.dave.lock().await;
             if ver > 0 {
-                dave.set_protocol_version(ver);
                 if let Ok(kp) = dave.setup_session(ver) {
                     self.send_binary(26, &kp);
                 }
@@ -413,7 +412,6 @@ impl<'a> SessionState<'a> {
 
             let mut dave = self.dave.lock().await;
             if protocol_version > 0 {
-                dave.set_protocol_version(protocol_version);
                 if let Ok(kp) = dave.setup_session(protocol_version) {
                     self.send_binary(26, &kp);
                 }

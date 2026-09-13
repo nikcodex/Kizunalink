@@ -28,6 +28,7 @@ pub struct DaveHandler {
     user_id: UserId,
     channel_id: ChannelId,
     protocol_version: u16,
+    prepared_protocol_version: u16,
     pending_transitions: HashMap<u16, u16>,
     external_sender_set: bool,
     saved_external_sender: Option<Vec<u8>>,
@@ -47,6 +48,7 @@ impl DaveHandler {
             user_id,
             channel_id,
             protocol_version: 0,
+            prepared_protocol_version: 0,
             pending_transitions: HashMap::new(),
             external_sender_set: false,
             saved_external_sender: None,
@@ -84,10 +86,6 @@ impl DaveHandler {
         self.protocol_version
     }
 
-    pub fn set_protocol_version(&mut self, version: u16) {
-        self.protocol_version = version;
-    }
-
     pub fn setup_session(&mut self, version: u16) -> AnyResult<Vec<u8>> {
         if version == 0 {
             self.reset();
@@ -96,9 +94,15 @@ impl DaveHandler {
 
         let nz_version = NonZeroU16::new(version).unwrap_or(DAVE_MIN_VERSION);
 
+        let reusing_session = self.session.is_some();
         let session = if let Some(s) = &mut self.session {
-            s.reinit(nz_version, self.user_id.0, self.channel_id.0, None)
-                .map_err(map_boxed_err)?;
+            if self.protocol_version == 0 {
+                s.reinit(nz_version, self.user_id.0, self.channel_id.0, None)
+                    .map_err(map_boxed_err)?;
+            } else {
+                s.reinit_for_transition(nz_version, self.user_id.0, self.channel_id.0, None)
+                    .map_err(map_boxed_err)?;
+            }
             s
         } else {
             let session = DaveSession::new(nz_version, self.user_id.0, self.channel_id.0, None)
@@ -107,8 +111,8 @@ impl DaveHandler {
             self.session.as_mut().unwrap()
         };
 
-        self.protocol_version = version;
-        self.external_sender_set = false;
+        self.prepared_protocol_version = version;
+        self.external_sender_set = reusing_session && self.saved_external_sender.is_some();
         self.pending_proposals.clear();
         self.pending_handshake.clear();
         self.was_ready = false;
@@ -116,19 +120,8 @@ impl DaveHandler {
         debug!("DAVE session setup (v{})", version);
         let key_package = session.create_key_package().map_err(map_boxed_err)?;
 
-        if let Some(saved) = self.saved_external_sender.clone()
-            && let Some(sess) = &mut self.session
-        {
-            match sess.set_external_sender(&saved) {
-                Ok(()) => {
-                    self.external_sender_set = true;
-                    debug!("DAVE re-applied saved external sender after epoch reset");
-                }
-                Err(e) => {
-                    warn!("DAVE failed to re-apply saved external sender: {e}");
-                    self.saved_external_sender = None;
-                }
-            }
+        if self.external_sender_set {
+            debug!("DAVE retained external sender while preparing new epoch");
         }
 
         Ok(key_package)
@@ -136,6 +129,7 @@ impl DaveHandler {
 
     pub fn reset(&mut self) {
         self.protocol_version = 0;
+        self.prepared_protocol_version = 0;
         self.pending_transitions.clear();
         self.external_sender_set = false;
         self.saved_external_sender = None;
@@ -159,6 +153,13 @@ impl DaveHandler {
 
     pub fn execute_transition(&mut self, transition_id: u16) {
         if let Some(next_version) = self.pending_transitions.remove(&transition_id) {
+            if let Some(session) = &mut self.session {
+                if next_version == 0 {
+                    session.discard_transition(transition_id);
+                } else {
+                    session.execute_transition(transition_id);
+                }
+            }
             self.protocol_version = next_version;
             trace!(
                 "DAVE transition {} executed (v{})",
@@ -179,6 +180,11 @@ impl DaveHandler {
 
     pub fn process_external_sender(&mut self, data: &[u8]) -> AnyResult<Vec<Vec<u8>>> {
         let mut responses = Vec::new();
+
+        if self.external_sender_set && self.saved_external_sender.as_deref() == Some(data) {
+            trace!("DAVE ignoring unchanged external sender package");
+            return Ok(responses);
+        }
 
         if let Some(session) = &mut self.session {
             session.set_external_sender(data).map_err(map_boxed_err)?;
@@ -248,15 +254,26 @@ impl DaveHandler {
     fn do_process_handshake(&mut self, data: &[u8], is_welcome: bool) -> AnyResult<()> {
         let transition_id = u16::from_be_bytes([data[0], data[1]]);
         if let Some(session) = &mut self.session {
-            if is_welcome {
-                session.process_welcome(&data[2..]).map_err(map_boxed_err)?;
+            if transition_id == 0 {
+                if is_welcome {
+                    session.process_welcome(&data[2..]).map_err(map_boxed_err)?;
+                } else {
+                    session.process_commit(&data[2..]).map_err(map_boxed_err)?;
+                }
+                self.protocol_version = self.prepared_protocol_version;
+            } else if is_welcome {
+                session
+                    .process_welcome_for_transition(&data[2..], transition_id)
+                    .map_err(map_boxed_err)?;
             } else {
-                session.process_commit(&data[2..]).map_err(map_boxed_err)?;
+                session
+                    .process_commit_for_transition(&data[2..], transition_id)
+                    .map_err(map_boxed_err)?;
             }
 
             if transition_id != 0 {
                 self.pending_transitions
-                    .insert(transition_id, self.protocol_version);
+                    .insert(transition_id, self.prepared_protocol_version);
             }
             debug!(
                 "DAVE {} processed (tid {})",
@@ -388,5 +405,30 @@ mod tests {
         // reset should clear buffers
         handler.reset();
         assert_eq!(handler.pending_handshake.len(), 0);
+    }
+
+    #[test]
+    fn protocol_version_changes_only_when_transition_executes() {
+        let mut handler = DaveHandler::new(UserId(1), ChannelId(1));
+
+        handler.setup_session(1).unwrap();
+        assert_eq!(handler.protocol_version(), 0);
+
+        assert!(handler.prepare_transition(42, 1));
+        assert_eq!(handler.protocol_version(), 0);
+
+        handler.execute_transition(42);
+        assert_eq!(handler.protocol_version(), 1);
+    }
+
+    #[test]
+    fn preparing_replacement_epoch_keeps_active_protocol_version() {
+        let mut handler = DaveHandler::new(UserId(1), ChannelId(1));
+        handler.protocol_version = 1;
+        assert_eq!(handler.protocol_version(), 1);
+
+        handler.setup_session(1).unwrap();
+        assert_eq!(handler.protocol_version(), 1);
+        assert_eq!(handler.prepared_protocol_version, 1);
     }
 }
