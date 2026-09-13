@@ -94,6 +94,16 @@ impl AudioProcessor {
         )
     }
 
+    /// Creates a processor that sends decoded audio to a caller-provided engine.
+    ///
+    /// The optional `kind` is used as a format-probing hint, and the configured
+    /// resampling quality is applied when the source rate differs from the mixer
+    /// rate.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the source cannot be probed, has no audio track, or a
+    /// decoder cannot be created for the selected track.
     pub fn with_engine(
         source: Box<dyn MediaSource>,
         kind: Option<AudioFormat>,
@@ -134,6 +144,16 @@ impl AudioProcessor {
         })
     }
 
+    /// Decodes the selected track and sends mixer-rate stereo frames downstream
+    /// until stopped, the source ends, or the downstream engine closes.
+    ///
+    /// Successful seek commands reset decoder and resampler state. Recoverable
+    /// decode errors are skipped, while fatal read or decode errors are forwarded
+    /// to the configured error channel.
+    ///
+    /// # Errors
+    ///
+    /// Returns the fatal packet-read or decode error that ended processing.
     pub fn run(&mut self) -> Result<(), Error> {
         let _span = span!(Level::DEBUG, "audio_processor").entered();
 

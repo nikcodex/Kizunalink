@@ -55,6 +55,10 @@ pub async fn handle_op(
     }
 }
 
+/// Applies a guild voice update and reconnects its gateway task when the voice
+/// state changes or no task is running.
+///
+/// Returns an error when `event` lacks a string `token` or `endpoint`.
 async fn handle_voice_update(
     session: &Arc<Session>,
     state: &Arc<AppState>,
