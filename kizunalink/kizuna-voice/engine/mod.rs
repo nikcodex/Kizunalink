@@ -36,13 +36,33 @@ pub fn disable_denormals() {
     // MXCSR: Flush-To-Zero (bit 15) | Denormals-Are-Zero (bit 6).
     #[cfg(target_arch = "x86_64")]
     unsafe {
-        let csr = std::arch::x86_64::_mm_getcsr();
-        std::arch::x86_64::_mm_setcsr(csr | 0x8040);
+        let mut csr: u32 = 0;
+        core::arch::asm!(
+            "stmxcsr [{0}]",
+            in(reg) &mut csr,
+            options(nomem, nostack)
+        );
+        csr |= 0x8040;
+        core::arch::asm!(
+            "ldmxcsr [{0}]",
+            in(reg) &csr,
+            options(nomem, nostack)
+        );
     }
     #[cfg(target_arch = "x86")]
     unsafe {
-        let csr = std::arch::x86::_mm_getcsr();
-        std::arch::x86::_mm_setcsr(csr | 0x8040);
+        let mut csr: u32 = 0;
+        core::arch::asm!(
+            "stmxcsr [{0}]",
+            in(reg) &mut csr,
+            options(nomem, nostack)
+        );
+        csr |= 0x8040;
+        core::arch::asm!(
+            "ldmxcsr [{0}]",
+            in(reg) &csr,
+            options(nomem, nostack)
+        );
     }
 }
 
