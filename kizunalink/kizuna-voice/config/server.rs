@@ -1,7 +1,9 @@
 // Copyright (c) 2026 nikcodex (KizunaLink)
 // Licensed under the MIT License
 
-use serde::{Deserialize, Serialize};
+use std::time::Duration;
+
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct ServerConfig {
@@ -14,9 +16,16 @@ pub struct ServerConfig {
     /// Authorization password required for REST and WebSocket access.
     #[serde(default = "default_authorization")]
     pub authorization: String,
-    /// Interval in **seconds** between player state updates sent to the client.
-    #[serde(default = "default_player_update_interval")]
-    pub player_update_interval: u64,
+    /// Interval between player state updates sent to the client (N02).
+    ///
+    /// The TOML wire format is unchanged — a plain integer of **seconds** (`5`) — but the
+    /// in-memory type is a `Duration` so call sites cannot forget the unit.
+    #[serde(
+        default = "default_player_update_interval",
+        deserialize_with = "de_duration_secs",
+        serialize_with = "ser_duration_secs"
+    )]
+    pub player_update_interval: Duration,
     /// Interval in **seconds** between stats events sent over WebSocket.
     #[serde(default = "default_stats_interval")]
     pub stats_interval: u64,
@@ -26,6 +35,11 @@ pub struct ServerConfig {
     /// Maximum number of events to queue for a disconnected session.
     #[serde(default = "default_max_event_queue_size")]
     pub max_event_queue_size: usize,
+    /// Requests per minute allowed per client IP across REST + WebSocket upgrade
+    /// (S06). `0` disables rate limiting entirely. Default 2000 is well above any
+    /// sane single-node bot load and below anything an abusive flood would need.
+    #[serde(default = "default_rate_limit_per_minute")]
+    pub rate_limit_per_minute: u32,
 }
 
 impl Default for ServerConfig {
@@ -38,6 +52,7 @@ impl Default for ServerConfig {
             stats_interval: default_stats_interval(),
             websocket_ping_interval: default_websocket_ping_interval(),
             max_event_queue_size: default_max_event_queue_size(),
+            rate_limit_per_minute: default_rate_limit_per_minute(),
         }
     }
 }
@@ -54,8 +69,25 @@ fn default_authorization() -> String {
 fn default_max_event_queue_size() -> usize {
     100
 }
-fn default_player_update_interval() -> u64 {
-    5
+fn default_rate_limit_per_minute() -> u32 {
+    2000
+}
+fn default_player_update_interval() -> Duration {
+    Duration::from_secs(5)
+}
+
+/// Deserialize an integer number of seconds into a [`Duration`] (keeps the on-disk
+/// config format byte-compatible with the old `u64` field).
+fn de_duration_secs<'de, D>(deserializer: D) -> Result<Duration, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let secs = u64::deserialize(deserializer)?;
+    Ok(Duration::from_secs(secs))
+}
+
+fn ser_duration_secs<S: Serializer>(value: &Duration, serializer: S) -> Result<S::Ok, S::Error> {
+    serializer.serialize_u64(value.as_secs())
 }
 fn default_stats_interval() -> u64 {
     30

@@ -1,7 +1,21 @@
 // Copyright (c) 2026 nikcodex (KizunaLink)
 // Licensed under the MIT License
 
-use crate::common::utils::{BOLD, CYAN, DIM, ORANGE, RESET, YELLOW};
+use crate::common::utils::{
+    BOLD, CYAN, DIM, ORANGE, RESET, YELLOW, colors_enabled, strip_ansi_escapes,
+};
+
+/// Prints one banner line: console *and* log file via `log_println!`, with ANSI codes
+/// stripped when colors are disabled (N07). The allow keeps N05's `print_stdout` gate from
+/// firing inside the macro expansion — this module is the documented, deliberate exception.
+#[allow(clippy::print_stdout)]
+fn emit(line: String) {
+    if colors_enabled() {
+        crate::log_println!("{line}");
+    } else {
+        crate::log_println!("{}", strip_ansi_escapes(&line));
+    }
+}
 
 macro_rules! env_or {
     ($key:literal, $default:literal) => {
@@ -50,8 +64,10 @@ pub fn print_banner(info: &BannerInfo) {
 /_/ |_/_/  /___/ \__,_//_/ /_/ \__,_//_____/_//_/ /_/_/|_| 
 "#;
 
-    println!("{ORANGE}{BANNER_ART}{RESET}");
-    println!("{DIM}========================================{RESET}\n");
+    emit(format!("{ORANGE}{BANNER_ART}{RESET}"));
+    emit(format!(
+        "{DIM}========================================{RESET}\n"
+    ));
 
     print_row("Version", info.version, CYAN);
     print_row("Build time", info.build_time, RESET);
@@ -67,12 +83,15 @@ pub fn print_banner(info: &BannerInfo) {
     print_row("Rust", info.rust_version, RESET);
     print_row("Profile", info.profile, YELLOW);
 
-    println!(
+    emit(format!(
         "\n{DIM}  No active profile set, falling back to 1 default profile: \
          \"{BOLD}default{RESET}{DIM}\"{RESET}\n"
-    );
+    ));
 }
 
 fn print_row(label: &str, value: impl AsRef<str>, color: &str) {
-    println!("  {BOLD}{label:<14}{RESET}{color}{}{RESET}", value.as_ref());
+    emit(format!(
+        "  {BOLD}{label:<14}{RESET}{color}{}{RESET}",
+        value.as_ref()
+    ));
 }

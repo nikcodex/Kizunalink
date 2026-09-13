@@ -15,6 +15,8 @@ use symphonia::core::{
 use tracing::{Level, debug, span, warn};
 
 use crate::{
+    common::types::AudioFormat,
+    config::player::{PlayerConfig, ResamplingQuality},
     engine::{
         AudioFrame,
         constants::{MIXER_CHANNELS, TARGET_SAMPLE_RATE},
@@ -22,8 +24,6 @@ use crate::{
         engine::{BoxedEngine, StandardEngine},
         resample::Resampler,
     },
-    common::types::AudioFormat,
-    config::player::{PlayerConfig, ResamplingQuality},
 };
 
 #[derive(Debug, Clone, PartialEq)]

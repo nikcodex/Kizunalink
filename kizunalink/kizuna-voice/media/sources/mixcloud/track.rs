@@ -85,15 +85,15 @@ impl PlayableTrack for MixcloudTrack {
                     Err("Mixcloud: failed to create reader".to_string())
                 }
             })
-                .await;
-                let setup_res = match setup_res_task {
-                    Ok(res) => res,
-                    Err(e) => {
-                        tracing::error!("spawn_blocking failed: {}", e);
-                        let _ = err_tx.send(format!("Failed to spawn task: {e}"));
-                        return;
-                    }
-                };
+            .await;
+            let setup_res = match setup_res_task {
+                Ok(res) => res,
+                Err(e) => {
+                    tracing::error!("spawn_blocking failed: {}", e);
+                    let _ = err_tx.send(format!("Failed to spawn task: {e}"));
+                    return;
+                }
+            };
 
             match setup_res {
                 Ok(mut processor) => {
@@ -107,10 +107,11 @@ impl PlayableTrack for MixcloudTrack {
                                     e
                                 );
                             }
-                        }) {
-                            tracing::error!("failed to spawn thread: {e}");
-                            let _ = err_tx.send(format!("Failed to spawn decoder thread: {e}"));
-                        }
+                        })
+                    {
+                        tracing::error!("failed to spawn thread: {e}");
+                        let _ = err_tx.send(format!("Failed to spawn decoder thread: {e}"));
+                    }
                 }
                 Err(e) => {
                     tracing::error!("Mixcloud failed to initialize processor for {}: {}", uri, e);

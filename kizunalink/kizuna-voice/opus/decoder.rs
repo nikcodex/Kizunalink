@@ -44,13 +44,8 @@ impl Decoder {
     /// [`Error::DecoderCreateFailed`] if the returned pointer is null.
     pub fn new(sample_rate: SampleRate, channels: Channels) -> Result<Self> {
         let mut error: i32 = 0;
-        let ptr = unsafe {
-            ffi::opus_decoder_create(
-                sample_rate.raw(),
-                channels.raw(),
-                &mut error,
-            )
-        };
+        let ptr =
+            unsafe { ffi::opus_decoder_create(sample_rate.raw(), channels.raw(), &mut error) };
 
         check_opus_error(error)?;
 
@@ -87,8 +82,8 @@ impl Decoder {
     ) -> Result<usize> {
         let (data_ptr, data_len) = match packet {
             Some(data) => {
-                let len = i32::try_from(data.len())
-                    .map_err(|_| Error::Opus(ErrorCode::BadArgument))?;
+                let len =
+                    i32::try_from(data.len()).map_err(|_| Error::Opus(ErrorCode::BadArgument))?;
                 (data.as_ptr(), len)
             }
             None => (std::ptr::null(), 0),
@@ -139,8 +134,8 @@ impl Decoder {
     ) -> Result<usize> {
         let (data_ptr, data_len) = match packet {
             Some(data) => {
-                let len = i32::try_from(data.len())
-                    .map_err(|_| Error::Opus(ErrorCode::BadArgument))?;
+                let len =
+                    i32::try_from(data.len()).map_err(|_| Error::Opus(ErrorCode::BadArgument))?;
                 (data.as_ptr(), len)
             }
             None => (std::ptr::null(), 0),
@@ -194,8 +189,7 @@ impl Decoder {
     ///
     /// Returns [`Error::Opus`] if the packet is corrupted or invalid.
     pub fn nb_samples(&self, packet: &[u8]) -> Result<usize> {
-        let len = i32::try_from(packet.len())
-            .map_err(|_| Error::Opus(ErrorCode::BadArgument))?;
+        let len = i32::try_from(packet.len()).map_err(|_| Error::Opus(ErrorCode::BadArgument))?;
 
         let ret = unsafe {
             ffi::opus_decoder_get_nb_samples(

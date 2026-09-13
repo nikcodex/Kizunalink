@@ -11,7 +11,10 @@ pub const OPUS_SAMPLE_RATE: u64 = 48_000;
 // - EQ biquad coefficients (hardcoded 48 kHz)
 // - Sinc resampler (assumes 48 kHz)
 // - Opus encoder (960 samples = 20ms at 48 kHz)
-const _: () = assert!(TARGET_SAMPLE_RATE == 48_000, "TARGET_SAMPLE_RATE must be 48000");
+const _: () = assert!(
+    TARGET_SAMPLE_RATE == 48_000,
+    "TARGET_SAMPLE_RATE must be 48000"
+);
 
 // ── i16 PCM clip boundaries ──────────────────────────────────────────────────
 

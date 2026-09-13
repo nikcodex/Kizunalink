@@ -16,7 +16,8 @@ mod resolver;
 pub struct SourceManager {
     pub sources: Vec<BoxedSource>,
     pub mirrors: Option<crate::config::server::MirrorsConfig>,
-    pub youtube_cipher_manager: Option<Arc<crate::media::sources::youtube::cipher::YouTubeCipherManager>>,
+    pub youtube_cipher_manager:
+        Option<Arc<crate::media::sources::youtube::cipher::YouTubeCipherManager>>,
     pub youtube_stream_ctx: Option<Arc<crate::media::sources::youtube::YoutubeStreamContext>>,
     pub http_pool: Arc<HttpClientPool>,
 }
@@ -126,7 +127,10 @@ impl SourceManager {
     }
 
     /// Retrieves proxy configuration for a specific source by name.
-    pub fn get_proxy_config(&self, source_name: &str) -> Option<crate::config::sources::HttpProxyConfig> {
+    pub fn get_proxy_config(
+        &self,
+        source_name: &str,
+    ) -> Option<crate::config::sources::HttpProxyConfig> {
         self.sources
             .iter()
             .find(|s| s.name() == source_name)

@@ -7,8 +7,8 @@ use symphonia::core::io::MediaSource;
 
 use super::ua::get_youtube_ua;
 use crate::{
-    engine::source::{SegmentedSource, create_client},
     common::types::AnyResult,
+    engine::source::{SegmentedSource, create_client},
 };
 
 pub struct YoutubeReader {

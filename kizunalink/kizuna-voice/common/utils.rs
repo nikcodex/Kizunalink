@@ -26,6 +26,32 @@ pub const COLOR_INFO: &str = GREEN;
 pub const COLOR_DEBUG: &str = BLUE;
 pub const COLOR_TRACE: &str = MAGENTA;
 
+/// Whether ANSI color escape codes should be emitted to stdout (N07).
+///
+/// Precedence follows the ecosystem conventions:
+/// 1. `CLICOLOR_FORCE` set to anything other than `0` — always color.
+/// 2. `NO_COLOR` set to a non-empty value — never color (no-color.org).
+/// 3. `CLICOLOR=0` — never color.
+/// 4. `TERM=dumb` — never color.
+/// 5. otherwise: only when stdout is an attached terminal.
+pub fn colors_enabled() -> bool {
+    use std::io::IsTerminal as _;
+
+    if std::env::var("CLICOLOR_FORCE").is_ok_and(|v| v != "0") {
+        return true;
+    }
+    if std::env::var_os("NO_COLOR").is_some_and(|v| !v.is_empty()) {
+        return false;
+    }
+    if std::env::var("CLICOLOR").is_ok_and(|v| v == "0") {
+        return false;
+    }
+    if std::env::var("TERM").is_ok_and(|v| v == "dumb") {
+        return false;
+    }
+    std::io::stdout().is_terminal()
+}
+
 /// Returns the current time in milliseconds since the Unix epoch.
 pub fn now_ms() -> u64 {
     SystemTime::now()

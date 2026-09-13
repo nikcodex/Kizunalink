@@ -6,11 +6,11 @@ use std::{net::IpAddr, sync::Arc};
 use tracing::{debug, error};
 
 use crate::{
+    config::sources::HttpProxyConfig,
     engine::{
         AudioFrame,
         processor::{AudioProcessor, DecoderCommand},
     },
-    config::sources::HttpProxyConfig,
     media::sources::{
         deezer::reader::DeezerReader,
         plugin::{DecoderOutput, PlayableTrack},
@@ -283,7 +283,7 @@ impl PlayableTrack for DeezerTrack {
                     )
                 })
                 .await;
-                
+
                 let setup_res = match setup_res_task {
                     Ok(res) => res,
                     Err(e) => {

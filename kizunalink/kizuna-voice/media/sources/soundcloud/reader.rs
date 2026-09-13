@@ -12,9 +12,9 @@ use symphonia::core::io::MediaSource;
 use tracing::debug;
 
 use crate::{
-    engine::source::{HttpSource, create_client},
     common::types::AnyResult,
     config::sources::HttpProxyConfig,
+    engine::source::{HttpSource, create_client},
     media::sources::youtube::hls::{
         fetcher::fetch_segment_into, resolver::resolve_playlist, ts_demux::extract_adts_from_ts,
         types::Resource,

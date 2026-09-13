@@ -183,8 +183,8 @@ impl RedditSource {
     }
 
     fn identify_resource(&self, link: &str) -> String {
-        let pattern =
-            PATH_EXTRACTOR.get_or_init(|| Regex::new(r"/(?:comments|video|s)/([^/?#]+)").expect("valid regex"));
+        let pattern = PATH_EXTRACTOR
+            .get_or_init(|| Regex::new(r"/(?:comments|video|s)/([^/?#]+)").expect("valid regex"));
 
         if let Some(hits) = pattern.captures(link) {
             return hits[1].to_owned();

@@ -9,11 +9,11 @@ use std::sync::{
 use tokio::sync::Mutex;
 
 use crate::{
-    engine::{filters::FilterChain, playback::TrackHandle},
+    common::server_hooks::ServerContext,
     common::types::Shared,
     config::player::PlayerConfig,
     discord::player::state::{Filters, Player, PlayerState, VoiceConnectionState, VoiceState},
-    common::server_hooks::ServerContext,
+    engine::{filters::FilterChain, playback::TrackHandle},
 };
 
 pub struct PlayerContext {

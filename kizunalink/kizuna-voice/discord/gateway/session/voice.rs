@@ -13,7 +13,6 @@ use tracing::error;
 
 use super::types::GatewayError;
 use crate::{
-    engine::{Mixer, engine::Encoder, filters::FilterChain},
     common::types::Shared,
     discord::crypto::DaveHandler,
     discord::gateway::{
@@ -24,6 +23,7 @@ use crate::{
         },
         udp_link::UDPVoiceTransport,
     },
+    engine::{Mixer, engine::Encoder, filters::FilterChain},
 };
 
 pub async fn discover_ip(

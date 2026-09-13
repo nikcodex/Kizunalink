@@ -138,7 +138,8 @@ async fn handle_filters(
     guild_id: &kizunalink::common::types::GuildId,
     session: &Arc<Session>,
 ) -> Result<(), (StatusCode, Json<kizunalink::common::KizunaLinkError>)> {
-    let invalid_filters = kizunalink::engine::filters::validate_filters(&filters, &state.config.filters);
+    let invalid_filters =
+        kizunalink::engine::filters::validate_filters(&filters, &state.config.filters);
     if !invalid_filters.is_empty() {
         let message = format!(
             "Following filters are disabled in the config: {}",
@@ -233,7 +234,9 @@ async fn handle_voice(
     Ok(())
 }
 
-fn resolve_track_update(body: &PlayerUpdate) -> Option<kizunalink::discord::player::PlayerUpdateTrack> {
+fn resolve_track_update(
+    body: &PlayerUpdate,
+) -> Option<kizunalink::discord::player::PlayerUpdateTrack> {
     if let Some(t) = &body.track {
         Some(t.clone())
     } else if let Some(et) = &body.encoded_track {
@@ -323,13 +326,11 @@ async fn stop_player(player: &mut PlayerContext, session: &Arc<Session>) {
     player.track_info = None;
 
     if let Some(encoded) = track_data {
-        let track_info = track_info.unwrap_or_else(|| {
-            protocol::tracks::Track {
-                encoded: encoded.clone(),
-                info: protocol::tracks::TrackInfo::default(),
-                plugin_info: serde_json::json!({}),
-                user_data: serde_json::json!({}),
-            }
+        let track_info = track_info.unwrap_or_else(|| protocol::tracks::Track {
+            encoded: encoded.clone(),
+            info: protocol::tracks::TrackInfo::default(),
+            plugin_info: serde_json::json!({}),
+            user_data: serde_json::json!({}),
         });
         session.send_message(&protocol::OutgoingMessage::Event {
             event: Box::new(protocol::KizunaLinkEvent::TrackEnd {
@@ -355,6 +356,8 @@ async fn start_playback(
         _ => None,
     };
 
+    // P10: track-load latency histogram (resolution + arm).
+    let load_start = std::time::Instant::now();
     kizunalink::discord::player::start_playback(
         player,
         kizunalink::discord::player::manager::start::PlaybackStartConfig {
@@ -363,13 +366,14 @@ async fn start_playback(
             source_manager: state.source_manager.clone(),
             lyrics_manager: state.lyrics_manager.clone(),
             routeplanner: state.routeplanner.clone(),
-            update_interval_secs: state.config.server.player_update_interval,
+            update_interval: state.config.server.player_update_interval,
             user_data,
             end_time,
             start_time_ms,
         },
     )
     .await;
+    crate::monitoring::prometheus::observe_track_load(load_start.elapsed().as_secs_f64());
 }
 
 /// PATCH /v4/sessions/{sessionId}

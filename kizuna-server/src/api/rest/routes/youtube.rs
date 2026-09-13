@@ -372,12 +372,12 @@ fn get_target_clients(
 ) -> ClientFilterResult {
     if let Some(filter) = filter {
         let lower = filter.to_lowercase();
-        let matched: Vec<Arc<dyn kizunalink::media::sources::youtube::clients::YouTubeClient>> = ctx
-            .clients
-            .iter()
-            .filter(|c| c.name().to_lowercase() == lower)
-            .cloned()
-            .collect();
+        let matched: Vec<Arc<dyn kizunalink::media::sources::youtube::clients::YouTubeClient>> =
+            ctx.clients
+                .iter()
+                .filter(|c| c.name().to_lowercase() == lower)
+                .cloned()
+                .collect();
 
         if matched.is_empty() {
             return Err((

@@ -183,11 +183,7 @@ unsafe extern "C" {
     /// - `Fs`: Sampling rate to decode with in Hz. Must be 8000, 12000, 16000, 24000, or 48000.
     /// - `channels`: Number of channels (1 or 2).
     /// - `error`: Returns `OPUS_OK` on success, or an error code on failure.
-    pub fn opus_decoder_create(
-        Fs: i32,
-        channels: i32,
-        error: *mut i32,
-    ) -> *mut OpusDecoder;
+    pub fn opus_decoder_create(Fs: i32, channels: i32, error: *mut i32) -> *mut OpusDecoder;
 
     /// Frees an `OpusDecoder` allocated by `opus_decoder_create`.
     pub fn opus_decoder_destroy(st: *mut OpusDecoder);
@@ -240,9 +236,6 @@ unsafe extern "C" {
     pub fn opus_packet_get_samples_per_frame(data: *const u8, Fs: i32) -> i32;
 
     /// Gets the number of samples of an Opus packet in the decoder.
-    pub fn opus_decoder_get_nb_samples(
-        dec: *const OpusDecoder,
-        packet: *const u8,
-        len: i32,
-    ) -> i32;
+    pub fn opus_decoder_get_nb_samples(dec: *const OpusDecoder, packet: *const u8, len: i32)
+    -> i32;
 }

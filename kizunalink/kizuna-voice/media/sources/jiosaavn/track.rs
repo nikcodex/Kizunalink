@@ -10,11 +10,11 @@ use des::{
 };
 
 use crate::{
+    config::sources::HttpProxyConfig,
     engine::{
         AudioFrame,
         processor::{AudioProcessor, DecoderCommand},
     },
-    config::sources::HttpProxyConfig,
     media::sources::plugin::{DecoderOutput, PlayableTrack},
 };
 
@@ -84,10 +84,11 @@ impl PlayableTrack for JioSaavnTrack {
                                     e
                                 );
                             }
-                        }) {
-                            tracing::error!("failed to spawn thread: {e}");
-                            let _ = err_tx.send(format!("Failed to spawn decoder thread: {e}"));
-                        }
+                        })
+                    {
+                        tracing::error!("failed to spawn thread: {e}");
+                        let _ = err_tx.send(format!("Failed to spawn decoder thread: {e}"));
+                    }
                 }
                 Err(e) => {
                     tracing::error!("JioSaavn failed to initialize processor for {}: {}", url, e);

@@ -41,6 +41,10 @@ pub struct AppConfig {
 }
 
 impl AppConfig {
+    /// The `log_println!` lines here intentionally write to the console before the
+    /// tracing subscriber exists (and mirror to the log file once it does) — hence the
+    /// local N05 `print_stdout` allow.
+    #[allow(clippy::print_stdout)]
     pub async fn load() -> AnyResult<Self> {
         let config_path = if Path::new("config.toml").exists() {
             "config.toml"
@@ -111,6 +115,11 @@ impl AppConfig {
         // Validate port is not zero
         if self.server.port == 0 {
             return Err("server.port must be non-zero".into());
+        }
+
+        // N02: a zero-second update interval would flood clients with events.
+        if self.server.player_update_interval.is_zero() {
+            return Err("server.player_update_interval must be > 0 seconds".into());
         }
 
         // Warn if authorization is the default

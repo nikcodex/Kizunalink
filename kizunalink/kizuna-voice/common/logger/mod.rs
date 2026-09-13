@@ -15,6 +15,10 @@ pub use writer::CircularFileWriter;
 
 pub(crate) static GLOBAL_FILE_WRITER: OnceLock<CircularFileWriter> = OnceLock::new();
 
+// N05: printing to the console is the whole point of these two macros
+// (interactive output that is *also* mirrored into the log file). The tokens below
+// span into this definition, so the allow lives here as well as at call sites.
+#[allow(clippy::print_stdout)]
 #[macro_export]
 macro_rules! log_print {
     ($($arg:tt)*) => {{
@@ -24,6 +28,10 @@ macro_rules! log_print {
     }};
 }
 
+// N05: printing to the console is the whole point of these two macros
+// (interactive output that is *also* mirrored into the log file). The tokens below
+// span into this definition, so the allow lives here as well as at call sites.
+#[allow(clippy::print_stdout)]
 #[macro_export]
 macro_rules! log_println {
     () => {{
@@ -59,7 +67,7 @@ pub fn init(config: &LoggingConfig) {
 
     let stdout_layer = fmt::layer()
         .event_format(CustomFormatter::new(true))
-        .with_ansi(true);
+        .with_ansi(crate::common::utils::colors_enabled());
 
     let file_layer = config.file.as_ref().map(|file_config| {
         if let Some(parent) = Path::new(&file_config.path).parent() {

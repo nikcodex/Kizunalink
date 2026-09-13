@@ -277,7 +277,11 @@ mod tests {
             AudioFormat::Wav,
         ] {
             let ext = fmt.as_ext();
-            assert_eq!(AudioFormat::from_ext(ext), fmt, "roundtrip failed for {ext}");
+            assert_eq!(
+                AudioFormat::from_ext(ext),
+                fmt,
+                "roundtrip failed for {ext}"
+            );
         }
     }
 
@@ -285,6 +289,9 @@ mod tests {
     fn session_id_generate_length() {
         let id = SessionId::generate();
         assert_eq!(id.0.len(), 16);
-        assert!(id.0.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit()));
+        assert!(
+            id.0.chars()
+                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit())
+        );
     }
 }

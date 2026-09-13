@@ -379,9 +379,7 @@ impl YouTubeClient for WebRemixClient {
 
         let response: Value = res.json().await?;
 
-        Ok(crate::media::sources::youtube::extractor::extract_from_next(
-            &response, "youtube",
-        ))
+        Ok(crate::media::sources::youtube::extractor::extract_from_next(&response, "youtube"))
     }
 
     async fn resolve_url(

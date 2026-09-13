@@ -6,11 +6,11 @@ use std::{net::IpAddr, sync::Arc};
 use tracing::warn;
 
 use crate::{
+    config::sources::HttpProxyConfig,
     engine::{
         AudioFrame,
         processor::{AudioProcessor, DecoderCommand},
     },
-    config::sources::HttpProxyConfig,
     media::sources::{
         gaana::crypto::decrypt_stream_path,
         plugin::{DecoderOutput, PlayableTrack},
@@ -83,7 +83,7 @@ impl PlayableTrack for GaanaTrack {
                     }
                 })
                 .await;
-                
+
                 let setup_res = match setup_res_task {
                     Ok(res) => res,
                     Err(e) => {

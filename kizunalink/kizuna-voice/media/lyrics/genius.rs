@@ -58,8 +58,8 @@ impl LyricsProvider for GeniusProvider {
         let song_resp = self.client.get(song_url).send().await.ok()?;
         let song_page = song_resp.text().await.ok()?;
 
-        let re =
-            Regex::new(r#"(?s)window\.__PRELOADED_STATE__\s*=\s*JSON\.parse\('(.*?)'\);"#).expect("valid regex");
+        let re = Regex::new(r#"(?s)window\.__PRELOADED_STATE__\s*=\s*JSON\.parse\('(.*?)'\);"#)
+            .expect("valid regex");
         let caps = re.captures(&song_page)?;
         let lyrics_data_raw = caps.get(1)?.as_str();
 

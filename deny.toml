@@ -12,8 +12,9 @@ yanked = "deny"
 # db-path = "~/.cargo/advisory-db"
 
 [licenses]
-# KizunaLink is MIT-licensed. Allow permissive licenses by default and only
-# reject strong copyleft (GPL/AGPL) so this stays compatible with MIT.
+# KizunaLink is MIT-licensed. Allow-list permissive licenses explicitly; anything not
+# listed here (strong copyleft included) fails `cargo deny check licenses`.
+# (cargo-deny >= 0.16 removed the `default`/`copyleft` keys — see EmbarkStudios/cargo-deny#611.)
 allow = [
     "MIT",
     "Apache-2.0",
@@ -27,9 +28,6 @@ allow = [
     "OpenSSL",
     "MPL-2.0",
 ]
-copyleft = "deny"
-# Be permissive about anything not listed above; deny only copyleft.
-default = "allow"
 
 [bans]
 multiple-versions = "warn"

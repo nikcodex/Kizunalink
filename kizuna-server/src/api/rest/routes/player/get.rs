@@ -9,11 +9,7 @@ use axum::{
     response::{IntoResponse, Json},
 };
 
-use crate::{
-    discord::player::Players,
-    protocol,
-    server::AppState,
-};
+use crate::{discord::player::Players, protocol, server::AppState};
 
 /// GET /v4/sessions/{sessionId}/players
 pub async fn get_players(

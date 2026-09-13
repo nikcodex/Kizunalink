@@ -148,8 +148,10 @@ impl CircularFileWriter {
         let state_arc = self.state.clone();
 
         std::thread::spawn(move || {
+            // B11: this IS the tracing sink — a `tracing` call here would recurse, so an
+            // `eprintln!` is the only safe reporter; hence the local `print_stderr` allow.
+            #[allow(clippy::print_stderr)]
             if let Err(e) = Self::do_prune(&path, max_lines) {
-                // B11: Use eprintln! (not tracing) since this IS the tracing sink — tracing would recurse.
                 eprintln!("Failed to prune log file '{}': {}", path, e);
             }
             let mut state = state_arc.lock();
@@ -191,6 +193,9 @@ impl CircularFileWriter {
 
         let to_delete = log_files.len() - max_files;
         for path in log_files.iter().take(to_delete) {
+            // B11: same rationale as the prune path — this runs inside the log writer,
+            // so `tracing` is not an option.
+            #[allow(clippy::print_stderr)]
             if let Err(e) = std::fs::remove_file(path) {
                 eprintln!("Failed to delete old log file '{}': {}", path.display(), e);
             }
@@ -444,15 +449,15 @@ mod tests {
     #[test]
     fn test_prune_threshold_calculation() {
         let _writer = CircularFileWriter::new("test.log".to_string(), 1000, 0, false);
-        let threshold = (1000 / 10).max(50);
+        let threshold = 1000 / 10;
         assert_eq!(threshold, 100);
 
         let _writer = CircularFileWriter::new("test.log".to_string(), 100, 0, false);
-        let threshold = (100 / 10).max(50);
+        let threshold = 50;
         assert_eq!(threshold, 50);
 
         let _writer = CircularFileWriter::new("test.log".to_string(), 10, 0, false);
-        let threshold = (10 / 10).max(50);
+        let threshold = 50;
         assert_eq!(threshold, 50);
 
         cleanup_test_file("test.log");

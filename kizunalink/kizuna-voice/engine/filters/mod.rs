@@ -427,6 +427,67 @@ mod tests {
         chain.process(&mut samples);
     }
 
+    /// B22: re-verify the timescale frame-exchange contract.
+    ///
+    /// The chain keeps its own `timescale_buffer`: `process()` must NOT swap the caller's
+    /// in-place samples for resampled audio; the only way out is `fill_frame`, which must
+    /// drain the front of the buffer exactly `output.len()` samples, in order, and must not
+    /// consume anything when the buffer is short.
+    #[test]
+    fn timescale_frame_exchange_contract() {
+        use crate::discord::player::state::TimescaleFilter;
+
+        let mut filters = Filters::default();
+        filters.timescale = Some(TimescaleFilter {
+            speed: Some(1.5),
+            pitch: Some(1.0),
+            rate: Some(1.0),
+        });
+        let mut chain = FilterChain::from_config(&filters);
+        assert!(chain.is_active());
+        assert!(chain.has_timescale());
+
+        let input: Vec<i16> = (0..960).map(|i| ((i * 31) % 2000) as i16 - 1000).collect();
+        let mut samples = input.clone();
+        chain.process(&mut samples);
+        assert_eq!(
+            samples, input,
+            "process() must not replace caller samples in-place"
+        );
+        assert!(
+            !chain.timescale_buffer.is_empty(),
+            "speed=1.5 over 960 frames must produce output"
+        );
+
+        let produced = chain.timescale_buffer.clone();
+        let mut frame8 = [0i16; 8];
+        assert!(chain.fill_frame(&mut frame8), "8 samples must be available");
+        assert_eq!(&frame8[..], &produced[..8]);
+
+        let mut frame16 = [0i16; 16];
+        assert!(chain.fill_frame(&mut frame16), "next 16 must be available");
+        assert_eq!(
+            &frame16[..],
+            &produced[8..24],
+            "drain must continue in order"
+        );
+        assert_eq!(chain.timescale_buffer.len(), produced.len() - 24);
+
+        // Short buffer => no partial drain, returns false.
+        let before = chain.timescale_buffer.len();
+        let mut too_big = vec![0i16; before + 8];
+        assert!(!chain.fill_frame(&mut too_big));
+        assert_eq!(
+            chain.timescale_buffer.len(),
+            before,
+            "failed fill must not consume"
+        );
+
+        // reset() empties the exchange buffer.
+        chain.reset();
+        assert!(chain.timescale_buffer.is_empty());
+    }
+
     #[test]
     fn validate_filters_default_all_valid() {
         let filters = Filters::default();

@@ -13,8 +13,8 @@ use tracing_subscriber::{
 };
 
 use crate::common::utils::{
-    BOLD, COLOR_DEBUG, COLOR_ERROR, COLOR_INFO, COLOR_TRACE, COLOR_WARN, DIM, RESET,
-    memory_usage_report, CYAN,
+    BOLD, COLOR_DEBUG, COLOR_ERROR, COLOR_INFO, COLOR_TRACE, COLOR_WARN, CYAN, DIM, RESET,
+    memory_usage_report,
 };
 
 pub struct CustomFormatter {
@@ -32,7 +32,8 @@ impl CustomFormatter {
         );
         let now =
             time::OffsetDateTime::now_local().unwrap_or_else(|_| time::OffsetDateTime::now_utc());
-        now.format(&format).unwrap_or_else(|_| "Unknown Time".to_string())
+        now.format(&format)
+            .unwrap_or_else(|_| "Unknown Time".to_string())
     }
 
     fn get_level_color(&self, level: &Level) -> &'static str {
@@ -73,9 +74,9 @@ where
         let ram = memory_usage_report();
 
         // ╭─[ Timestamp ]─[ RAM ]─[ LEVEL ]
-        write!(
+        writeln!(
             writer,
-            "{dim}╭─{reset} {dim}[{reset}{timestamp}{dim}]{reset} {dim}─{reset} {dim}[{reset}{CYAN}{ram}{reset}{dim}]{reset} {dim}─{reset} {dim}[{reset}{level_color}{bold}{level: <5}{reset}{dim}]{reset}\n"
+            "{dim}╭─{reset} {dim}[{reset}{timestamp}{dim}]{reset} {dim}─{reset} {dim}[{reset}{CYAN}{ram}{reset}{dim}]{reset} {dim}─{reset} {dim}[{reset}{level_color}{bold}{level: <5}{reset}{dim}]{reset}"
         )?;
 
         let target = metadata.target();
@@ -83,15 +84,15 @@ where
             .line()
             .map(|l| l.to_string())
             .unwrap_or_else(|| "??".to_string());
-        
+
         // │  target: kizunalink::media::sources::...:79
-        write!(writer, "{dim}│{reset}  {dim}at:{reset} {target}:{line}\n")?;
+        writeln!(writer, "{dim}│{reset}  {dim}at:{reset} {target}:{line}")?;
 
         // ╰─> Message
         write!(writer, "{dim}╰─>{reset} ")?;
         ctx.format_fields(writer.by_ref(), event)?;
-        
-        write!(writer, "{reset}\n")?;
+
+        writeln!(writer, "{reset}")?;
 
         Ok(())
     }

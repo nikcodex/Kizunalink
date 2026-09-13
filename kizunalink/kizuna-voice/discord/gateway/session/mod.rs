@@ -13,9 +13,9 @@ use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, warn};
 
 use crate::{
-    engine::{Mixer, filters::FilterChain},
     common::types::{ChannelId, GuildId, SessionId, Shared, UserId},
     discord::gateway::constants::VOICE_GATEWAY_VERSION,
+    engine::{Mixer, filters::FilterChain},
     lavalink::protocol::KizunaLinkEvent,
 };
 
@@ -83,10 +83,9 @@ impl VoiceGateway {
             frames_sent: config.frames_sent,
             frames_nulled: config.frames_nulled,
             udp_socket: Arc::new(tokio::sync::Mutex::new(None)),
-            dave: Arc::new(tokio::sync::Mutex::new(crate::discord::crypto::DaveHandler::new(
-                config.user_id,
-                config.channel_id,
-            ))),
+            dave: Arc::new(tokio::sync::Mutex::new(
+                crate::discord::crypto::DaveHandler::new(config.user_id, config.channel_id),
+            )),
             outer_token: CancellationToken::new(),
             policy: FailurePolicy::new(3),
         }
@@ -238,7 +237,9 @@ impl VoiceGateway {
         };
 
         let _ = ws_tx.send(Message::Text(
-            serde_json::to_string(&handshake).expect("handshake serialization is infallible").into(),
+            serde_json::to_string(&handshake)
+                .expect("handshake serialization is infallible")
+                .into(),
         ));
 
         let (speaking_tx, mut speaking_rx) = unbounded_channel::<bool>();

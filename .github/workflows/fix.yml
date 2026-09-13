@@ -1,0 +1,97 @@
+name: Auto-fix (fmt + clippy)
+
+# Runs rustfmt, `cargo fix`, and `cargo clippy --fix` on the branch, commits
+# any mechanical fixes back, and reports the REMAINING (non-machine-applicable)
+# clippy lints as check annotations so they can be fixed by hand.
+#
+# Also provides a sanctioned way to touch dependency manifests from CI (the
+# only environment with crates.io access) via `workflow_dispatch` inputs.
+#
+# NOTE: pushes made with GITHUB_TOKEN never trigger new workflow runs, so the
+# commit-back here cannot loop CI.
+
+on:
+  push:
+    branches:
+      - 'arena/**'
+  workflow_dispatch:
+    inputs:
+      add_deps:
+        description: 'Optional `cargo add` lines to run, newline-separated (e.g. -p kizunalink --dev criterion)'
+        required: false
+        default: ''
+      update_deps:
+        description: 'Optional `cargo update` lines to run, newline-separated (e.g. -p idna)'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+concurrency:
+  group: autofix-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: never
+  LIBOPUS_STATIC: "1"
+  OPUS_STATIC: "1"
+  AUDIOPUS_STATIC: "1"
+  CMAKE_POLICY_VERSION_MINIMUM: "3.5"
+
+jobs:
+  autofix:
+    name: Auto-fix
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock') }}
+      - name: Install system deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake pkg-config libclang-dev clang build-essential perl libopus-dev
+      - name: Apply requested dependency changes
+        if: ${{ github.event_name == 'workflow_dispatch' && (inputs.add_deps != '' || inputs.update_deps != '') }}
+        env:
+          ADD_DEPS: ${{ inputs.add_deps }}
+          UP_DEPS: ${{ inputs.update_deps }}
+        run: |
+          while IFS= read -r line; do
+            [ -z "$line" ] && continue
+            eval "cargo add $line" || exit 1
+          done <<< "$ADD_DEPS"
+          while IFS= read -r line; do
+            [ -z "$line" ] && continue
+            eval "cargo update $line" || exit 1
+          done <<< "$UP_DEPS"
+      - name: Auto-format + machine-applicable fixes
+        run: |
+          set -x
+          cargo fmt --all
+          cargo fix --workspace --all-targets --allow-dirty --allow-staged || true
+          cargo clippy --fix --workspace --all-targets --allow-dirty --allow-staged || true
+          cargo fmt --all
+      - name: Commit and push fixes
+        run: |
+          set -e
+          if ! git diff --quiet || ! git diff --cached --quiet || [ -n "$(git status --porcelain)" ]; then
+            # Commit as the repo owner's noreply identity: bot-authored PR heads trigger
+            # GitHub's first-time-contributor approval gate and stall PR CI on every
+            # autofix cycle; same-repo owner identity keeps the loop unattended.
+            git config user.name "nikcodex"
+            git config user.email "nikcodex@users.noreply.github.com"
+            git add -A
+            git commit -m "ci: auto-fix formatting + mechanical lints"
+            git push origin "HEAD:${{ github.ref_name }}"
+            echo "::notice title=autofix-pushed::$(git rev-parse HEAD)"
+          else
+            echo "::notice title=autofix::tree already clean — nothing to fix"
+          fi

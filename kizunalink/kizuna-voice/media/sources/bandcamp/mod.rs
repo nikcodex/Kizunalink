@@ -64,17 +64,22 @@ impl BandcampSource {
         };
 
         let result_blocks_re = RESULT_BLOCKS_PATTERN.get_or_init(|| {
-            Regex::new(r"(?s)<li class=.searchresult data-search.[\s\S]*?</li>").expect("valid regex")
+            Regex::new(r"(?s)<li class=.searchresult data-search.[\s\S]*?</li>")
+                .expect("valid regex")
         });
-        let url_re = ART_URL_PATTERN
-            .get_or_init(|| Regex::new(r#"<a class="artcont" href="([^"]+)">"#).expect("valid regex"));
+        let url_re = ART_URL_PATTERN.get_or_init(|| {
+            Regex::new(r#"<a class="artcont" href="([^"]+)">"#).expect("valid regex")
+        });
         let title_re = TITLE_PATTERN.get_or_init(|| {
-            Regex::new(r#"(?s)<div class="heading">\s*<a[^>]*>\s*(.+?)\s*</a>"#).expect("valid regex")
+            Regex::new(r#"(?s)<div class="heading">\s*<a[^>]*>\s*(.+?)\s*</a>"#)
+                .expect("valid regex")
         });
-        let subhead_re = SUBHEAD_PATTERN
-            .get_or_init(|| Regex::new(r#"(?s)<div class="subhead">([\s\S]*?)</div>"#).expect("valid regex"));
-        let artwork_re = ARTWORK_PATTERN
-            .get_or_init(|| Regex::new(r#"(?s)<div class="art">\s*<img src="([^"]+)""#).expect("valid regex"));
+        let subhead_re = SUBHEAD_PATTERN.get_or_init(|| {
+            Regex::new(r#"(?s)<div class="subhead">([\s\S]*?)</div>"#).expect("valid regex")
+        });
+        let artwork_re = ARTWORK_PATTERN.get_or_init(|| {
+            Regex::new(r#"(?s)<div class="art">\s*<img src="([^"]+)""#).expect("valid regex")
+        });
 
         let mut tracks = Vec::new();
         for block in result_blocks_re.find_iter(&body) {
@@ -228,13 +233,12 @@ impl BandcampSource {
 
         let body = resp.text().await.ok()?;
 
-        let tralbum_re =
-            TRALBUM_PATTERN.get_or_init(|| Regex::new(r#"data-tralbum=["'](.+?)["']"#).expect("valid regex"));
-        let tralbum_data = if let Some(match_cap) = tralbum_re.captures(&body) {
+        let tralbum_re = TRALBUM_PATTERN
+            .get_or_init(|| Regex::new(r#"data-tralbum=["'](.+?)["']"#).expect("valid regex"));
+        let tralbum_data = {
+            let match_cap = tralbum_re.captures(&body)?;
             let decoded = match_cap[1].replace("&quot;", "\"");
             serde_json::from_str(&decoded).ok()?
-        } else {
-            return None;
         };
 
         let stream_url = track::extract_stream_url(&body);
@@ -300,17 +304,17 @@ impl SourcePlugin for BandcampSource {
         routeplanner: Option<Arc<dyn crate::lavalink::routeplanner::RoutePlanner>>,
     ) -> Option<BoxedTrack> {
         let id_re = IDENTIFIER_PATTERN.get_or_init(|| {
-            Regex::new(r"^(?P<subdomain>[a-zA-Z0-9\-]+):(?P<slug>[a-zA-Z0-9\-]+)$").expect("valid regex")
+            Regex::new(r"^(?P<subdomain>[a-zA-Z0-9\-]+):(?P<slug>[a-zA-Z0-9\-]+)$")
+                .expect("valid regex")
         });
         let url = if identifier.starts_with("http") {
             identifier.to_owned()
-        } else if let Some(caps) = id_re.captures(identifier) {
+        } else {
+            let caps = id_re.captures(identifier)?;
             format!(
                 "https://{}.bandcamp.com/track/{}",
                 &caps["subdomain"], &caps["slug"]
             )
-        } else {
-            return None;
         };
 
         let (_, stream_url_opt) = self.fetch_track_data(&url).await?;

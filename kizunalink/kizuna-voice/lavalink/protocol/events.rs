@@ -3,8 +3,7 @@
 
 use serde::Serialize;
 
-use crate::{
-    discord::player::PlayerState, lavalink::protocol::tracks::Track};
+use crate::{discord::player::PlayerState, lavalink::protocol::tracks::Track};
 
 /// Messages sent from server to client over WebSocket.
 #[derive(Debug, Serialize)]

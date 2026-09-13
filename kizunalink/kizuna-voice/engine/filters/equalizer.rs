@@ -143,11 +143,25 @@ impl EqualizerFilter {
         let states: [[EqBandState; 2]; BAND_COUNT] =
             std::array::from_fn(|_| [EqBandState::default(), EqBandState::default()]);
 
+        let makeup_gain = Self::compute_makeup_gain(&gains);
+
         Self {
             gains,
             states,
-            makeup_gain: DEFAULT_MAKEUP_GAIN,
+            makeup_gain,
         }
+    }
+
+    /// Normalize the summed filterbank so the theoretical peak fits in the unit range.
+    ///
+    /// The output of one sample is `0.25 * input + Σ(gain_b * band_b)`. With no boosted
+    /// bands the worst-case peak is `0.25`, so the makeup gain must be `1 / 0.25 = 4`
+    /// (this is why the legacy hardcoded value was `4.0`). Every unit of positive band
+    /// gain can add up to 1.0 of peak, so the safe scale shrinks as boosts grow; it is
+    /// capped at the legacy `DEFAULT_MAKEUP_GAIN` so cutting-only settings are unaffected.
+    fn compute_makeup_gain(gains: &[f32; BAND_COUNT]) -> f32 {
+        let boost_sum: f32 = gains.iter().map(|g| g.max(0.0)).sum();
+        (1.0 / (0.25 + boost_sum)).min(DEFAULT_MAKEUP_GAIN)
     }
 }
 
@@ -167,6 +181,11 @@ impl AudioFilter for EqualizerFilter {
             for (b, coeffs) in COEFFICIENTS_48000.iter().enumerate() {
                 let gain = self.gains[b];
                 if gain.abs() < f32::EPSILON {
+                    // B04 (intentional): a zero-gain band's output is summed with weight 0, so we
+                    // skip mixing — but we still *advance* its filter state with the current sample.
+                    // This keeps each band's memory in sync with the signal, so enabling a band
+                    // later (Lavalink `filters` updates arrive at runtime) starts from the live
+                    // signal instead of a stale state, which would produce an audible zipper click.
                     self.states[b][0].process(left_f, coeffs);
                     self.states[b][1].process(right_f, coeffs);
                     continue;
@@ -197,5 +216,64 @@ impl AudioFilter for EqualizerFilter {
                 state.reset();
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn no_boost_makes_up_exactly_the_quarter_scale() {
+        // With every band at 0 gain, makeup must be 1 / 0.25 = 4.0 (legacy behavior).
+        let eq = EqualizerFilter::new(&[]);
+        assert_eq!(eq.makeup_gain, DEFAULT_MAKEUP_GAIN);
+
+        let all_zero = [0.0f32; BAND_COUNT];
+        assert_eq!(EqualizerFilter::compute_makeup_gain(&all_zero), 4.0);
+    }
+
+    #[test]
+    fn boost_shrinks_makeup_gain() {
+        let mut gains = [0.0f32; BAND_COUNT];
+        gains[0] = 1.0; // one band at maximum boost
+        // Worst-case peak is 0.25 + 1.0 = 1.25 -> scale to fit unity.
+        assert!((EqualizerFilter::compute_makeup_gain(&gains) - 0.8).abs() < 1e-6);
+
+        gains = [1.0; BAND_COUNT]; // every band fully boosted
+        let g = EqualizerFilter::compute_makeup_gain(&gains);
+        assert!((g - 1.0 / 15.25).abs() < 1e-6);
+        assert!(g <= DEFAULT_MAKEUP_GAIN);
+    }
+
+    #[test]
+    fn cuts_only_are_unaffected() {
+        let mut gains = [0.0f32; BAND_COUNT];
+        gains[3] = -0.25;
+        assert_eq!(
+            EqualizerFilter::compute_makeup_gain(&gains),
+            DEFAULT_MAKEUP_GAIN
+        );
+    }
+
+    #[test]
+    fn flat_eq_is_transparent_on_dc() {
+        // No bands configured: output should track the input within one LSB.
+        let mut eq = EqualizerFilter::new(&[]);
+        let original = [12345i16; 64];
+        let mut samples = original;
+        eq.process(&mut samples);
+        for (out, input) in samples.iter().zip(original.iter()) {
+            assert!((*out - input).abs() <= 1, "got {out} for {input}");
+        }
+    }
+
+    #[test]
+    fn full_scale_square_with_all_bands_stays_in_range() {
+        let bands: Vec<(u8, f32)> = (0..BAND_COUNT as u8).map(|b| (b, 1.0)).collect();
+        let mut eq = EqualizerFilter::new(&bands);
+        let mut samples = [-32768i16, 32767].repeat(32);
+        eq.process(&mut samples);
+        assert!(samples.iter().all(|&s| s.abs() <= i16::MAX));
     }
 }

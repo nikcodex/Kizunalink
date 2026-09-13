@@ -28,7 +28,11 @@ fn url_regex() -> &'static Regex {
 }
 
 fn default_quality_order() -> Vec<String> {
-    vec!["LOSSLESS".to_string(), "HIGH".to_string(), "LOW".to_string()]
+    vec![
+        "LOSSLESS".to_string(),
+        "HIGH".to_string(),
+        "LOW".to_string(),
+    ]
 }
 
 fn audio_format(url: &str, mime_type: Option<&str>, quality: &str) -> AudioFormat {
@@ -69,12 +73,24 @@ impl TidalSource {
                 } else {
                     c.hifi_qualities
                 };
-                (c.country_code, quality_order, c.hifi_apis, c.playlist_load_limit, c.album_load_limit, c.artist_load_limit)
+                (
+                    c.country_code,
+                    quality_order,
+                    c.hifi_apis,
+                    c.playlist_load_limit,
+                    c.album_load_limit,
+                    c.artist_load_limit,
+                )
             } else {
                 ("US".to_string(), default_quality_order(), vec![], 0, 0, 0)
             };
 
-        let client = Arc::new(HifiClient::new(http_client, hifi_apis, quality_order, country)?);
+        let client = Arc::new(HifiClient::new(
+            http_client,
+            hifi_apis,
+            quality_order,
+            country,
+        )?);
 
         Ok(Self {
             client,
@@ -164,7 +180,11 @@ impl TidalSource {
 
     async fn get_album(&self, id: &str) -> LoadResult {
         let limit = self.album_load_limit.clamp(1, 500).to_string();
-        let data = match self.client.get("/album/", &[("id", id), ("limit", &limit)]).await {
+        let data = match self
+            .client
+            .get("/album/", &[("id", id), ("limit", &limit)])
+            .await
+        {
             Ok(d) => d,
             Err(_) => return LoadResult::Empty {},
         };
@@ -197,7 +217,10 @@ impl TidalSource {
         }
 
         LoadResult::Playlist(PlaylistData {
-            info: PlaylistInfo { name: title, selected_track: -1 },
+            info: PlaylistInfo {
+                name: title,
+                selected_track: -1,
+            },
             plugin_info: serde_json::json!({
                 "type": "album",
                 "url": format!("https://tidal.com/browse/album/{id}"),
@@ -209,7 +232,11 @@ impl TidalSource {
 
     async fn get_playlist(&self, id: &str) -> LoadResult {
         let limit = self.playlist_load_limit.clamp(1, 500).to_string();
-        let data = match self.client.get("/playlist/", &[("id", id), ("limit", &limit)]).await {
+        let data = match self
+            .client
+            .get("/playlist/", &[("id", id), ("limit", &limit)])
+            .await
+        {
             Ok(d) => d,
             Err(_) => return LoadResult::Empty {},
         };
@@ -238,7 +265,10 @@ impl TidalSource {
         }
 
         LoadResult::Playlist(PlaylistData {
-            info: PlaylistInfo { name: title, selected_track: -1 },
+            info: PlaylistInfo {
+                name: title,
+                selected_track: -1,
+            },
             plugin_info: serde_json::json!({
                 "type": "playlist",
                 "url": format!("https://tidal.com/browse/playlist/{id}"),
@@ -279,7 +309,10 @@ impl TidalSource {
         }
 
         LoadResult::Playlist(PlaylistData {
-            info: PlaylistInfo { name: title, selected_track: -1 },
+            info: PlaylistInfo {
+                name: title,
+                selected_track: -1,
+            },
             plugin_info: serde_json::json!({
                 "type": "mix",
                 "url": format!("https://tidal.com/browse/mix/{id}"),
@@ -303,7 +336,11 @@ impl TidalSource {
             .to_owned();
 
         let limit = self.artist_load_limit.clamp(1, 50).to_string();
-        let data = match self.client.get("/artist/", &[("f", id), ("limit", &limit)]).await {
+        let data = match self
+            .client
+            .get("/artist/", &[("f", id), ("limit", &limit)])
+            .await
+        {
             Ok(d) => d,
             Err(_) => return LoadResult::Empty {},
         };
@@ -339,7 +376,11 @@ impl TidalSource {
     }
 
     async fn search(&self, query: &str) -> LoadResult {
-        match self.client.get("/search/", &[("s", query), ("limit", "10")]).await {
+        match self
+            .client
+            .get("/search/", &[("s", query), ("limit", "10")])
+            .await
+        {
             Ok(data) => {
                 let tracks: Vec<Track> = data
                     .get("data")
@@ -365,7 +406,11 @@ impl TidalSource {
     }
 
     async fn resolve_by_isrc(&self, isrc: &str) -> LoadResult {
-        match self.client.get("/search/", &[("isrc", isrc), ("limit", "5")]).await {
+        match self
+            .client
+            .get("/search/", &[("isrc", isrc), ("limit", "5")])
+            .await
+        {
             Ok(data) => {
                 let items = match data
                     .get("data")
@@ -404,9 +449,7 @@ impl TidalSource {
                     .map(|items| {
                         items
                             .iter()
-                            .filter_map(|item| {
-                                self.parse_track(item.get("track").unwrap_or(item))
-                            })
+                            .filter_map(|item| self.parse_track(item.get("track").unwrap_or(item)))
                             .map(Track::new)
                             .collect()
                     })
@@ -433,13 +476,19 @@ impl TidalSource {
         for quality in &self.client.quality_order {
             let result = self
                 .client
-                .get("/track/", &[("id", track_id), ("quality", quality.as_str())])
+                .get(
+                    "/track/",
+                    &[("id", track_id), ("quality", quality.as_str())],
+                )
                 .await;
 
             let raw = match result {
                 Ok(r) => r,
                 Err(e) => {
-                    debug!("HiFi /track/ id={} quality={} failed: {}", track_id, quality, e);
+                    debug!(
+                        "HiFi /track/ id={} quality={} failed: {}",
+                        track_id, quality, e
+                    );
                     continue;
                 }
             };
@@ -453,14 +502,20 @@ impl TidalSource {
             };
 
             if playback.manifest_mime_type == "application/dash+xml" {
-                debug!("HiFi /track/ id={} quality={}: skipping DASH", track_id, quality);
+                debug!(
+                    "HiFi /track/ id={} quality={}: skipping DASH",
+                    track_id, quality
+                );
                 continue;
             }
 
             let decoded = match general_purpose::STANDARD.decode(&playback.manifest) {
                 Ok(d) => d,
                 Err(e) => {
-                    warn!("HiFi /track/ id={} quality={}: base64 decode failed: {}", track_id, quality, e);
+                    warn!(
+                        "HiFi /track/ id={} quality={}: base64 decode failed: {}",
+                        track_id, quality, e
+                    );
                     continue;
                 }
             };
@@ -468,7 +523,10 @@ impl TidalSource {
             let manifest: Manifest = match serde_json::from_slice(&decoded) {
                 Ok(m) => m,
                 Err(e) => {
-                    debug!("HiFi /track/ id={} quality={}: manifest parse failed: {}", track_id, quality, e);
+                    debug!(
+                        "HiFi /track/ id={} quality={}: manifest parse failed: {}",
+                        track_id, quality, e
+                    );
                     continue;
                 }
             };
@@ -479,7 +537,10 @@ impl TidalSource {
             };
 
             let fmt = audio_format(&stream_url, manifest.mime_type.as_deref(), quality);
-            debug!("HiFi /track/ id={} quality={} → {:?}", track_id, quality, fmt);
+            debug!(
+                "HiFi /track/ id={} quality={} → {:?}",
+                track_id, quality, fmt
+            );
             return Some((stream_url, fmt));
         }
 
@@ -495,9 +556,17 @@ impl SourcePlugin for TidalSource {
     }
 
     fn can_handle(&self, identifier: &str) -> bool {
-        self.search_prefixes().iter().any(|p| identifier.starts_with(p))
-            || self.isrc_prefixes().iter().any(|p| identifier.starts_with(p))
-            || self.rec_prefixes().iter().any(|p| identifier.starts_with(p))
+        self.search_prefixes()
+            .iter()
+            .any(|p| identifier.starts_with(p))
+            || self
+                .isrc_prefixes()
+                .iter()
+                .any(|p| identifier.starts_with(p))
+            || self
+                .rec_prefixes()
+                .iter()
+                .any(|p| identifier.starts_with(p))
             || url_regex().is_match(identifier)
     }
 
@@ -519,15 +588,27 @@ impl SourcePlugin for TidalSource {
         identifier: &str,
         _: Option<Arc<dyn crate::lavalink::routeplanner::RoutePlanner>>,
     ) -> LoadResult {
-        if let Some(prefix) = self.search_prefixes().iter().find(|p| identifier.starts_with(**p)) {
+        if let Some(prefix) = self
+            .search_prefixes()
+            .iter()
+            .find(|p| identifier.starts_with(**p))
+        {
             return self.search(&identifier[prefix.len()..]).await;
         }
 
-        if let Some(prefix) = self.isrc_prefixes().iter().find(|p| identifier.starts_with(**p)) {
+        if let Some(prefix) = self
+            .isrc_prefixes()
+            .iter()
+            .find(|p| identifier.starts_with(**p))
+        {
             return self.resolve_by_isrc(&identifier[prefix.len()..]).await;
         }
 
-        if let Some(prefix) = self.rec_prefixes().iter().find(|p| identifier.starts_with(**p)) {
+        if let Some(prefix) = self
+            .rec_prefixes()
+            .iter()
+            .find(|p| identifier.starts_with(**p))
+        {
             return self.get_recommendations(&identifier[prefix.len()..]).await;
         }
 

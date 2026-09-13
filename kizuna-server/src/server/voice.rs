@@ -11,8 +11,8 @@ use tracing::error;
 use crate::{
     audio::filters::FilterChain,
     common::types::{ChannelId, GuildId, Shared, UserId},
-    gateway::{VoiceEngine, VoiceGateway},
     discord::player::VoiceConnectionState,
+    gateway::{VoiceEngine, VoiceGateway},
     protocol::KizunaLinkEvent,
 };
 

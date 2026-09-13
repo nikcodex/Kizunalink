@@ -17,15 +17,14 @@ use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, trace, warn};
 use uuid::Uuid;
 
+use super::protocol::{GatewayPayload, OpCode};
 use super::{
     VoiceGateway,
     backoff::Backoff,
     heartbeat::HeartbeatTracker,
-
     types::{GatewayError, PersistentSessionState, SessionOutcome},
     voice::{SpeakConfig, discover_ip, speak_loop},
 };
-use super::protocol::{GatewayPayload, OpCode};
 use crate::{
     common::types::{Shared, UserId},
     discord::crypto::DaveHandler,

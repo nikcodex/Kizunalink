@@ -207,7 +207,7 @@ mod tests {
             let (seq, ts, n) = state.next();
             assert_eq!(seq, i as u16);
             assert_eq!(ts, i * RTP_TIMESTAMP_STEP);
-            assert_eq!(n, i as u32);
+            assert_eq!(n, i);
         }
 
         assert_eq!(state.sequence, 10);
@@ -239,7 +239,7 @@ mod tests {
             nonce: 300,
         };
 
-        let cloned = state.clone();
+        let cloned = state;
         assert_eq!(state.sequence, cloned.sequence);
         assert_eq!(state.timestamp, cloned.timestamp);
         assert_eq!(state.nonce, cloned.nonce);

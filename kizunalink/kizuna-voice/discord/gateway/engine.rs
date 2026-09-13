@@ -3,7 +3,9 @@
 
 use tokio::sync::Mutex;
 
-use crate::{engine::Mixer, common::types::Shared, discord::gateway::constants::DEFAULT_SAMPLE_RATE};
+use crate::{
+    common::types::Shared, discord::gateway::constants::DEFAULT_SAMPLE_RATE, engine::Mixer,
+};
 
 pub struct VoiceEngine {
     pub mixer: Shared<Mixer>,
