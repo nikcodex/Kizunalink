@@ -131,7 +131,7 @@ impl AudioFilter for PhaserFilter {
         let fs = 48000.0;
         let sweep_range = self.max_frequency - self.min_frequency;
 
-        for chunk in samples.chunks_exact_mut(2) {
+        for chunk in samples.as_chunks_mut::<2>().0 {
             let left_sample = chunk[0] as f32;
             let right_sample = chunk[1] as f32;
 

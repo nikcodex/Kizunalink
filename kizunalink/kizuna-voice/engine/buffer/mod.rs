@@ -17,8 +17,10 @@ pub fn cast_to_bytes(v: PooledBuffer) -> Vec<u8> {
 
 /// Converts complete native-endian byte pairs to PCM samples.
 pub fn cast_from_bytes(v: Vec<u8>) -> PooledBuffer {
-    v.chunks_exact(2)
-        .map(|bytes| i16::from_ne_bytes([bytes[0], bytes[1]]))
+    v.as_chunks::<2>()
+        .0
+        .iter()
+        .map(|bytes| i16::from_ne_bytes(*bytes))
         .collect()
 }
 
@@ -33,8 +35,10 @@ pub fn as_byte_slice(v: &[i16]) -> &[u8] {
 /// Iterates over complete native-endian PCM samples in a byte slice.
 #[inline]
 pub fn i16_samples(v: &[u8]) -> impl Iterator<Item = i16> + '_ {
-    v.chunks_exact(2)
-        .map(|bytes| i16::from_ne_bytes([bytes[0], bytes[1]]))
+    v.as_chunks::<2>()
+        .0
+        .iter()
+        .map(|bytes| i16::from_ne_bytes(*bytes))
 }
 
 /// Returns an `i16` view when the input has the required alignment and an even length.
