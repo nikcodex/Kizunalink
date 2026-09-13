@@ -179,7 +179,9 @@ pub async fn start_playback(player: &mut PlayerContext, config: PlaybackStartCon
     player.track_task = Some(track_task);
 }
 
-/// Stop the currently playing track and emit `TrackEnd: Replaced` if needed.
+/// Stops and removes the current track while preserving other mixer tracks and
+/// sound-effect layers. Emits `TrackEnd: Replaced` when the track was not already
+/// stopped and its player response is available.
 async fn stop_current_track(
     player: &mut PlayerContext,
     session: &dyn crate::common::server_hooks::SessionContext,
