@@ -113,7 +113,7 @@ jobs:
       - name: cargo clippy
         run: |
           set -o pipefail
-          cargo clippy --workspace --all-targets -- -D warnings --color=never 2>&1 | tee /tmp/clippy.log | perl -e '
+          cargo clippy --workspace --all-targets --color=never -- -D warnings 2>&1 | tee /tmp/clippy.log | perl -e '
             my ($m, $lvl) = ("", "");
             while (<STDIN>) {
               if (/^error(?:\[[^\]]+\])?:\s*(.*)$/) { $m = $1; $lvl = "error"; }
@@ -209,12 +209,15 @@ jobs:
         run: |
           set -o pipefail
           cargo build --release --workspace --color=never 2>&1 | tee /tmp/build.log | perl -e '
-            my ($m, $lvl) = ("", "");
+            my ($m, $lvl, $n) = ("", "", 0);
             while (<STDIN>) {
               if (/^error(?:\[[^\]]+\])?:\s*(.*)$/) { $m = $1; $lvl = "error"; }
               elsif (/^warning(?:\[[^\]]+\])?:\s*(.*)$/) { $m = $1; $lvl = "warning"; }
-              elsif (/^\s*-->\s*([^:]+):(\d+):(\d+)/ && $m ne "") {
-                print "::$lvl file=$1,line=$2,col=$3::$m\n";
+              elsif (/^\s*-->\s*(.+?):(\d+):(\d+)/ && $m ne "" && $lvl eq "error") {
+                # Windows paths may contain a drive colon ("D:\a\src\x.rs") — keep all but the last two colon fields.
+                my $f = $1; my ($l, $c) = ($2, $3);
+                print "::error file=$f,line=$l,col=$c::$m\n";
+                exit if ++$n >= 15;
                 $m = ""; $lvl = "";
               }
             }
@@ -223,9 +226,10 @@ jobs:
         if: failure()
         run: |
           if [ -f /tmp/build.log ]; then
-            grep -vE "^\s*(Compiling|Downloaded|Updating|Blocking)" /tmp/build.log | tail -c 50000 | tr '\n' '~' | sed 's/[[:cntrl:]]//g; s/~/ /g' > /tmp/tail.txt
-            echo "::error file=build-${{ matrix.os }}.log,line=1::$(cat /tmp/tail.txt)"
+            grep -iE "error|cannot find|not found|fatal|undefined symbol|LNK[0-9]|MSB[0-9]" /tmp/build.log | grep -v "could not compile" | tail -c 16000 | tr '\n' '~' | tr -d '"%' > /tmp/tail.txt || true
+            echo "::error file=build.log,line=1::$(cat /tmp/tail.txt)" || true
           fi
+        shell: bash
 
   deny:
     name: Cargo Deny (advisories)

@@ -174,8 +174,10 @@ mod tests {
             l.check(ip(1), t0);
         }
         assert!(l.check(ip(1), t0).is_some());
-        // After 3 seconds ~3 tokens are back.
+        // After 3 seconds exactly 3 tokens (1/s refill rate) are back: three pass, the
+        // fourth is throttled again.
         let t3 = t0 + Duration::from_secs(3);
+        assert!(l.check(ip(1), t3).is_none());
         assert!(l.check(ip(1), t3).is_none());
         assert!(l.check(ip(1), t3).is_none());
         assert!(l.check(ip(1), t3).is_some());
