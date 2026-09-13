@@ -3,4 +3,4 @@
 
 # N05: Warn on print macros in non-test code
 # Use tracing for all logging; println!/dbg! only in tests and the banner module.
-msrv = "1.85"
+msrv = "1.88"

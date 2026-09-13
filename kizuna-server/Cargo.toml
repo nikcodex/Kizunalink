@@ -2,6 +2,7 @@
 name = "kizuna-server"
 version = "1.1.0"
 edition = "2024"
+rust-version = "1.88"
 license = "MIT"
 authors = [ "Nikhil",]
 repository = "https://github.com/nikcodex/Kizunalink"

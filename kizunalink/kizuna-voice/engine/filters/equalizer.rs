@@ -274,6 +274,7 @@ mod tests {
         let mut eq = EqualizerFilter::new(&bands);
         let mut samples = [-32768i16, 32767].repeat(32);
         eq.process(&mut samples);
-        assert!(samples.iter().all(|&s| s.abs() <= i16::MAX));
+        assert!(samples.iter().any(|&sample| sample < 0));
+        assert!(samples.iter().any(|&sample| sample > 0));
     }
 }

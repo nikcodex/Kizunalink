@@ -6,7 +6,7 @@ Thank you for your interest in contributing to KizunaLink!
 
 1. Fork the repository
 2. Clone your fork: `git clone https://github.com/your-username/Kizunalink.git`
-3. Install [Rust](https://rustup.rs/) (stable channel, 1.85+)
+3. Install [Rust](https://rustup.rs/) (stable channel, 1.88+)
 4. Install system dependencies:
    - **Ubuntu/Debian**: `sudo apt-get install -y libopus-dev cmake pkg-config libclang-dev clang`
    - **macOS**: `brew install opus cmake pkg-config`

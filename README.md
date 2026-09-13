@@ -87,7 +87,7 @@ docker compose up -d
 
 ### From Source
 
-**Prerequisites:** Rust 1.85+ and `libopus-dev`
+**Prerequisites:** Rust 1.88+ and `libopus-dev`
 
 ```bash
 # Ubuntu/Debian

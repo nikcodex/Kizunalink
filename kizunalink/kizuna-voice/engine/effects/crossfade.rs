@@ -123,9 +123,6 @@ impl CrossfadeController {
             return false;
         };
 
-        // Read next track samples
-        let next_samples_raw = crate::engine::buffer::as_i16_slice(&next_bytes);
-
         let chunk_ms =
             (sample_count as f32 / self.channels as f32 / self.sample_rate as f32) * 1000.0;
 
@@ -149,7 +146,10 @@ impl CrossfadeController {
         let mut g_out = out_start;
         let mut g_in = in_start;
 
-        for (sample, &next_val) in frame.iter_mut().zip(next_samples_raw.iter()) {
+        for (sample, next_val) in frame
+            .iter_mut()
+            .zip(crate::engine::buffer::i16_samples(&next_bytes))
+        {
             let mixed = (*sample as f32 * g_out) + (next_val as f32 * g_in);
             *sample = mixed.clamp(INT16_MIN_F, INT16_MAX_F) as i16;
             g_out += step_out;

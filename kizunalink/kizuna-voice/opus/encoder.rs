@@ -81,7 +81,7 @@ impl Encoder {
     ///
     /// Returns [`Error::Opus`] if encoding fails or arguments are invalid.
     pub fn encode(&self, pcm: &[i16], output: &mut [u8]) -> Result<usize> {
-        if pcm.len() % self.channels.count() != 0 {
+        if !pcm.len().is_multiple_of(self.channels.count()) {
             return Err(Error::Opus(ErrorCode::BadArgument));
         }
         let frame_size = i32::try_from(pcm.len() / self.channels.count())
@@ -120,7 +120,7 @@ impl Encoder {
     ///
     /// Returns [`Error::Opus`] if encoding fails or arguments are invalid.
     pub fn encode_float(&self, pcm: &[f32], output: &mut [u8]) -> Result<usize> {
-        if pcm.len() % self.channels.count() != 0 {
+        if !pcm.len().is_multiple_of(self.channels.count()) {
             return Err(Error::Opus(ErrorCode::BadArgument));
         }
         let frame_size = i32::try_from(pcm.len() / self.channels.count())

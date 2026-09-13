@@ -12,8 +12,8 @@
 | `[ ]` | Not done yet |
 | `[!]` | Deferred — needs a compiler/crates.io or is otherwise risky to do without one |
 
-**Last verified:** 2026-09-13 (compile status verified via GitHub Actions CI — `cargo check`
-and `cargo test` pass on `main`; local `cargo`/rustfmt still unavailable in the sandbox).
+**Last verified:** 2026-09-13 (Rust 1.93 local verification: locked workspace check,
+formatting, Clippy with warnings denied, and all 147 workspace tests pass).
 
 **Quick summary**
 
@@ -84,13 +84,13 @@ and `cargo test` pass on `main`; local `cargo`/rustfmt still unavailable in the 
 - [x] **Q06** — Poison recovery consistent (0 remaining `.lock().unwrap()` outside tests)
 - [x] **Q07** — `SourceError` + `GatewayError` typed enums (thiserror + `From` impls)
 - [x] **Q08** — `kizuna-server/src/lib.rs` re-exports (`common`, `discord`, `audio`, `sources`, `gateway`, `player`)
-- [~] **Q09** — `rustfmt.toml` configured; `cargo fmt --all` not runnable in this sandbox
+- [x] **Q09** — `rustfmt.toml` configured; `cargo fmt --all -- --check` passes locally
 - [x] **Q10** — RoutePlanner `#[allow(dead_code)]` removed (3 legit ones remain: yandexmusic, youtube, opus/decoder)
 - [x] **Q11** — Codec shim kept + `opus_decoder.rs` counterpart added
 - [ ] **Q12** — `#[track_caller]` on public panics (0 currently)
 - [x] **Q13** — `const _: () = assert!(TARGET_SAMPLE_RATE == 48_000)`
 - [ ] **Q14** — Shared source-plugin helpers (`get_json`, `match_url`, `search`) not extracted
-- [~] **Q15** — Clippy not runnable here; `clippy.toml` present, CI enforces `-D warnings`
+- [x] **Q15** — `cargo clippy --workspace --all-targets --locked -- -D warnings` passes locally
 - [~] **Q16** — `config` still uses glob re-exports (`pub use filters::*;` etc.)
 - [x] **Q17** — Crate-level docs for `engine`, `media`, `discord`, `lavalink`, `opus`
 - [x] **Q18** — README expanded (239 lines): architecture, sources table, bot usage, API, vs-Lavalink, troubleshooting
@@ -164,6 +164,14 @@ and `cargo test` pass on `main`; local `cargo`/rustfmt still unavailable in the 
 ---
 
 ## Session log
+
+### 2026-09-13 (local production-readiness pass)
+
+- Fixed all Clippy failures and declared the actual Rust 1.88 MSRV required by let-chains.
+- Removed undefined behavior from PCM `Vec<u8>`/`Vec<i16>` raw-parts conversions and
+  unaligned byte-slice reinterpretation; byte and PCM buffers now use type-safe pools.
+- Corrected the MXCSR inline-assembly memory options and a false soft-clip edge-case test.
+- Verified locked workspace check, rustfmt, Clippy with `-D warnings`, and 147 tests locally.
 
 ### 2026-09-12 (current session)
 

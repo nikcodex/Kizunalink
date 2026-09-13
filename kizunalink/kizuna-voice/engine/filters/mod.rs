@@ -399,8 +399,10 @@ mod tests {
 
     #[test]
     fn filter_chain_with_volume() {
-        let mut filters = Filters::default();
-        filters.volume = Some(50.0);
+        let filters = Filters {
+            volume: Some(50.0),
+            ..Filters::default()
+        };
         let chain = FilterChain::from_config(&filters);
         assert!(chain.is_active());
         assert_eq!(chain.filters.len(), 1);
@@ -418,8 +420,10 @@ mod tests {
 
     #[test]
     fn filter_chain_reset() {
-        let mut filters = Filters::default();
-        filters.volume = Some(100.0);
+        let filters = Filters {
+            volume: Some(100.0),
+            ..Filters::default()
+        };
         let mut chain = FilterChain::from_config(&filters);
         chain.reset();
         // After reset, process should still work
@@ -437,12 +441,14 @@ mod tests {
     fn timescale_frame_exchange_contract() {
         use crate::discord::player::state::TimescaleFilter;
 
-        let mut filters = Filters::default();
-        filters.timescale = Some(TimescaleFilter {
-            speed: Some(1.5),
-            pitch: Some(1.0),
-            rate: Some(1.0),
-        });
+        let filters = Filters {
+            timescale: Some(TimescaleFilter {
+                speed: Some(1.5),
+                pitch: Some(1.0),
+                rate: Some(1.0),
+            }),
+            ..Filters::default()
+        };
         let mut chain = FilterChain::from_config(&filters);
         assert!(chain.is_active());
         assert!(chain.has_timescale());
