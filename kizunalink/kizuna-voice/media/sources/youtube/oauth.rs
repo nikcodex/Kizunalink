@@ -45,9 +45,7 @@ impl YouTubeOAuth {
             return;
         }
         if self.client_secret.is_none() {
-            tracing::error!(
-                "YouTube OAuth is disabled: {CLIENT_SECRET_ENV} is not configured"
-            );
+            tracing::error!("YouTube OAuth is disabled: {CLIENT_SECRET_ENV} is not configured");
             return;
         }
 
