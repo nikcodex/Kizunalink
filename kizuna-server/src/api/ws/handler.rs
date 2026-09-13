@@ -28,7 +28,8 @@ pub async fn handle_socket(
     user_id: Option<UserId>,
     client_session_id: Option<SessionId>,
 ) {
-    let (tx, rx) = flume::unbounded();
+    const SESSION_OUTPUT_QUEUE_CAPACITY: usize = 1024;
+    let (tx, rx) = flume::bounded(SESSION_OUTPUT_QUEUE_CAPACITY);
 
     let (session, resumed) =
         resolve_session(&state, user_id, client_session_id.as_ref(), tx.clone());
@@ -136,7 +137,10 @@ pub async fn handle_socket(
                                     warn!("Op handling error: session={session_id} err={e}");
                                 }
                             }
-                            Err(e) => warn!("Failed to parse WS message: session={session_id} err={e} msg={text}"),
+                            Err(e) => warn!(
+                                "Failed to parse WS message: session={session_id} err={e} bytes={}",
+                                text.len()
+                            ),
                         }
                     }
                     Message::Ping(payload) => {
@@ -182,8 +186,12 @@ fn resolve_session(
         && let Some((_, existing)) = state.resumable_sessions.remove(sid)
     {
         info!("Resuming session: {sid}");
-        existing.paused.store(false, Relaxed);
-        *existing.sender.write() = tx;
+        existing.resume_generation.fetch_add(1, Relaxed);
+        {
+            let mut sender = existing.sender.write();
+            *sender = tx;
+            existing.paused.store(false, Relaxed);
+        }
         state.sessions.insert(sid.clone(), existing.clone());
         return (existing, true);
     }
@@ -249,16 +257,20 @@ async fn handle_session_close(
     let session_id = session.session_id.clone();
 
     if session.resumable.load(Relaxed) {
-        session.paused.store(true, Relaxed);
-
-        if !session.sender.read().same_channel(tx) {
-            info!(
-                "Session {session_id} replaced by a new connection; closing the old connection for cleanup."
-            );
-            return;
+        {
+            let sender = session.sender.read();
+            if !sender.same_channel(tx) {
+                info!(
+                    "Session {session_id} replaced by a new connection; closing the old connection for cleanup."
+                );
+                return;
+            }
+            session.paused.store(true, Relaxed);
         }
 
-        state.sessions.remove(&session_id);
+        let _ = state.sessions.remove_if(&session_id, |_, current| {
+            Arc::ptr_eq(current, &session) && current.sender.read().same_channel(tx)
+        });
 
         if let Some((_, removed)) = state.resumable_sessions.remove(&session_id) {
             warn!(
@@ -268,6 +280,10 @@ async fn handle_session_close(
             removed.shutdown().await;
         }
 
+        let resume_generation = session
+            .resume_generation
+            .fetch_add(1, Relaxed)
+            .wrapping_add(1);
         state
             .resumable_sessions
             .insert(session_id.clone(), session.clone());
@@ -282,7 +298,14 @@ async fn handle_session_close(
 
         tokio::spawn(async move {
             tokio::time::sleep(std::time::Duration::from_secs(timeout_secs)).await;
-            if let Some((_, s)) = state_cleanup.resumable_sessions.remove(&sid) {
+            if let Some((_, s)) = state_cleanup
+                .resumable_sessions
+                .remove_if(&sid, |_, current| {
+                    Arc::ptr_eq(current, &session)
+                        && session.resume_generation.load(Relaxed) == resume_generation
+                        && session.paused.load(Relaxed)
+                })
+            {
                 warn!("Session resume timeout expired: {sid}");
                 s.shutdown().await;
             }

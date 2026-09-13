@@ -35,3 +35,4 @@ pub const IP_DISCOVERY_RETRY_INTERVAL_MS: u64 = 1000;
 // --- Protocol Specifics ---
 pub const OP_HEARTBEAT: u8 = 3;
 pub const MAX_PENDING_PROPOSALS: usize = 64;
+pub const MAX_DAVE_CONTROL_PAYLOAD_BYTES: usize = 1_048_576;

@@ -40,7 +40,7 @@ impl AudioFilter for CompressorFilter {
         let release_coef = (-1.0 / (self.release * 48000.0)).exp();
         let makeup_gain = db_to_gain(self.makeup_gain);
 
-        for chunk in samples.chunks_exact_mut(2) {
+        for chunk in samples.as_chunks_mut::<2>().0 {
             let left_in = chunk[0] as f32 / 32768.0;
             let right_in = chunk[1] as f32 / 32768.0;
 

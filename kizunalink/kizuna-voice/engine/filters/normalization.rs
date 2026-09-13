@@ -46,7 +46,7 @@ impl AudioFilter for NormalizationFilter {
                 *sample = (scaled * 32768.0) as i16;
             }
         } else {
-            for chunk in samples.chunks_exact_mut(2) {
+            for chunk in samples.as_chunks_mut::<2>().0 {
                 let left_in = chunk[0] as f32 / 32768.0;
                 let right_in = chunk[1] as f32 / 32768.0;
 

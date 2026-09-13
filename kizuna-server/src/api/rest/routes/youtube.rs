@@ -45,7 +45,7 @@ pub async fn youtube_oauth_refresh(
     Path(refresh_token): Path<String>,
     State(state): State<Arc<AppState>>,
 ) -> impl IntoResponse {
-    tracing::info!("GET /youtube/oauth/{}", refresh_token);
+    tracing::info!("GET /youtube/oauth: refreshing configured token");
 
     let ctx = match &state.youtube {
         Some(ctx) => ctx.clone(),
@@ -62,11 +62,7 @@ pub async fn youtube_oauth_refresh(
     match ctx.oauth.refresh_with_token(&refresh_token).await {
         Ok(body) => {
             if let Some(err) = body.get("error").and_then(|e| e.as_str()) {
-                tracing::warn!(
-                    "GET /youtube/oauth/{}: token refresh returned error: {}",
-                    refresh_token,
-                    err
-                );
+                tracing::warn!("GET /youtube/oauth: token refresh returned error: {}", err);
                 return (
                     StatusCode::INTERNAL_SERVER_ERROR,
                     Json(serde_json::json!({
@@ -75,14 +71,11 @@ pub async fn youtube_oauth_refresh(
                 )
                     .into_response();
             }
-            tracing::debug!(
-                "GET /youtube/oauth/{}: token refreshed successfully",
-                refresh_token
-            );
+            tracing::debug!("GET /youtube/oauth: token refreshed successfully");
             (StatusCode::OK, Json(body)).into_response()
         }
         Err(e) => {
-            tracing::error!("GET /youtube/oauth/{}: {}", refresh_token, e);
+            tracing::error!("GET /youtube/oauth: refresh failed: {}", e);
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(serde_json::json!({"error": e.to_string()})),

@@ -40,7 +40,19 @@ impl RingBuffer {
     /// Write `chunk` into the buffer.  
     /// If the buffer is full, the **oldest** data is overwritten.
     pub fn write(&mut self, chunk: &[u8]) {
+        if self.size == 0 || chunk.is_empty() {
+            return;
+        }
+
         let to_write = chunk.len();
+        if to_write >= self.size {
+            self.buf.copy_from_slice(&chunk[to_write - self.size..]);
+            self.read_offset = 0;
+            self.write_offset = 0;
+            self.length = self.size;
+            return;
+        }
+
         let available_at_end = self.size - self.write_offset;
 
         if to_write <= available_at_end {
@@ -98,6 +110,10 @@ impl RingBuffer {
     }
 
     pub fn skip(&mut self, n: usize) -> usize {
+        if self.size == 0 || n == 0 {
+            return 0;
+        }
+
         let to_skip = n.min(self.length);
         self.read_offset = (self.read_offset + to_skip) % self.size;
         self.length -= to_skip;
@@ -181,5 +197,24 @@ mod tests {
 
         let data = rb.read(5).unwrap();
         assert_eq!(data, b"45678");
+    }
+
+    #[test]
+    fn test_ring_buffer_write_much_larger_than_capacity() {
+        let mut rb = RingBuffer::new(5);
+        rb.write(b"01234567890123456789");
+
+        let data = rb.read(5).unwrap();
+        assert_eq!(data, b"56789");
+    }
+
+    #[test]
+    fn test_zero_capacity_ring_buffer_ignores_writes_and_skips() {
+        let mut rb = RingBuffer::new(0);
+        rb.write(b"data");
+
+        assert_eq!(rb.skip(4), 0);
+        assert_eq!(rb.read(4), None);
+        assert_eq!(rb.len(), 0);
     }
 }

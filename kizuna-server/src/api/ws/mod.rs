@@ -65,7 +65,12 @@ pub async fn websocket_handler(
         .as_ref()
         .is_some_and(|sid| state.resumable_sessions.contains_key(sid));
 
-    // 5. Upgrade and set headers
+    // 5. Upgrade and set headers. Lavalink control payloads are small; keep
+    // malformed or hostile clients from allocating the WebSocket default size.
+    const MAX_CLIENT_WS_MESSAGE_SIZE: usize = 1024 * 1024;
+    let ws = ws
+        .max_message_size(MAX_CLIENT_WS_MESSAGE_SIZE)
+        .max_frame_size(MAX_CLIENT_WS_MESSAGE_SIZE);
     let upgrade_callback = move |socket| handle_socket(socket, state, user_id, client_session_id);
     let mut response = ws.on_upgrade(upgrade_callback).into_response();
 

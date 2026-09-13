@@ -264,7 +264,7 @@ impl AudioFilter for PhonographFilter {
         let atk = 0.006 + 0.01 * self.mic_agc;
         let rel = 0.0006 + 0.0012 * self.mic_agc;
 
-        for chunk in samples.chunks_exact_mut(2) {
+        for chunk in samples.as_chunks_mut::<2>().0 {
             let left_sample = chunk[0] as f32;
             let right_sample = chunk[1] as f32;
 

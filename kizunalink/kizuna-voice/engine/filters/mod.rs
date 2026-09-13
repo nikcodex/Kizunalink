@@ -100,6 +100,12 @@ define_filters! {
     (Spatial,       spatial,       spatial::SpatialFilter,                            "spatial"),
 }
 
+/// Growth cap for the timescale exchange buffer — roughly 20 s of 48 kHz stereo.
+/// If the buffer exceeds this (e.g. `speed < 1.0` sustained for a long stretch),
+/// the oldest samples are drained to stay within the limit instead of growing
+/// without bound.
+const MAX_TIMESCALE_BUFFER_SAMPLES: usize = 1920 * 1024;
+
 pub trait AudioFilter: Send {
     fn process(&mut self, samples: &mut [i16]);
     fn is_enabled(&self) -> bool;
@@ -333,6 +339,11 @@ impl FilterChain {
         !self.filters.is_empty() || self.timescale.is_some()
     }
 
+    /// Applies enabled filters to `samples` and queues any timescale output for
+    /// [`Self::fill_frame`].
+    ///
+    /// Timescale output does not replace `samples` in place. When its queue
+    /// exceeds the growth cap, the oldest complete stereo samples are discarded.
     pub fn process(&mut self, samples: &mut [i16]) {
         for filter in self.filters.iter_mut() {
             filter.process(samples);
@@ -342,11 +353,10 @@ impl FilterChain {
             let resampled = ts.process_resample(samples);
             self.timescale_buffer.extend_from_slice(&resampled);
 
-            // B05: Unbounded growth guard — drain oldest (front) to stay within limit.
+            // Unbounded growth guard — drain oldest (front) to stay within limit.
             // Stereo alignment is preserved by rounding excess to even.
-            const MAX_TS_SAMPLES: usize = 1920 * 1024;
-            if self.timescale_buffer.len() > MAX_TS_SAMPLES {
-                let excess = self.timescale_buffer.len() - MAX_TS_SAMPLES;
+            if self.timescale_buffer.len() > MAX_TIMESCALE_BUFFER_SAMPLES {
+                let excess = self.timescale_buffer.len() - MAX_TIMESCALE_BUFFER_SAMPLES;
                 let excess = excess - (excess % 2);
                 if excess > 0 {
                     self.timescale_buffer.drain(..excess);

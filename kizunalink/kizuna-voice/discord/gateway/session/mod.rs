@@ -7,7 +7,7 @@ use std::sync::{
 };
 
 use futures::{SinkExt, StreamExt};
-use tokio::sync::mpsc::{UnboundedSender, unbounded_channel};
+use tokio::sync::mpsc::{Sender, UnboundedSender, channel};
 use tokio_tungstenite::tungstenite::protocol::{Message, WebSocketConfig};
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, warn};
@@ -32,6 +32,9 @@ use self::{
     policy::FailurePolicy,
     types::{GatewayError, PersistentSessionState, SessionOutcome},
 };
+
+const VOICE_WRITE_QUEUE_CAPACITY: usize = 256;
+const SPEAKING_QUEUE_CAPACITY: usize = 8;
 
 pub struct VoiceGateway {
     pub guild_id: GuildId,
@@ -122,6 +125,7 @@ impl VoiceGateway {
                         seq_ack.store(-1, Ordering::Relaxed);
                         *persistent_state.lock().await = PersistentSessionState::default();
                         *self.udp_socket.lock().await = None;
+                        self.dave.lock().await.reset();
                     }
 
                     debug!(
@@ -140,6 +144,10 @@ impl VoiceGateway {
                         "[{}] Connection error: {e}. Retrying in {:?}",
                         self.guild_id, delay
                     );
+                    seq_ack.store(-1, Ordering::Relaxed);
+                    *persistent_state.lock().await = PersistentSessionState::default();
+                    *self.udp_socket.lock().await = None;
+                    self.dave.lock().await.reset();
                     tokio::time::sleep(delay).await;
                     is_resume = false;
                 }
@@ -148,6 +156,11 @@ impl VoiceGateway {
         Ok(())
     }
 
+    /// Runs one gateway connection using either identification or the supplied
+    /// resume state.
+    ///
+    /// Incoming WebSocket messages and frames are limited to 1 MiB. Returns the
+    /// session's requested outcome, or a transport or session-setup error.
     async fn connect(
         &self,
         is_resume: bool,
@@ -163,8 +176,11 @@ impl VoiceGateway {
 
         let url = format!("wss://{}/?v={}", endpoint, VOICE_GATEWAY_VERSION);
         let mut config = WebSocketConfig::default();
-        config.max_message_size = None;
-        config.max_frame_size = None;
+        // Voice control payloads are small; leave room for MLS/DAVE messages without
+        // allowing a remote gateway to force unbounded allocations.
+        const MAX_VOICE_GATEWAY_PAYLOAD: usize = 1024 * 1024;
+        config.max_message_size = Some(MAX_VOICE_GATEWAY_PAYLOAD);
+        config.max_frame_size = Some(MAX_VOICE_GATEWAY_PAYLOAD);
 
         let (ws_stream, _) =
             tokio_tungstenite::connect_async_with_config(&url, Some(config), true).await?;
@@ -172,7 +188,7 @@ impl VoiceGateway {
         let (mut write, mut read) = ws_stream.split();
         let conn_token = CancellationToken::new();
         let write_token = conn_token.clone();
-        let (ws_tx, mut ws_rx) = unbounded_channel::<Message>();
+        let (ws_tx, mut ws_rx) = channel::<Message>(VOICE_WRITE_QUEUE_CAPACITY);
 
         let writer_handle = tokio::spawn(async move {
             while let Some(msg) = tokio::select! {
@@ -236,13 +252,22 @@ impl VoiceGateway {
             )
         };
 
-        let _ = ws_tx.send(Message::Text(
-            serde_json::to_string(&handshake)
-                .expect("handshake serialization is infallible")
-                .into(),
-        ));
+        if ws_tx
+            .send(Message::Text(
+                serde_json::to_string(&handshake)
+                    .expect("handshake serialization is infallible")
+                    .into(),
+            ))
+            .await
+            .is_err()
+        {
+            conn_token.cancel();
+            writer_handle.abort();
+            let _ = writer_handle.await;
+            return Ok(SessionOutcome::Reconnect);
+        }
 
-        let (speaking_tx, mut speaking_rx) = unbounded_channel::<bool>();
+        let (speaking_tx, mut speaking_rx) = channel::<bool>(SPEAKING_QUEUE_CAPACITY);
         state.set_speaking_tx(speaking_tx);
 
         let outcome = loop {
@@ -295,14 +320,14 @@ impl VoiceGateway {
                 Some(self.policy.classify(code))
             }
             Message::Ping(p) => {
-                let _ = state.tx().send(Message::Pong(p));
+                let _ = state.tx().send(Message::Pong(p)).await;
                 None
             }
             _ => None,
         }
     }
 
-    fn notify_speaking(&self, tx: &UnboundedSender<Message>, ssrc: u32, speaking: bool) {
+    fn notify_speaking(&self, tx: &Sender<Message>, ssrc: u32, speaking: bool) {
         let msg = protocol::GatewayPayload {
             op: protocol::OpCode::Speaking as u8,
             seq: None,
@@ -313,7 +338,7 @@ impl VoiceGateway {
             }),
         };
         if let Ok(json) = serde_json::to_string(&msg) {
-            let _ = tx.send(Message::Text(json.into()));
+            let _ = tx.try_send(Message::Text(json.into()));
         }
     }
 

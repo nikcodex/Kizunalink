@@ -179,7 +179,11 @@ pub async fn start_playback(player: &mut PlayerContext, config: PlaybackStartCon
     player.track_task = Some(track_task);
 }
 
-/// Stop the currently playing track and emit `TrackEnd: Replaced` if needed.
+/// Stops the current track while preserving unrelated mixer tracks and sound
+/// effects.
+///
+/// Emits `TrackEnd: Replaced` for an active track, clears its player metadata,
+/// and moves its frame counters into the session's historical totals.
 async fn stop_current_track(
     player: &mut PlayerContext,
     session: &dyn crate::common::server_hooks::SessionContext,
@@ -205,6 +209,10 @@ async fn stop_current_track(
 
     if let Some(handle) = player.track_handle.take() {
         handle.stop();
+        // Remove only this track from the mixer — `stop_all` would also kill any
+        // other mixer tracks and active sound-effect layers.
+        let engine = player.engine.lock().await;
+        engine.mixer.lock().await.stop_track(&handle.state_arc());
     }
     player.track = None;
     player.track_info = None;
@@ -219,7 +227,4 @@ async fn stop_current_track(
         player.frames_nulled.swap(0, Ordering::Relaxed),
         Ordering::Relaxed,
     );
-
-    let engine = player.engine.lock().await;
-    engine.mixer.lock().await.stop_all();
 }

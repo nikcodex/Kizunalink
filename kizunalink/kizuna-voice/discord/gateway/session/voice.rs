@@ -7,7 +7,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use tokio::sync::mpsc::UnboundedSender;
+use tokio::sync::mpsc::Sender;
 use tokio_util::sync::CancellationToken;
 use tracing::error;
 
@@ -88,7 +88,7 @@ pub struct SpeakConfig {
     pub frames_sent: Arc<std::sync::atomic::AtomicU64>,
     pub frames_nulled: Arc<std::sync::atomic::AtomicU64>,
     pub cancel_token: CancellationToken,
-    pub speaking_tx: UnboundedSender<bool>,
+    pub speaking_tx: Sender<bool>,
     pub persistent_state: Arc<tokio::sync::Mutex<super::types::PersistentSessionState>>,
 }
 
@@ -277,7 +277,7 @@ impl VoiceSession {
     fn set_speaking(&mut self, speaking: bool) {
         if speaking != self.is_speaking {
             self.is_speaking = speaking;
-            let _ = self.config.speaking_tx.send(speaking);
+            let _ = self.config.speaking_tx.try_send(speaking);
             if speaking {
                 self.speaking_holdoff = true;
             }

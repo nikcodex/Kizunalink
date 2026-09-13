@@ -12,7 +12,10 @@ use tracing::{debug, trace, warn};
 use crate::{
     common::types::{AnyError, AnyResult, ChannelId, UserId},
     discord::gateway::{
-        constants::{DAVE_INITIAL_VERSION, MAX_PENDING_PROPOSALS, SILENCE_FRAME},
+        constants::{
+            DAVE_INITIAL_VERSION, MAX_DAVE_CONTROL_PAYLOAD_BYTES, MAX_PENDING_PROPOSALS,
+            SILENCE_FRAME,
+        },
         session::types::map_boxed_err,
     },
 };
@@ -91,6 +94,11 @@ impl DaveHandler {
             self.reset();
             return Ok(Vec::new());
         }
+        if version != DAVE_INITIAL_VERSION {
+            return Err(map_boxed_err(format!(
+                "Unsupported DAVE protocol version: {version}"
+            )));
+        }
 
         let nz_version = NonZeroU16::new(version).unwrap_or(DAVE_MIN_VERSION);
 
@@ -141,6 +149,11 @@ impl DaveHandler {
     }
 
     pub fn prepare_transition(&mut self, transition_id: u16, protocol_version: u16) -> bool {
+        if protocol_version != 0 && protocol_version != DAVE_INITIAL_VERSION {
+            warn!("Ignoring unsupported DAVE transition protocol version: {protocol_version}");
+            return false;
+        }
+
         self.pending_transitions
             .insert(transition_id, protocol_version);
 
@@ -179,6 +192,12 @@ impl DaveHandler {
     }
 
     pub fn process_external_sender(&mut self, data: &[u8]) -> AnyResult<Vec<Vec<u8>>> {
+        if data.len() > MAX_DAVE_CONTROL_PAYLOAD_BYTES {
+            return Err(map_boxed_err(format!(
+                "DAVE external sender payload exceeds {MAX_DAVE_CONTROL_PAYLOAD_BYTES} bytes"
+            )));
+        }
+
         let mut responses = Vec::new();
 
         if self.external_sender_set && self.saved_external_sender.as_deref() == Some(data) {
@@ -197,10 +216,10 @@ impl DaveHandler {
                     self.pending_proposals.len()
                 );
                 for prop_data in std::mem::take(&mut self.pending_proposals) {
-                    if let Ok(Some(res)) =
-                        Self::do_process_proposals(session, &prop_data, &self.cached_user_ids)
-                    {
-                        responses.push(res);
+                    match Self::do_process_proposals(session, &prop_data, &self.cached_user_ids) {
+                        Ok(Some(res)) => responses.push(res),
+                        Ok(None) => {}
+                        Err(e) => return Err(e),
                     }
                 }
             }
@@ -211,9 +230,7 @@ impl DaveHandler {
                     self.pending_handshake.len()
                 );
                 for (handshake_data, is_welcome) in std::mem::take(&mut self.pending_handshake) {
-                    if let Err(e) = self.do_process_handshake(&handshake_data, is_welcome) {
-                        warn!("DAVE buffered handshake processing failed: {e}");
-                    }
+                    self.do_process_handshake(&handshake_data, is_welcome)?;
                 }
             }
         }
@@ -232,6 +249,11 @@ impl DaveHandler {
         let tag = if is_welcome { "welcome" } else { "commit" };
         if data.len() < 2 {
             return Err(short_payload_err(&format!("DAVE {tag}")));
+        }
+        if data.len() > MAX_DAVE_CONTROL_PAYLOAD_BYTES {
+            return Err(map_boxed_err(format!(
+                "DAVE {tag} payload exceeds {MAX_DAVE_CONTROL_PAYLOAD_BYTES} bytes"
+            )));
         }
 
         let transition_id = u16::from_be_bytes([data[0], data[1]]);
@@ -253,6 +275,15 @@ impl DaveHandler {
 
     fn do_process_handshake(&mut self, data: &[u8], is_welcome: bool) -> AnyResult<()> {
         let transition_id = u16::from_be_bytes([data[0], data[1]]);
+        let transition_version = if transition_id == 0 {
+            self.prepared_protocol_version
+        } else {
+            self.pending_transitions
+                .get(&transition_id)
+                .copied()
+                .unwrap_or(self.prepared_protocol_version)
+        };
+
         if let Some(session) = &mut self.session {
             if transition_id == 0 {
                 if is_welcome {
@@ -260,7 +291,7 @@ impl DaveHandler {
                 } else {
                     session.process_commit(&data[2..]).map_err(map_boxed_err)?;
                 }
-                self.protocol_version = self.prepared_protocol_version;
+                self.protocol_version = transition_version;
             } else if is_welcome {
                 session
                     .process_welcome_for_transition(&data[2..], transition_id)
@@ -273,7 +304,7 @@ impl DaveHandler {
 
             if transition_id != 0 {
                 self.pending_transitions
-                    .insert(transition_id, self.prepared_protocol_version);
+                    .insert(transition_id, transition_version);
             }
             debug!(
                 "DAVE {} processed (tid {})",
@@ -287,6 +318,11 @@ impl DaveHandler {
     pub fn process_proposals(&mut self, data: &[u8]) -> AnyResult<Option<Vec<u8>>> {
         if data.is_empty() {
             return Err(short_payload_err("DAVE proposals"));
+        }
+        if data.len() > MAX_DAVE_CONTROL_PAYLOAD_BYTES {
+            return Err(map_boxed_err(format!(
+                "DAVE proposals payload exceeds {MAX_DAVE_CONTROL_PAYLOAD_BYTES} bytes"
+            )));
         }
 
         if !self.external_sender_set {
@@ -422,6 +458,15 @@ mod tests {
     }
 
     #[test]
+    fn unsupported_transition_versions_are_not_acknowledged() {
+        let mut handler = DaveHandler::new(UserId(1), ChannelId(1));
+
+        assert!(!handler.prepare_transition(42, 2));
+        assert!(!handler.pending_transitions.contains_key(&42));
+        assert!(handler.setup_session(2).is_err());
+    }
+
+    #[test]
     fn preparing_replacement_epoch_keeps_active_protocol_version() {
         let mut handler = DaveHandler::new(UserId(1), ChannelId(1));
         handler.protocol_version = 1;
@@ -430,5 +475,17 @@ mod tests {
         handler.setup_session(1).unwrap();
         assert_eq!(handler.protocol_version(), 1);
         assert_eq!(handler.prepared_protocol_version, 1);
+    }
+
+    #[test]
+    fn rejects_oversized_control_payloads_before_buffering() {
+        let mut handler = DaveHandler::new(UserId(1), ChannelId(1));
+        let oversized = vec![0; MAX_DAVE_CONTROL_PAYLOAD_BYTES + 1];
+
+        assert!(handler.process_external_sender(&oversized).is_err());
+        assert!(handler.process_proposals(&oversized).is_err());
+        assert!(handler.process_welcome(&oversized).is_err());
+        assert!(handler.pending_handshake.is_empty());
+        assert!(handler.pending_proposals.is_empty());
     }
 }

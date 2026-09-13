@@ -7,7 +7,7 @@ use thiserror::Error;
 #[derive(Error, Debug)]
 pub enum GatewayError {
     #[error("WebSocket error: {0}")]
-    WebSocket(#[from] tokio_tungstenite::tungstenite::Error),
+    WebSocket(Box<tokio_tungstenite::tungstenite::Error>),
 
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
@@ -29,6 +29,12 @@ pub enum GatewayError {
 
     #[error("Other error: {0}")]
     Other(#[from] Box<dyn std::error::Error + Send + Sync>),
+}
+
+impl From<tokio_tungstenite::tungstenite::Error> for GatewayError {
+    fn from(error: tokio_tungstenite::tungstenite::Error) -> Self {
+        Self::WebSocket(Box::new(error))
+    }
 }
 
 pub fn map_boxed_err<E: std::fmt::Display>(e: E) -> crate::common::types::AnyError {

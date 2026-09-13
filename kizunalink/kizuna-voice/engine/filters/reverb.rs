@@ -158,7 +158,7 @@ impl AudioFilter for ReverbFilter {
             return;
         }
 
-        for chunk in samples.chunks_exact_mut(2) {
+        for chunk in samples.as_chunks_mut::<2>().0 {
             let left_input = chunk[0] as f32;
             let right_input = chunk[1] as f32;
             let mono_input = (left_input + right_input) * 0.5;

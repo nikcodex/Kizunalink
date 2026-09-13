@@ -46,7 +46,7 @@ impl AudioFilter for SpatialFilter {
         let dry = 1.0 - wet;
         let feedback = -0.3;
 
-        for chunk in samples.chunks_exact_mut(2) {
+        for chunk in samples.as_chunks_mut::<2>().0 {
             let left_in = chunk[0] as f32;
             let right_in = chunk[1] as f32;
 
