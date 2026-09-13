@@ -281,7 +281,7 @@ impl<'a> SessionState<'a> {
         let port = d["port"].as_u64();
 
         match (ssrc, ip, port) {
-            (Some(ssrc), Some(ip), Some(port)) if port <= 65535 => {
+            (Some(ssrc), Some(ip), Some(port)) if ssrc <= u32::MAX as u64 && port <= 65535 => {
                 self.ssrc = ssrc as u32;
                 let addr_str = format!("{ip}:{port}");
                 match addr_str.parse::<SocketAddr>() {
