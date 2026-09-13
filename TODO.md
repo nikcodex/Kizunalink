@@ -17,7 +17,13 @@ available in the dev sandbox, so nothing below was compiler-verified in this ses
 
 **Quick summary**
 
-- Phase 0 (compile): **10/10 done**
+- Phase 0 (compile): **C01–C10 done**, plus a **CI-driven compile-fix pass** (`cargo check
+  --workspace --all-targets` on PR #11) that resolved ~30 real errors (doubled/incorrect
+  `crate::` paths, `engine::Mixer` re-export, `SessionContext::get_player` accessor, `Arc<dyn
+  SessionContext>` → `&dyn SessionContext` call sites, missing parens on counter methods,
+  `Option<f32>`/`Receiver<PooledBuffer>` test type fixes, `SourceError: From<StatusCode>`).
+  Last 13-error batch landed in `91b911d`; **awaiting a green Check** to confirm the crate is
+  clean end-to-end (kizuna-server was never reachable by the checker while the lib was red).
 - Phase 1 (bugs/security): **mostly done** — a few low-risk items remain (B01, B03, B04, B14, B15, B22, B23, B25)
 - Phase 2 (quality): **mostly done** — Q02 (async-trait removal) is the big remaining item
 - Phase 3 (polish): **structural items done** (Docker merge, OpenAPI, justfile/Makefile, cargo-deny, tooling configs); tests/bench/fuzz/rate-limiting still open
@@ -165,6 +171,29 @@ available in the dev sandbox, so nothing below was compiler-verified in this ses
 - **Added**: merged `Dockerfile` (D03), `deny.toml` + `.taplo.toml` (D05/S09),
   `docs/openapi.yaml` (D06), `justfile` + `Makefile` (D07).
 - **CI**: added `cargo deny check advisories` job + Windows to the build matrix (D01/S09).
+- **Compile-fix pass (PR #11, via CI `cargo check` error annotations)**:
+  - `486d6e8` — CI: `--color=never` so error annotations parse cleanly.
+  - `893bbf2` — re-export `engine::{AudioMixer, Mixer}`; add `SessionContext::get_player()`
+    (+ `Session` impl); drop nested `crate::` inside `use crate::{…}` (http/local/qobuz/
+    youtube-cipher); `super::protocol::{GatewayPayload, OpCode}` in `handler.rs`;
+    `protocol::builders::{resume, identify}` in `session/mod.rs`; `crate::lavalink::protocol::
+    tracks::{Track::decode, TrackInfo}` in `start.rs`; `crate::config::lyrics::YandexLyricsConfig`.
+  - `91b911d` — `Arc<dyn SessionContext>::as_ref()` at `&dyn SessionContext` call sites;
+    `total_sent/total_nulled_historical()` parens before `fetch_add`; filters tests `Some(50.0)`/
+    `Some(100.0)`; mixer tests pass `Receiver<PooledBuffer>`; `SourceError::HttpStatus(#[from]
+    reqwest::StatusCode)`.
+  - `efa666d` — CI showed `cargo check` down to **1 error** after `91b911d`: thiserror's
+    `#[from]` on `reqwest::StatusCode` requires `StatusCode: std::error::Error` (it isn't), so
+    switched to `HttpStatus(reqwest::StatusCode)` + manual `impl From<reqwest::StatusCode>`.
+    Also cleared 3 of the 8 `cargo check` warnings (unused `default_tidal_quality` in
+    `tidal.rs`, unused `OpusError` in `engine/engine/encoder.rs`, unused `use super::ffi` in
+    `opus/error.rs`) and removed redundant `&(dyn …)` parens / trailing blank lines in
+    `manager/{error,lyrics,start}.rs`.
+  - **Status**: pushed to `arena/01a09610-kizunalink` and merged to `main` via PR #11 (the
+    final fixes + warning cleanup + CI warning-annotations landed as one consolidated commit
+    after the sandbox re-cloned the repo mid-session). Remaining CI jobs still red at merge
+    time: Clippy (`-D warnings`), Formatting (`cargo fmt --check`), Cargo Deny (dependency
+    advisories). Check/Tests/Build are expected to clear once the compile error fix lands.
 
 ### Prior sessions (PR #10)
 

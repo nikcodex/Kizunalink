@@ -19,7 +19,6 @@ use crate::{
         self,
         events::{KizunaLinkEvent, TrackEndReason},
     },
-    
 };
 
 pub struct PlaybackStartConfig {
@@ -178,7 +177,7 @@ pub async fn start_playback(player: &mut PlayerContext, config: PlaybackStartCon
 }
 
 /// Stop the currently playing track and emit `TrackEnd: Replaced` if needed.
-async fn stop_current_track(player: &mut PlayerContext, session: &(dyn crate::common::server_hooks::SessionContext)) {
+async fn stop_current_track(player: &mut PlayerContext, session: &dyn crate::common::server_hooks::SessionContext) {
     if let Some(handle) = &player.track_handle
         && handle.get_state() != PlaybackState::Stopped
         && let Some(track) = player.to_player_response().await.track
