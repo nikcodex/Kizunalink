@@ -311,20 +311,6 @@ impl<'a> SessionState<'a> {
             state.selected_mode = Some(self.selected_mode.clone());
         }
 
-        if self.gateway.channel_id.0 > 0 {
-            let ver = d["dave_protocol_version"]
-                .as_u64()
-                .unwrap_or(DAVE_INITIAL_VERSION as u64) as u16;
-            let mut dave = self.dave.lock().await;
-            if ver > 0 {
-                if let Ok(kp) = dave.setup_session(ver) {
-                    self.send_binary(26, &kp);
-                }
-            } else {
-                dave.reset();
-            }
-        }
-
         let target_addr = match self.udp_addr {
             Some(a) => a,
             None => return Some(SessionOutcome::Reconnect),
