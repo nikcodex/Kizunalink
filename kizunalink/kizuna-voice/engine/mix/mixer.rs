@@ -56,11 +56,7 @@ pub(crate) fn soft_clip_i16(sum: i32) -> i16 {
     let over = mag as f32 / 32768.0 - THRESHOLD;
     let y = THRESHOLD + HEADROOM * (1.0 - (-over / HEADROOM).exp());
     let magnitude = (y * 32768.0).min(i16::MAX as f32) as i16;
-    if sign < 0.0 {
-        -magnitude
-    } else {
-        magnitude
-    }
+    if sign < 0.0 { -magnitude } else { magnitude }
 }
 
 impl AudioMixer {
