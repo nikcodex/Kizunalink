@@ -123,12 +123,17 @@ impl Session {
             let msg = Message::Text(json.into().into());
             // B07: don't silently drop frames — log when the WebSocket sink is
             // gone (e.g. the session disconnected before a detached task ran).
-            if let Err(e) = self.sender.read().send(msg) {
-                tracing::debug!(
-                    "Failed to send WS message for session {}: {}",
-                    self.session_id,
-                    e
-                );
+            if let Err(e) = self.sender.read().try_send(msg) {
+                match e {
+                    flume::TrySendError::Full(_) => tracing::warn!(
+                        "WebSocket output queue full for session {}; dropping message",
+                        self.session_id
+                    ),
+                    flume::TrySendError::Disconnected(_) => tracing::debug!(
+                        "Failed to send WS message for session {}: channel disconnected",
+                        self.session_id
+                    ),
+                }
             }
         }
     }

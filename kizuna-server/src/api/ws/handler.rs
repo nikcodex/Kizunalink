@@ -28,7 +28,8 @@ pub async fn handle_socket(
     user_id: Option<UserId>,
     client_session_id: Option<SessionId>,
 ) {
-    let (tx, rx) = flume::unbounded();
+    const SESSION_OUTPUT_QUEUE_CAPACITY: usize = 1024;
+    let (tx, rx) = flume::bounded(SESSION_OUTPUT_QUEUE_CAPACITY);
 
     let (session, resumed) =
         resolve_session(&state, user_id, client_session_id.as_ref(), tx.clone());
