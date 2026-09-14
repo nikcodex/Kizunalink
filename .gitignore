@@ -6,6 +6,7 @@
 
 # AGENTS
 .agents/
+.agents_tmp/
 
 # LOGS
 logs/*

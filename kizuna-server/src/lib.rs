@@ -9,9 +9,16 @@
 )]
 
 pub mod api;
+pub mod health;
 pub mod lavalink;
 pub mod monitoring;
 pub mod server;
+
+#[cfg(test)]
+#[allow(dead_code)]
+mod soak_tests;
+#[cfg(test)]
+pub mod test_support;
 
 // Re-export kizunalink submodules so server code can use `crate::` paths.
 pub use kizunalink::common;

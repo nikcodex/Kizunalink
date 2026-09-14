@@ -142,7 +142,9 @@ pub fn prefetch_loop(
             if forward > 0 && forward <= 256 * 1024 && response.is_some() {
                 debug!("prefetch: socket-skip {} bytes", forward);
                 let mut leftover: Option<Bytes> = None;
-                let res = response.take().unwrap();
+                // Guarded by `response.is_some()` directly above; `take`
+                // consumes it so the borrow ends before the block_on.
+                let res = response.take().expect("response present in skip branch");
 
                 let skip_result = handle.block_on(async {
                     let mut res = res;

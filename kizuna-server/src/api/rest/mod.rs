@@ -12,6 +12,9 @@ use axum::{
 pub mod middleware;
 pub mod routes;
 
+#[cfg(test)]
+mod tests;
+
 use self::{
     middleware::{add_response_headers, check_auth},
     routes::{lyrics, player, stats, youtube},

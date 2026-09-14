@@ -739,15 +739,14 @@ impl<'a> SessionState<'a> {
     }
 
     fn send_json(&self, op: u8, d: Value) {
-        if self
-            .tx
-            .try_send(Message::Text(
-                serde_json::to_string(&GatewayPayload { op, seq: None, d })
-                    .unwrap()
-                    .into(),
-            ))
-            .is_err()
-        {
+        // Serialization of scheduled payloads is statically known-good (fixed
+        // op + object). On the impossible-but-real failure path, cancel the
+        // connection rather than panic the gateway task.
+        let Ok(text) = serde_json::to_string(&GatewayPayload { op, seq: None, d }) else {
+            self.conn_token.cancel();
+            return;
+        };
+        if self.tx.try_send(Message::Text(text.into())).is_err() {
             self.conn_token.cancel();
         }
     }

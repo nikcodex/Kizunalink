@@ -82,6 +82,9 @@ async fn run() -> AnyResult<()> {
     kizuna_server::monitoring::prometheus::init(shared_state.clone());
 
     let mut app = Router::new()
+        // Unguarded health probe for orchestrators (k8s/Docker). Kept outside
+        // the auth-wrapped `/v4` surface so probes don't need the secret.
+        .route("/health", get(kizuna_server::health::health_check))
         .route("/v4/websocket", get(ws::websocket_handler))
         .with_state(shared_state.clone())
         .merge(rest::router(shared_state.clone()))
@@ -128,7 +131,40 @@ async fn run() -> AnyResult<()> {
         listener,
         app.into_make_service_with_connect_info::<SocketAddr>(),
     )
+    .with_graceful_shutdown(shutdown_signal())
     .await?;
 
+    info!("KizunaLink Server shut down cleanly");
     Ok(())
+}
+
+/// Waits for SIGINT (Ctrl-C) or SIGTERM (container stop) then returns.
+///
+/// A container runtime sends SIGTERM before SIGKILL after the grace period;
+/// acknowledging it lets active HTTP requests and in-flight voice frames drain
+/// rather than being cut off mid-request.
+async fn shutdown_signal() {
+    let ctrl_c = async {
+        tokio::signal::ctrl_c()
+            .await
+            .expect("failed to install Ctrl+C handler");
+    };
+
+    #[cfg(unix)]
+    let terminate = async {
+        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+            .expect("failed to install SIGTERM handler")
+            .recv()
+            .await;
+    };
+
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        _ = ctrl_c => {},
+        _ = terminate => {},
+    }
+
+    info!("Shutdown signal received; draining in-flight work");
 }

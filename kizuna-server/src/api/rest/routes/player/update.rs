@@ -80,7 +80,13 @@ pub async fn update_player(
         } else {
             None
         };
-        player.paused = body.paused.unwrap_or(false);
+        // A track-bearing update bypasses the `handle_player_state` pause path
+        // (which only runs when `!loading_new_track`). Keep the actual track
+        // handle's pause state in sync instead of flipping the bare flag —
+        // `set_paused` also pauses/resumes the underlying frames.
+        if let Some(paused) = body.paused {
+            player.set_paused(paused);
+        }
 
         apply_track_update(
             &mut player,

@@ -38,75 +38,52 @@ struct NodeMetrics {
 static REGISTRY: LazyLock<Registry> = LazyLock::new(Registry::new);
 
 static METRICS: LazyLock<NodeMetrics> = LazyLock::new(|| {
+    // These `expect`s are intentionally loud: a metric whose name collides with
+    // an existing registration means a naming bug, and silently ignoring it
+    // would corrupt the exposition. The error message names the metric.
+    macro_rules! gauge {
+        ($name:expr, $help:expr) => {
+            Gauge::with_opts(Opts::new($name, $help).namespace(NAMESPACE))
+                .expect("duplicate metric name at startup")
+        };
+    }
+    macro_rules! register {
+        ($metric:expr, $name:expr) => {
+            REGISTRY
+                .register(Box::new($metric))
+                .expect(concat!("unable to register metric ", $name))
+        };
+    }
+
     let metrics = NodeMetrics {
-        players: Gauge::with_opts(
-            Opts::new("players_total", "Total connected players").namespace(NAMESPACE),
-        )
-        .unwrap(),
-        playing_players: Gauge::with_opts(
-            Opts::new("playing_players_total", "Players currently playing").namespace(NAMESPACE),
-        )
-        .unwrap(),
-        uptime: Gauge::with_opts(
-            Opts::new("uptime_milliseconds", "Node uptime in ms").namespace(NAMESPACE),
-        )
-        .unwrap(),
-        memory_free: Gauge::with_opts(
-            Opts::new("memory_free_bytes", "Free memory").namespace(NAMESPACE),
-        )
-        .unwrap(),
-        memory_used: Gauge::with_opts(
-            Opts::new("memory_used_bytes", "Used memory").namespace(NAMESPACE),
-        )
-        .unwrap(),
-        memory_allocated: Gauge::with_opts(
-            Opts::new("memory_allocated_bytes", "Allocated memory").namespace(NAMESPACE),
-        )
-        .unwrap(),
-        memory_reservable: Gauge::with_opts(
-            Opts::new("memory_reservable_bytes", "Reservable memory").namespace(NAMESPACE),
-        )
-        .unwrap(),
-        cpu_cores: Gauge::with_opts(Opts::new("cpu_cores", "CPU cores count").namespace(NAMESPACE))
-            .unwrap(),
-        cpu_system_load: Gauge::with_opts(
-            Opts::new("cpu_system_load_percentage", "System CPU load").namespace(NAMESPACE),
-        )
-        .unwrap(),
-        cpu_lavalink_load: Gauge::with_opts(
-            Opts::new("cpu_lavalink_load_percentage", "Process CPU load").namespace(NAMESPACE),
-        )
-        .unwrap(),
+        players: gauge!("players_total", "Total connected players"),
+        playing_players: gauge!("playing_players_total", "Players currently playing"),
+        uptime: gauge!("uptime_milliseconds", "Node uptime in ms"),
+        memory_free: gauge!("memory_free_bytes", "Free memory"),
+        memory_used: gauge!("memory_used_bytes", "Used memory"),
+        memory_allocated: gauge!("memory_allocated_bytes", "Allocated memory"),
+        memory_reservable: gauge!("memory_reservable_bytes", "Reservable memory"),
+        cpu_cores: gauge!("cpu_cores", "CPU cores count"),
+        cpu_system_load: gauge!("cpu_system_load_percentage", "System CPU load"),
+        cpu_lavalink_load: gauge!("cpu_lavalink_load_percentage", "Process CPU load"),
     };
 
-    REGISTRY
-        .register(Box::new(metrics.players.clone()))
-        .unwrap();
-    REGISTRY
-        .register(Box::new(metrics.playing_players.clone()))
-        .unwrap();
-    REGISTRY.register(Box::new(metrics.uptime.clone())).unwrap();
-    REGISTRY
-        .register(Box::new(metrics.memory_free.clone()))
-        .unwrap();
-    REGISTRY
-        .register(Box::new(metrics.memory_used.clone()))
-        .unwrap();
-    REGISTRY
-        .register(Box::new(metrics.memory_allocated.clone()))
-        .unwrap();
-    REGISTRY
-        .register(Box::new(metrics.memory_reservable.clone()))
-        .unwrap();
-    REGISTRY
-        .register(Box::new(metrics.cpu_cores.clone()))
-        .unwrap();
-    REGISTRY
-        .register(Box::new(metrics.cpu_system_load.clone()))
-        .unwrap();
-    REGISTRY
-        .register(Box::new(metrics.cpu_lavalink_load.clone()))
-        .unwrap();
+    register!(metrics.players.clone(), "players_total");
+    register!(metrics.playing_players.clone(), "playing_players_total");
+    register!(metrics.uptime.clone(), "uptime_milliseconds");
+    register!(metrics.memory_free.clone(), "memory_free_bytes");
+    register!(metrics.memory_used.clone(), "memory_used_bytes");
+    register!(metrics.memory_allocated.clone(), "memory_allocated_bytes");
+    register!(metrics.memory_reservable.clone(), "memory_reservable_bytes");
+    register!(metrics.cpu_cores.clone(), "cpu_cores");
+    register!(
+        metrics.cpu_system_load.clone(),
+        "cpu_system_load_percentage"
+    );
+    register!(
+        metrics.cpu_lavalink_load.clone(),
+        "cpu_lavalink_load_percentage"
+    );
 
     metrics
 });

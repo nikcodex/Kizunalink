@@ -130,7 +130,9 @@ impl DaveHandler {
             let session = DaveSession::new(nz_version, self.user_id.0, self.channel_id.0, None)
                 .map_err(map_boxed_err)?;
             self.session = Some(session);
-            self.session.as_mut().unwrap()
+            self.session
+                .as_mut()
+                .expect("session was just inserted above")
         };
 
         self.prepared_protocol_version = version;

@@ -26,7 +26,7 @@ tape = { tape_stop = true, tape_stop_duration_ms = 500, curve = "sinusoidal" } #
 
 [player.mirrors]
 # List of mirror provider patterns. %ISRC% or %QUERY%
-providers = ["tdsearch:%ISRC%","dzsearch:%ISRC%","jssearch:%QUERY%","amksearch:%QUERY%","gnsearch%QUERY%","dzsearch:%QUERY%","ytsearch:%ISRC%", "ytsearch:%QUERY%", "scsearch:%QUERY%"]
+providers = ["tdsearch:%ISRC%","dzsearch:%ISRC%","jssearch:%QUERY%","amksearch:%QUERY%","gnsearch:%QUERY%","dzsearch:%QUERY%","ytsearch:%ISRC%", "ytsearch:%QUERY%", "scsearch:%QUERY%"]
 
 [player.mirrors.best_match]
 # Enable weighted scoring to find the best-matching candidate.

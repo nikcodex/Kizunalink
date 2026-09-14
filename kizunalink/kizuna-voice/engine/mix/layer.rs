@@ -45,12 +45,12 @@ impl MixLayer {
     pub fn accumulate(&mut self, acc: &mut [i32]) {
         let byte_count = acc.len() * 2;
         if let Some(bytes) = self.ring_buffer.read(byte_count) {
-            // SAFETY: u8 bytes reinterpreted as i16 samples.
-            let samples = unsafe {
-                std::slice::from_raw_parts(bytes.as_ptr() as *const i16, bytes.len() / 2)
-            };
-            for (acc_val, &s) in acc.iter_mut().zip(samples.iter()) {
-                *acc_val += (s as f32 * self.volume).round() as i32;
+            // Read samples as native-endian i16 pairs instead of reinterpreting
+            // u8 memory as i16 (which is alignment UB on strict-alignment
+            // targets). `read` guarantees an even byte count for i16 samples.
+            for (acc_val, pair) in acc.iter_mut().zip(bytes.as_chunks::<2>().0.iter()) {
+                let sample = i16::from_ne_bytes(*pair);
+                *acc_val += (sample as f32 * self.volume).round() as i32;
             }
         }
     }

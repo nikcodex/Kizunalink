@@ -90,3 +90,15 @@ workspace = true
 
 [dependencies.tower-http]
 workspace = true
+
+[dev-dependencies.tower]
+version = "0.5"
+
+[dev-dependencies.http-body-util]
+version = "0.1"
+
+[dev-dependencies.tokio-tungstenite]
+version = "0.26"
+
+[dev-dependencies.futures-util]
+version = "0.3"

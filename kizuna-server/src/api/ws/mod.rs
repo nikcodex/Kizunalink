@@ -4,6 +4,9 @@
 mod handler;
 mod opcodes;
 
+#[cfg(test)]
+mod tests;
+
 use std::sync::Arc;
 
 use axum::{
