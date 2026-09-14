@@ -40,6 +40,10 @@ pub struct ServerConfig {
     /// sane single-node bot load and below anything an abusive flood would need.
     #[serde(default = "default_rate_limit_per_minute")]
     pub rate_limit_per_minute: u32,
+
+    /// Optional TLS termination (HTTPS/WSS). See [`TlsConfig`].
+    #[serde(default)]
+    pub tls: TlsConfig,
 }
 
 impl Default for ServerConfig {
@@ -53,8 +57,27 @@ impl Default for ServerConfig {
             websocket_ping_interval: default_websocket_ping_interval(),
             max_event_queue_size: default_max_event_queue_size(),
             rate_limit_per_minute: default_rate_limit_per_minute(),
+            tls: TlsConfig::default(),
         }
     }
+}
+
+/// Optional TLS termination for the HTTP+WS surface.
+///
+/// When enabled, the server wraps its TCP listener with rustls so both the
+/// REST API and the `/v4/websocket` endpoint are served over HTTPS/WSS. A
+/// reverse proxy (Caddy/nginx) is still a fine alternative — set this to
+/// `false` (default) if you terminate TLS elsewhere.
+#[derive(Debug, Deserialize, Serialize, Clone, Default)]
+pub struct TlsConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    /// Path to a PEM-encoded certificate chain (leaf + intermediates).
+    #[serde(default)]
+    pub cert_path: Option<String>,
+    /// Path to a PEM-encoded PKCS#8 private key matching `cert_path`.
+    #[serde(default)]
+    pub key_path: Option<String>,
 }
 
 fn default_address() -> String {

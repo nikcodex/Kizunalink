@@ -127,6 +127,13 @@ timescale = true
 # ... see config.example.toml for all 24 filters
 ```
 
+On startup (`AppConfig::load`) KizunaLink reads `config.toml` in the working
+directory, falling back to `config.example.toml` if absent. It then applies
+`KIZUNA_*` environment-var overrides and validates the result, failing fast on
+bad values. See [TLS](#tls-httpswss), [Environment Variable
+Overrides](#environment-variable-overrides), and [Prometheus
+Metrics](#prometheus-metrics) below.
+
 ## Supported Sources
 
 | Source | Search | ISRC | Lyrics | Status |
@@ -137,7 +144,7 @@ timescale = true
 | SoundCloud | ✅ | — | — | Stable |
 | Apple Music | ✅ | ✅ | — | Stable |
 | Tidal | ✅ | ✅ | — | Stable |
-| Bandcamp | ✅ | — | — | Stable |
+| Bandcamp | ✅ | — | — | Disabled by default |
 | Pandora | ✅ | — | — | Stable |
 | JioSaavn | ✅ | — | — | Stable |
 | Gaana | ✅ | — | — | Stable |
@@ -152,12 +159,20 @@ timescale = true
 | HTTP URLs | ✅ | — | — | Stable |
 | Local Files | ✅ | — | — | Stable |
 | Last.fm | — | — | — | Mirror |
-| Shazam | ✅ | — | — | Stable |
+| Shazam | ✅ | — | — | Disabled by default |
 | Anghami | ✅ | — | — | Stable |
 | Qobuz | ✅ | ✅ | — | Stable |
 | Amazon Music | ✅ | ✅ | — | Stable |
 | Flowery TTS | ✅ | — | — | Stable |
 | Google TTS | ✅ | — | — | Stable |
+
+> **Bandcamp and Shazam are disabled by default.** Both were verified broken at the
+> provider level during testing — Bandcamp's `/search` serves a CSP anti-bot
+> challenge, and Shazam's catalog API returns `403` to datacenter traffic. The code
+> is kept for a future fix, but a default deployment does not ship known-broken
+> search. To enable anyway, set `enabled = true` under `[sources.bandcamp]` /
+> `[sources.shazam]` in `config.example.toml` (only works in networks where those
+> providers don't block you).
 
 ## Bot Integration
 
@@ -183,20 +198,113 @@ let lava_client = LavalinkClient::builder("bot_id")
 
 ## REST API
 
-KizunaLink exposes a REST + WebSocket API compatible with Lavalink v4:
+KizunaLink exposes a REST + WebSocket API compatible with Lavalink v4. All
+`/v4` routes require an `Authorization: <password>` header matching
+`server.authorization`.
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| GET | `/v4/loadtracks` | Load tracks by identifier |
-| GET | `/v4/decodetrack` | Decode an encoded track |
+| GET | `/v4/loadtracks?identifier=` | Load tracks by identifier (URL or `prefix:query`) |
+| GET | `/v4/loadsearch?identifier=` | Search tracks (same prefixes as loadtracks) |
+| GET | `/v4/decodetrack?encodedTrack=` | Decode an encoded track |
 | POST | `/v4/decodetracks` | Decode multiple tracks |
 | GET | `/v4/info` | Server info & version |
 | GET | `/v4/stats` | Server statistics |
-| GET/DELETE | `/v4/sessions/{id}/players/{guild}` | Get/delete player |
-| PATCH | `/v4/sessions/{id}/players/{guild}` | Update player |
-| PATCH | `/v4/sessions/{id}` | Update session |
-| GET | `/v4/lyrics` | Get lyrics for a track |
-| WS | `/v4/websocket` | WebSocket connection |
+| GET | `/v4/sessions/{id}/players` | List players in a session |
+| GET | `/v4/sessions/{id}/players/{guild}` | Get a player |
+| PATCH | `/v4/sessions/{id}/players/{guild}` | Update a player (play/pause/volume/filters) |
+| DELETE | `/v4/sessions/{id}/players/{guild}` | Destroy a player |
+| GET | `/v4/sessions/{id}` | Get session state |
+| PATCH | `/v4/sessions/{id}` | Update session (resuming settings) |
+| GET | `/v4/lyrics?trackName=&artistName=&query=` | Get lyrics for a loaded track |
+| POST | `/v4/sessions/{id}/players/{guild}/lyrics/subscribe` | Subscribe a player to lyric events |
+| DELETE | `/v4/sessions/{id}/players/{guild}/lyrics/subscribe` | Unsubscribe from lyric events |
+| GET | `/v4/sessions/{id}/players/{guild}/track/lyrics` | Get lyrics for the current/tracked player track |
+| GET | `/v4/routeplanner/status` | Route planner status (current IP, rotations) |
+| POST | `/v4/routeplanner/free/address` | Free a blocked IP address |
+| POST | `/v4/routeplanner/free/all` | Free all blocked IP addresses |
+| WS | `/v4/websocket` | WebSocket connection (Lavalink v4 protocol) |
+| GET | `/version` | Server version string |
+| GET | `/health` | Health probe for orchestrators (no auth required) |
+| GET | `/youtube` | YouTube source info (account state) |
+| GET | `/youtube/stream/{videoId}` | Resolve a YouTube stream |
+| GET | `/youtube/oauth/{refreshToken}` | Refresh a YouTube OAuth token |
+| GET | `{metrics.endpoint}` | Prometheus metrics (default `/metrics`, auth required) |
+
+**Search prefixes** (`/v4/loadsearch` and `/v4/loadtracks?identifier=`):
+
+| Prefix | Source |
+|--------|--------|
+| `ytsearch:` / `ytmsearch:` | YouTube / YouTube Music |
+| `spsearch:` / `sprec:` | Spotify search / recommendation |
+| `scsearch:` | SoundCloud |
+| `jssearch:` | JioSaavn |
+| `gnsearch:` | Gaana |
+| `dzsearch:` | Deezer |
+| `audiussearch:` | Audius |
+| `amsearch:` | Apple Music |
+| `bcsearch:` | Bandcamp (disabled by default) |
+| `shsearch:` | Shazam (disabled by default) |
+
+## TLS (HTTPS/WSS)
+
+KizunaLink can terminate TLS in-process with rustls, so `authorization` is never
+sent in cleartext — no reverse proxy required.
+
+```toml
+[server.tls]
+enabled = true
+cert_path = "/etc/kizuna/certs/fullchain.pem"
+key_path = "/etc/kizuna/certs/privkey.pem"
+```
+
+When enabled, both the REST API (`https://…`) and the WebSocket endpoint
+(`wss://…/v4/websocket`) are served over TLS. Leave it disabled if you terminate
+TLS at a reverse proxy (Caddy/nginx) instead. `server.tls.enabled = true`
+requires both `cert_path` and `key_path`; the server fails fast if the PEM files
+are missing or unparseable.
+
+## Environment Variable Overrides
+
+For 12-factor deployments (Docker secrets, Kubernetes Secrets), every config
+value can be overridden with a `KIZUNA_*` environment variable. Env vars win
+over the TOML file and are applied before startup validation, so a bad value
+fails fast:
+
+| Variable | Overrides |
+|----------|-----------|
+| `KIZUNA_ADDRESS` | `server.address` |
+| `KIZUNA_PORT` | `server.port` |
+| `KIZUNA_AUTHORIZATION` | `server.authorization` |
+| `KIZUNA_RATE_LIMIT_PER_MINUTE` | `server.rate_limit_per_minute` |
+| `KIZUNA_TLS_ENABLED` | `server.tls.enabled` |
+| `KIZUNA_TLS_CERT` | `server.tls.cert_path` |
+| `KIZUNA_TLS_KEY` | `server.tls.key_path` |
+| `KIZUNA_LOG_LEVEL` | `logging.level` |
+| `KIZUNA_METRICS_ENABLED` | `metrics.prometheus.enabled` |
+
+Example — no `config.toml` secrets on disk at all:
+
+```bash
+KIZUNA_AUTHORIZATION="$(cat /run/secrets/lava_password)" \
+KIZUNA_ADDRESS=0.0.0.0 \
+KIZUNA_PORT=2333 \
+./target/release/kizuna-server
+```
+
+## Prometheus Metrics
+
+Enable raw metrics with:
+
+```toml
+[metrics.prometheus]
+enabled = true
+endpoint = "/metrics"   # default
+```
+
+Requests to the metrics endpoint are authenticated (same `Authorization`
+header) and include the KizunaLink REST/WS traffic (request count, latency
+histogram) plus process/runtime metrics, ready to scrape with Prometheus.
 
 ## KizunaLink vs Lavalink
 

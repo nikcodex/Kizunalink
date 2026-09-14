@@ -69,6 +69,20 @@ features = [ "tracing", "macros", "signal", "rt-multi-thread",]
 version = "0.8.1"
 features = [ "ws",]
 
+[workspace.dependencies.tokio-rustls]
+version = "0.26.5"
+
+[workspace.dependencies.rustls]
+version = "0.23.44"
+default-features = false
+features = [ "ring", "logging", "std", "tls12",]
+
+[workspace.dependencies.rustls-pemfile]
+version = "2.2.0"
+
+[workspace.dependencies.tower]
+version = "0.5"
+
 [workspace.dependencies.tower-http]
 version = "0.6.2"
 features = [ "trace", "cors",]

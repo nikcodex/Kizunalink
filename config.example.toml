@@ -16,6 +16,17 @@ websocket_ping_interval = 20      # seconds
 max_event_queue_size = 100
 rate_limit_per_minute = 2000      # requests/min per client IP over REST + WS upgrade (0 disables)
 
+# Optional TLS termination (HTTPS/WSS). Set enabled = true and point at PEM
+# cert/key paths to serve the REST API + WebSocket over TLS with rustls.
+# Leave disabled (default) if you terminate TLS at a reverse proxy instead.
+# These values can also be provided via KIZUNA_TLS_ENABLED / KIZUNA_TLS_CERT /
+# KIZUNA_TLS_KEY environment variables.
+#
+# [server.tls]
+# enabled = false
+# cert_path = "/etc/kizuna/certs/fullchain.pem"
+# key_path = "/etc/kizuna/certs/privkey.pem"
+
 [player]
 stuck_threshold_ms = 10000
 buffer_duration_ms = 400
@@ -187,7 +198,9 @@ search_limit = 10
 # proxy = { url = "http://proxy:8080", username = "user", password = "pass" }
 
 [sources.shazam]
-enabled = true
+# Disabled: shazam.com's catalog API now returns 403 to datacenter traffic,
+# so search can never resolve. Enable manually only if it works in your network.
+enabled = false
 search_limit = 10
 # proxy = { url = "http://proxy:8080", username = "user", password = "pass" }
 
@@ -197,7 +210,10 @@ search_limit = 10
 # proxy = { url = "http://proxy:8080", username = "user", password = "pass" }
 
 [sources.bandcamp]
-enabled = true
+# Disabled: bandcamp.com/search serves a CSP "Client Challenge" anti-bot wall,
+# so the HTML parser never sees parseable results. Enable manually only if it
+# works in your network.
+enabled = false
 search_limit = 10
 # proxy = { url = "http://proxy:8080", username = "user", password = "pass" }
 

@@ -39,7 +39,20 @@ impl SourceManager {
             http_pool,
         }
     }
+}
 
+#[cfg(test)]
+impl SourceManager {
+    /// The name of the first source that claims `identifier`, or `None`.
+    fn dispatches_to(&self, identifier: &str) -> Option<String> {
+        self.sources
+            .iter()
+            .find(|s| s.can_handle(identifier))
+            .map(|s| s.name().to_owned())
+    }
+}
+
+impl SourceManager {
     /// Load tracks using the first matching source that can handle the identifier.
     pub async fn load(
         &self,
@@ -135,5 +148,112 @@ impl SourceManager {
             .iter()
             .find(|s| s.name() == source_name)
             .and_then(|s| s.get_proxy_config())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Build a SourceManager from a TOML snippet that only enables the sources
+    /// under test. Registration must not touch the network.
+    fn manager_with(sources_toml: &str) -> SourceManager {
+        let toml = format!(
+            "\
+[server]
+address = '127.0.0.1'
+port = 2333
+authorization = 'test'
+{sources_toml}"
+        );
+        let config: crate::config::AppConfig = toml::from_str(&toml).expect("test TOML parses");
+        SourceManager::new(&config)
+    }
+
+    #[tokio::test]
+    async fn youtube_search_prefix_and_urls_dispatch_to_youtube() {
+        let m = manager_with("[sources.youtube]\nenabled = true\n");
+        assert_eq!(
+            m.dispatches_to("ytsearch:hello world").as_deref(),
+            Some("youtube")
+        );
+        assert_eq!(
+            m.dispatches_to("ytmsearch:hello world").as_deref(),
+            Some("youtube")
+        );
+        assert_eq!(
+            m.dispatches_to("https://www.youtube.com/watch?v=dQw4w9WgXcQ")
+                .as_deref(),
+            Some("youtube")
+        );
+    }
+
+    #[tokio::test]
+    async fn spotify_search_prefix_and_urls_dispatch_to_spotify() {
+        let m = manager_with("[sources.spotify]\nenabled = true\n");
+        assert_eq!(
+            m.dispatches_to("spsearch:hello").as_deref(),
+            Some("spotify")
+        );
+        assert_eq!(m.dispatches_to("sprec:123").as_deref(), Some("spotify"));
+        assert_eq!(
+            m.dispatches_to("https://open.spotify.com/track/abc123")
+                .as_deref(),
+            Some("spotify")
+        );
+    }
+
+    #[tokio::test]
+    async fn soundcloud_search_prefix_and_urls_dispatch_to_soundcloud() {
+        let m = manager_with("[sources.soundcloud]\nenabled = true\n");
+        assert_eq!(
+            m.dispatches_to("scsearch:hello").as_deref(),
+            Some("soundcloud")
+        );
+        assert_eq!(
+            m.dispatches_to("https://soundcloud.com/artist/track")
+                .as_deref(),
+            Some("soundcloud")
+        );
+    }
+
+    #[tokio::test]
+    async fn jiosaavn_and_gaana_prefixes_dispatch_correctly() {
+        let m =
+            manager_with("[sources.jiosaavn]\nenabled = true\n[sources.gaana]\nenabled = true\n");
+        assert_eq!(
+            m.dispatches_to("jssearch:hello").as_deref(),
+            Some("jiosaavn")
+        );
+        assert_eq!(m.dispatches_to("gnsearch:hello").as_deref(), Some("gaana"));
+    }
+
+    #[tokio::test]
+    async fn local_file_identifier_dispatches_to_local_source() {
+        let m = manager_with("[sources.local]\nenabled = true\n");
+        let file = std::env::temp_dir().join("kizuna-can-handle-test.wav");
+        std::fs::write(&file, []).unwrap();
+        let uri = format!("file://{}", file.display());
+        assert_eq!(m.dispatches_to(&uri).as_deref(), Some("local"));
+        std::fs::remove_file(&file).ok();
+    }
+
+    #[tokio::test]
+    async fn unknown_or_garbage_identifier_matches_nothing() {
+        let m =
+            manager_with("[sources.youtube]\nenabled = true\n[sources.spotify]\nenabled = true\n");
+        assert_eq!(m.dispatches_to("totally-unknown-prefix:x"), None);
+        assert_eq!(m.dispatches_to("not a url or prefix"), None);
+    }
+
+    #[tokio::test]
+    async fn disabled_sources_are_not_registered() {
+        // Bandcamp/Shazam are disabled by default in config.example.toml because
+        // they are known-broken; ensure a caller turning them off gets nothing.
+        let m = manager_with(
+            "[sources.bandcamp]\nenabled = false\n[sources.shazam]\nenabled = false\n",
+        );
+        assert_eq!(m.dispatches_to("https://x.bandcamp.com/track/slug"), None);
+        assert_eq!(m.dispatches_to("shsearch:hello"), None);
     }
 }

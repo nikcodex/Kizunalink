@@ -3,7 +3,7 @@
 
 use std::{net::SocketAddr, sync::Arc};
 
-use axum::{Router, routing::get};
+use axum::{Router, routing::get, serve::ListenerExt};
 use dashmap::DashMap;
 use kizuna_server::{
     api::{rest, ws},
@@ -124,15 +124,49 @@ async fn run() -> AnyResult<()> {
 
     let ip: std::net::IpAddr = config.server.address.parse()?;
     let address = SocketAddr::from((ip, config.server.port));
-    info!("KizunaLink Server listening on {}", address);
 
-    let listener = tokio::net::TcpListener::bind(address).await?;
-    axum::serve(
-        listener,
-        app.into_make_service_with_connect_info::<SocketAddr>(),
-    )
-    .with_graceful_shutdown(shutdown_signal())
-    .await?;
+    if config.server.tls.enabled {
+        let cert_path = config
+            .server
+            .tls
+            .cert_path
+            .as_deref()
+            .expect("validated by AppConfig::validate()");
+        let key_path = config
+            .server
+            .tls
+            .key_path
+            .as_deref()
+            .expect("validated by AppConfig::validate()");
+        let acceptor = kizuna_server::tls::load_acceptor(
+            std::path::Path::new(cert_path),
+            std::path::Path::new(key_path),
+        )?;
+
+        let listener = tokio::net::TcpListener::bind(address).await?;
+        // Wrap in `TapIo` so axum's generic `Connected<IncomingStream<TapIo<L>>>`
+        // impl provides `ConnectInfo<SocketAddr>` for the rate limiter.
+        let tls_listener = kizuna_server::tls::TlsListener::new(listener, acceptor)
+            .tap_io(|_tls: &mut tokio_rustls::server::TlsStream<tokio::net::TcpStream>| {});
+        info!("KizunaLink Server listening on https://{} (TLS)", address);
+
+        axum::serve(
+            tls_listener,
+            app.into_make_service_with_connect_info::<SocketAddr>(),
+        )
+        .with_graceful_shutdown(shutdown_signal())
+        .await?;
+    } else {
+        let listener = tokio::net::TcpListener::bind(address).await?;
+        info!("KizunaLink Server listening on http://{}", address);
+
+        axum::serve(
+            listener,
+            app.into_make_service_with_connect_info::<SocketAddr>(),
+        )
+        .with_graceful_shutdown(shutdown_signal())
+        .await?;
+    }
 
     info!("KizunaLink Server shut down cleanly");
     Ok(())

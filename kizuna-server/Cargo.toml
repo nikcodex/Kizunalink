@@ -91,6 +91,15 @@ workspace = true
 [dependencies.tower-http]
 workspace = true
 
+[dependencies.tokio-rustls]
+workspace = true
+
+[dependencies.rustls]
+workspace = true
+
+[dependencies.rustls-pemfile]
+workspace = true
+
 [dev-dependencies.tower]
 version = "0.5"
 

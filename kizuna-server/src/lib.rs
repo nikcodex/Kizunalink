@@ -13,6 +13,7 @@ pub mod health;
 pub mod lavalink;
 pub mod monitoring;
 pub mod server;
+pub mod tls;
 
 #[cfg(test)]
 #[allow(dead_code)]
