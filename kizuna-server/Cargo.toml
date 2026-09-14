@@ -97,9 +97,6 @@ workspace = true
 [dependencies.rustls]
 workspace = true
 
-[dependencies.rustls-pemfile]
-workspace = true
-
 [dev-dependencies.tower]
 version = "0.5"
 

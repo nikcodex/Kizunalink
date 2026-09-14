@@ -3,12 +3,7 @@
 
 use std::{net::SocketAddr, sync::Arc};
 
-use axum::{
-    Router,
-    middleware::from_fn_with_state,
-    routing::get,
-    serve::ListenerExt,
-};
+use axum::{Router, middleware::from_fn_with_state, routing::get, serve::ListenerExt};
 use dashmap::DashMap;
 use kizuna_server::{
     api::{rest, ws},

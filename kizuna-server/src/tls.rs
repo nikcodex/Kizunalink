@@ -8,10 +8,10 @@
 //! cleartext across the wire. This is an alternative to terminating TLS at a
 //! reverse proxy — pick one or the other, not both.
 
-use std::{fs::File, io::BufReader, path::Path, sync::Arc};
+use std::{path::Path, sync::Arc};
 
 use axum::serve::Listener as AxumListener;
-use rustls::pki_types::{CertificateDer, PrivateKeyDer};
+use rustls::pki_types::{CertificateDer, PrivateKeyDer, pem::PemObject};
 use tokio_rustls::TlsAcceptor;
 use tracing::warn;
 
@@ -94,19 +94,21 @@ pub fn load_acceptor(cert_path: &Path, key_path: &Path) -> Result<TlsAcceptor, S
 }
 
 fn load_certs(path: &Path) -> Result<Vec<CertificateDer<'static>>, String> {
-    let file = File::open(path).map_err(|e| format!("open {}: {e}", path.display()))?;
-    let mut reader = BufReader::new(file);
-    rustls_pemfile::certs(&mut reader)
+    // `PemObject` (rustls-pki-types >= 1.9) replaces the archived
+    // `rustls-pemfile` crate (RUSTSEC-2025-0134).
+    let certs = CertificateDer::pem_file_iter(path)
+        .map_err(|e| format!("parse certs from {}: {e}", path.display()))?
         .collect::<Result<Vec<_>, _>>()
-        .map_err(|e| format!("parse certs from {}: {e}", path.display()))
+        .map_err(|e| format!("parse certs from {}: {e}", path.display()))?;
+    if certs.is_empty() {
+        return Err(format!("no certificates found in {}", path.display()));
+    }
+    Ok(certs)
 }
 
 fn load_key(path: &Path) -> Result<PrivateKeyDer<'static>, String> {
-    let file = File::open(path).map_err(|e| format!("open {}: {e}", path.display()))?;
-    let mut reader = BufReader::new(file);
-    rustls_pemfile::private_key(&mut reader)
-        .map_err(|e| format!("parse key from {}: {e}", path.display()))?
-        .ok_or_else(|| format!("no private key found in {}", path.display()))
+    PrivateKeyDer::from_pem_file(path)
+        .map_err(|e| format!("parse key from {}: {e}", path.display()))
 }
 
 #[cfg(test)]

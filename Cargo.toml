@@ -77,9 +77,6 @@ version = "0.23.44"
 default-features = false
 features = [ "ring", "logging", "std", "tls12",]
 
-[workspace.dependencies.rustls-pemfile]
-version = "2.2.0"
-
 [workspace.dependencies.tower]
 version = "0.5"
 

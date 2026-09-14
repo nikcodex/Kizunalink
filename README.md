@@ -8,6 +8,8 @@ Blazing-fast startup (<1s vs Lavalink's ~5-10s). ~20 MB memory (vs ~150 MB). 24 
 
 [Jump to Quick Start](#-quick-start) · [Features](#-features) · [Supported Sources](#-supported-sources) · [REST API](#-rest-api) · [Config](#-configuration)
 
+**Docs:** [Credentials guide](./docs/CREDENTIALS.md) · [Production deployment](./docs/PRODUCTION.md) · [Live test runbook](./docs/LIVE_TEST.md) · [Verification report](./docs/verification.md)
+
 </div>
 
 <p align="center">
@@ -344,7 +346,7 @@ KizunaLink exposes a REST + WebSocket API compatible with Lavalink v4. All
 | `jssearch:` | JioSaavn |
 | `gnsearch:` | Gaana |
 | `dzsearch:` | Deezer |
-| `audiussearch:` | Audius |
+| `ausearch:` / `audsearch:` | Audius |
 | `amsearch:` | Apple Music |
 | `bcsearch:` | Bandcamp (disabled by default) |
 | `shsearch:` | Shazam (disabled by default) |
