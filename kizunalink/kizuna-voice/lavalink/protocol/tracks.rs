@@ -1,7 +1,10 @@
 // Copyright (c) 2026 nikcodex (KizunaLink)
 // Licensed under the MIT License
 
-use serde::{Deserialize, Serialize};
+use serde::{
+    Deserialize, Serialize,
+    ser::{SerializeMap, Serializer},
+};
 
 use crate::lavalink::protocol::codec::{decode_track, encode_track};
 
@@ -64,7 +67,7 @@ pub struct TrackInfo {
 }
 
 /// Result of a track load operation.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Deserialize)]
 #[serde(tag = "loadType", content = "data", rename_all = "camelCase")]
 pub enum LoadResult {
     /// A single track was loaded.
@@ -74,9 +77,44 @@ pub enum LoadResult {
     /// A search returned results.
     Search(Vec<Track>),
     /// No matches found.
+    ///
+    /// Serializes as `"data": null` to byte-match the official Lavalink v4
+    /// wire format (`NoMatches` holds `data: null`), not `{}`.
     Empty {},
     /// An error occurred during loading.
     Error(LoadError),
+}
+
+impl Serialize for LoadResult {
+    /// Manual impl so the `empty` variant emits `"data": null` exactly like
+    /// the official `NoMatches` serializer (a derived adjacently-tagged enum
+    /// would emit `"data": {}`, which differs on the wire).
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut map = serializer.serialize_map(None)?;
+        match self {
+            LoadResult::Track(track) => {
+                map.serialize_entry("loadType", "track")?;
+                map.serialize_entry("data", track)?;
+            }
+            LoadResult::Playlist(playlist) => {
+                map.serialize_entry("loadType", "playlist")?;
+                map.serialize_entry("data", playlist)?;
+            }
+            LoadResult::Search(tracks) => {
+                map.serialize_entry("loadType", "search")?;
+                map.serialize_entry("data", tracks)?;
+            }
+            LoadResult::Empty {} => {
+                map.serialize_entry("loadType", "empty")?;
+                map.serialize_entry("data", &None::<LoadError>)?;
+            }
+            LoadResult::Error(error) => {
+                map.serialize_entry("loadType", "error")?;
+                map.serialize_entry("data", error)?;
+            }
+        }
+        map.end()
+    }
 }
 
 /// Playlist data returned from a load operation.
@@ -116,7 +154,7 @@ pub struct PlaylistInfo {
 }
 
 /// Error from a failed track load.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LoadError {
     /// Human-readable error message.
@@ -125,7 +163,48 @@ pub struct LoadError {
     pub severity: crate::common::Severity,
     /// Exception class / short cause description.
     pub cause: String,
-    /// Full stack trace, if available.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    /// Full stack trace. Official Lavalink types `causeStackTrace` as a
+    /// non-null string; a missing trace serializes as `""` so clients that
+    /// unconditionally read the field never see `undefined`/`null`.
+    #[serde(default)]
     pub cause_stack_trace: Option<String>,
+}
+
+impl Serialize for LoadError {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeStruct;
+        let mut st = serializer.serialize_struct("LoadError", 4)?;
+        st.serialize_field("message", &self.message)?;
+        st.serialize_field("severity", &self.severity)?;
+        st.serialize_field("cause", &self.cause)?;
+        st.serialize_field(
+            "causeStackTrace",
+            self.cause_stack_trace.as_deref().unwrap_or(""),
+        )?;
+        st.end()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn empty_load_result_serializes_null_data() {
+        let json = serde_json::to_string(&LoadResult::Empty {}).unwrap();
+        assert_eq!(json, r#"{"loadType":"empty","data":null}"#);
+    }
+
+    #[test]
+    fn load_error_serializes_non_null_cause_stack_trace() {
+        let err = LoadError {
+            message: Some("boom".into()),
+            severity: crate::common::Severity::Fault,
+            cause: "panic".into(),
+            cause_stack_trace: None,
+        };
+        let v: serde_json::Value = serde_json::to_value(&err).unwrap();
+        assert_eq!(v["causeStackTrace"], "");
+        assert_eq!(v["message"], "boom");
+    }
 }

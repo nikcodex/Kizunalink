@@ -1,7 +1,10 @@
 // Copyright (c) 2026 nikcodex (KizunaLink)
 // Licensed under the MIT License
 
-use serde::Serialize;
+use serde::{
+    Serialize,
+    ser::{SerializeStruct, Serializer},
+};
 
 use crate::{discord::player::PlayerState, lavalink::protocol::tracks::Track};
 
@@ -166,11 +169,24 @@ pub enum TrackEndReason {
 }
 
 /// Exception details for `TrackExceptionEvent`.
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug)]
 pub struct TrackException {
     pub message: Option<String>,
     pub severity: crate::common::Severity,
     pub cause: String,
     pub cause_stack_trace: Option<String>,
+}
+
+impl Serialize for TrackException {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut st = serializer.serialize_struct("TrackException", 4)?;
+        st.serialize_field("message", &self.message)?;
+        st.serialize_field("severity", &self.severity)?;
+        st.serialize_field("cause", &self.cause)?;
+        st.serialize_field(
+            "causeStackTrace",
+            self.cause_stack_trace.as_deref().unwrap_or(""),
+        )?;
+        st.end()
+    }
 }

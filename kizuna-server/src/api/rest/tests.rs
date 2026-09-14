@@ -85,7 +85,11 @@ async fn wrong_password_rejected() {
         )
         .await
         .unwrap();
-    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(
+        resp.status(),
+        StatusCode::FORBIDDEN,
+        "wrong password must be 403, matching official Lavalink"
+    );
 }
 
 #[tokio::test]
@@ -102,7 +106,7 @@ async fn version_endpoint_returns_headers_and_version() {
         .await
         .unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
-    assert_eq!(resp.headers().get("Lavalink-Major-Version").unwrap(), "4");
+    assert_eq!(resp.headers().get("Lavalink-Api-Version").unwrap(), "4");
     let bytes = resp.into_body().collect().await.unwrap().to_bytes();
     // The endpoint returns a bare crate version string (`1.1.0`), not JSON.
     let version = String::from_utf8(bytes.to_vec()).unwrap();
@@ -120,6 +124,16 @@ async fn info_endpoint_returns_lavalink_v4_schema() {
     // The response carries Lavalink's camelCase shape.
     assert!(body["sourceManagers"].is_array());
     assert!(body["filters"].is_array());
+}
+
+#[tokio::test]
+async fn loadtracks_unknown_identifier_returns_empty_with_null_data() {
+    // Official Lavalink serializes `NoMatches` with `data: null`; the response
+    // must byte-match that shape (not `"data": {}`).
+    let (status, body) = get("/v4/loadtracks?identifier=zzz-kizuna-no-source-matches-this").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["loadType"], "empty");
+    assert!(body["data"].is_null(), "data must be null, got: {body}");
 }
 
 #[tokio::test]

@@ -85,6 +85,13 @@ pub async fn websocket_handler(
     response
         .headers_mut()
         .insert("Session-Resumed", resumed_val);
+    // Official Lavalink identifies itself with `Lavalink-Api-Version: 4` on
+    // every HTTP response; some clients also still look for the older
+    // `Lavalink-Major-Version` name on the WS handshake, so send both.
+    response.headers_mut().insert(
+        "Lavalink-Api-Version",
+        axum::http::HeaderValue::from_static("4"),
+    );
     response.headers_mut().insert(
         "Lavalink-Major-Version",
         axum::http::HeaderValue::from_static("4"),

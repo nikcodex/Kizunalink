@@ -27,8 +27,8 @@ perf_monitor = "0.2"
 
 [profile.dev]
 opt-level = 1
-debug = true
-incremental = true
+debug = false
+incremental = false
 overflow-checks = true
 lto = false
 codegen-units = 256

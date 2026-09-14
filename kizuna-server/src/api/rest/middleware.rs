@@ -33,9 +33,12 @@ pub async fn check_auth(
         {
             Ok(next.run(req).await)
         }
+        // Mirror official Lavalink: a missing password is 401, a supplied but
+        // wrong password is 403 (RequestAuthorizationFilter.kt). Clients tell
+        // misconfiguration (403) apart from a missing header (401).
         Some(_) => {
             warn!("REST authorization failed: invalid password");
-            Err(StatusCode::UNAUTHORIZED)
+            Err(StatusCode::FORBIDDEN)
         }
         None => {
             warn!("REST authorization failed: missing authorization header");
@@ -46,8 +49,10 @@ pub async fn check_auth(
 
 pub async fn add_response_headers(req: Request, next: Next) -> Response {
     let mut response = next.run(req).await;
+    // Official Lavalink stamps every REST response with this header
+    // (ResponseHeaderFilter.kt); keep the wire name identical.
     response
         .headers_mut()
-        .insert("Lavalink-Major-Version", HeaderValue::from_static("4"));
+        .insert("Lavalink-Api-Version", HeaderValue::from_static("4"));
     response
 }

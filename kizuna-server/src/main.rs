@@ -3,7 +3,12 @@
 
 use std::{net::SocketAddr, sync::Arc};
 
-use axum::{Router, routing::get, serve::ListenerExt};
+use axum::{
+    Router,
+    middleware::from_fn_with_state,
+    routing::get,
+    serve::ListenerExt,
+};
 use dashmap::DashMap;
 use kizuna_server::{
     api::{rest, ws},
@@ -97,10 +102,26 @@ async fn run() -> AnyResult<()> {
         ));
 
     if config.metrics.prometheus.enabled {
-        app = app.route(
-            &config.metrics.prometheus.endpoint,
-            get(kizuna_server::monitoring::prometheus::metrics_handler),
-        );
+        // Metrics must sit behind the same auth + rate limiting as `/v4`.
+        // Routes merged after the top-level layers above do *not* inherit them
+        // (axum layers only wrap routes registered before them), so the auth
+        // and rate-limit middlewares are applied explicitly here.
+        let metrics_router = Router::new()
+            .route(
+                &config.metrics.prometheus.endpoint,
+                get(kizuna_server::monitoring::prometheus::metrics_handler),
+            )
+            .layer(from_fn_with_state(
+                shared_state.clone(),
+                kizuna_server::api::rest::middleware::check_auth,
+            ))
+            .layer(from_fn_with_state(
+                shared_state.clone(),
+                kizuna_server::api::rate_limit::rate_limit,
+            ))
+            .with_state(shared_state.clone());
+        app = app.merge(metrics_router);
+
         // P10: per-request latency histogram, labeled by method + status only —
         // paths carry unbounded session ids, so they stay out of the label set.
         app = app.layer(axum::middleware::from_fn(

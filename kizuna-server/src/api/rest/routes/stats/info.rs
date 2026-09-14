@@ -12,7 +12,7 @@ pub async fn get_info(State(state): State<Arc<AppState>>) -> Json<protocol::Info
     tracing::info!("GET /v4/info");
 
     let version_str = env!("CARGO_PKG_VERSION");
-    let (major, minor, patch, mut pre_release) = parse_semver(version_str);
+    let (crate_major, minor, patch, mut pre_release) = parse_semver(version_str);
 
     let mut semver = version_str.to_string();
     if pre_release.is_none()
@@ -22,10 +22,17 @@ pub async fn get_info(State(state): State<Arc<AppState>>) -> Json<protocol::Info
         semver = format!("{}-{}", version_str, pre);
     }
 
+    // Clients compare `version.major` against the *Lavalink protocol* version
+    // (official nodes report `4.x.y` here). The crate's own semver (1.x.y) is
+    // the server release, not the wire protocol — reporting it made clients
+    // that gate on `major >= 4` refuse this node.
+    let major = if crate_major == 0 { 4 } else { crate_major };
+    let major = if major < 4 { 4 } else { major };
+
     Json(protocol::Info {
         version: protocol::Version {
             semver,
-            major: if major == 0 { 4 } else { major },
+            major,
             minor,
             patch,
             pre_release,
