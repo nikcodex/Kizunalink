@@ -17,7 +17,7 @@ mod tests;
 
 use self::{
     middleware::{add_response_headers, check_auth},
-    routes::{lyrics, player, stats, youtube},
+    routes::{lyrics, player, sponsorblock, stats, youtube},
 };
 use crate::server::AppState;
 
@@ -50,6 +50,16 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route(
             "/sessions/{session_id}/players/{guild_id}/track/lyrics",
             get(lyrics::get_player_lyrics),
+        )
+        .route(
+            "/sessions/{session_id}/players/{guild_id}/sponsorblock/categories",
+            get(sponsorblock::get_categories)
+                .put(sponsorblock::set_categories)
+                .delete(sponsorblock::delete_categories),
+        )
+        .route(
+            "/sessions/{session_id}/players/{guild_id}/sponsorblock/segments",
+            get(sponsorblock::get_segments),
         )
         .route("/routeplanner/status", get(stats::routeplanner_status))
         .route(

@@ -156,6 +156,24 @@ pub async fn start_playback(player: &mut PlayerContext, config: PlaybackStartCon
         player.guild_id.clone(),
     );
 
+    if player.config.sponsorblock.enabled {
+        let sb_state = player.sponsorblock.clone();
+        let sb_config = player.config.sponsorblock.clone();
+        let guild_id = player.guild_id.clone();
+        let session = config.session.clone();
+        let track_clone = track_response.clone();
+        tokio::spawn(async move {
+            super::sponsorblock::load_segments(
+                &sb_state,
+                &sb_config,
+                &guild_id,
+                &track_clone,
+                session.as_ref(),
+            )
+            .await;
+        });
+    }
+
     let ctx = MonitorCtx {
         guild_id: player.guild_id.clone(),
         handle: handle.clone(),
@@ -171,6 +189,8 @@ pub async fn start_playback(player: &mut PlayerContext, config: PlaybackStartCon
         lyrics_subscribed: player.lyrics_subscribed.clone(),
         lyrics_data: player.lyrics_data.clone(),
         last_lyric_index: player.last_lyric_index.clone(),
+        sponsorblock: player.sponsorblock.clone(),
+        sponsorblock_enabled: player.config.sponsorblock.enabled,
         end_time_ms: player.end_time,
     };
 

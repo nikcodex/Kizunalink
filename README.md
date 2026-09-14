@@ -1,8 +1,14 @@
-<h1 align="center">KizunaLink</h1>
+<div align="center">
 
-<p align="center">
-  High-performance audio node for Discord bots, written in Rust.
-</p>
+# ⚡ KizunaLink
+
+**The Rust-native, drop-in Lavalink v4 replacement** — a standalone audio node for Discord bots.
+
+Blazing-fast startup (<1s vs Lavalink's ~5-10s). ~20 MB memory (vs ~150 MB). 24 audio filters. DAVE encryption. 31+ sources.
+
+[Jump to Quick Start](#-quick-start) · [Features](#-features) · [Supported Sources](#-supported-sources) · [REST API](#-rest-api) · [Config](#-configuration)
+
+</div>
 
 <p align="center">
   <a href="https://github.com/nikcodex/Kizunalink/releases"><img src="https://img.shields.io/github/v/release/nikcodex/Kizunalink?style=for-the-badge&color=orange&logo=github" alt="Release"></a>
@@ -15,20 +21,62 @@
 
 ---
 
-KizunaLink is a standalone audio sending node for Discord bots. It implements the **Lavalink v4 protocol**, making it a drop-in replacement for [Lavalink](https://github.com/lavalink-devs/Lavalink) with native Rust performance.
+## 📖 What is KizunaLink?
 
-## Features
+Your bot's **music brain**. KizunaLink is a standalone audio sending node for Discord bots that implements the **Lavalink v4 protocol**, so it drops straight into any existing Lavalink v4 bot — same REST, same WebSocket, same payloads — just orders of magnitude lighter and faster.
 
-- **30+ Audio Sources** — YouTube, Spotify, Deezer, SoundCloud, Apple Music, Tidal, Pandora, and more
-- **24 Audio Filters** — Equalizer, Karaoke, Reverb, Chorus, Flanger, Phaser, Timescale, Tremolo, etc.
-- **DAVE Encryption** — Discord Audio/Video End-to-End encryption support
-- **Lyrics Support** — 8 providers (YouTube Music, LRCLib, Genius, Musixmatch, Netease, etc.)
-- **Advanced Audio Pipeline** — Multi-track mixer, 3 resampling algorithms (linear, hermite, sinc), buffer pool
-- **Prometheus Monitoring** — Built-in metrics endpoint for observability
-- **Session Resumption** — Survives WebSocket disconnects with configurable timeout
-- **Route Planner** — IP rotation for avoiding rate limits on source APIs
+Think "Spotify's audio backend" for your Discord bot: your bot talks to KizunaLink over the Lavalink protocol, KizunaLink does the heavy lifting of resolving tracks, streaming audio, applying 24 DSP filters, and shipping Opus frames to Discord.
 
-## Architecture
+> **Why Rust?** Because music servers should be resource-light, fast to boot, and crash-proof. Lavalink is a JVM app; KizunaLink is ~20 MB of static Rust that starts in under a second and sips RAM.
+
+## ✨ Features
+
+<table>
+<tr><td width="50%">
+
+### 🎛️ Audio Engine
+- **24 DSP filters** — volume, equalizer, karaoke, timescale, tremolo, vibrato, rotation, chorus, reverb, echo, phaser, distortion, compressor, spatial, low/high-pass, channel mix, normalization, phonograph…
+
+- **3 resampling algorithms** — linear, hermite, and sinc (highest-quality) with a thread-safe buffer pool
+- **Multi-track mixer** — independent layers per player, output normalized & clamped
+- **Opus encode** via native `libopus`, decoded with Symphonia
+- **DAVE encryption** — Discord's Audio/Video End-to-End encryption (`v1 mls`)
+
+</td><td width="50%">
+
+### 🎶 Sources & Lyrics
+- **31 source plugins** — YouTube, Spotify, Deezer, SoundCloud, Apple Music, Tidal, Pandora, JioSaavn, Gaana, Mixcloud, Netease, VK, Yandex, Audiomack, Audius, Reddit, Twitch, Qobuz, Amazon Music, plus HTTP/reddit/local
+- **8 lyrics providers** — YouTube Music, LRCLib, Genius, Musixmatch, Netease, Deezer, Yandex, Letras
+- **Search prefixes** — `ytsearch:`, `spsearch:`, `scsearch:`, `jssearch:`, `gnsearch:`…
+
+</td></tr>
+
+<tr><td width="50%">
+
+### 🚀 Ops-Ready
+- **Prometheus metrics** at `/metrics` (REST/WS traffic + process/runtime)
+- **Structured tracing** (`tracing`) with `RUST_LOG` / `logging.level`
+- **Health check** `/health` for orchestrators
+- **Graceful shutdown** on SIGINT/SIGTERM; **optional TLS (HTTPS/WSS)**
+- **`KIZUNA_*` env-var overrides** — 12-factor / Docker-secrets friendly
+- **Fail-fast startup** — bad config dies loudly, not silently
+
+</td><td width="50%">
+
+### 🟢 Protocol & Reliability
+- **Lavalink v4 protocol** — drop-in replacement, no bot changes
+- **Native SponsorBlock** — skips sponsor/intro/outro segments in-process (plugin-compatible WS events + REST routes)
+- **Session resumption** with configurable timeout
+- **WebSocket** player events / track events / lyrics updates
+- **Route planner** — IP rotation & unblocking for rate-limit-heavy sources
+- **Per-IP rate limiting** on REST
+- **Status**: 195+ unit tests, clippy `-D warnings` in CI, cross-OS builds
+- **[Compatibility verification](./docs/verification.md)** — byte-level parity against Lavalink 4.2.2 + lavaplayer 2.2.6, `youtube-source`, and `SponsorBlock-Plugin`
+
+</td></tr>
+</table>
+
+## 🧠 Architecture
 
 ```
 ┌──────────────┐    WebSocket/REST    ┌──────────────────────────────────────┐
@@ -46,13 +94,13 @@ KizunaLink is a standalone audio sending node for Discord bots. It implements th
                                       │  └───────┼────────────┼─────────┘   │
                                       │          │            │             │
                                       │  ┌───────▼────┐ ┌────▼──────────┐  │
-                                      │  │  27 Source  │ │ Audio Engine  │  │
+                                      │  │  31 Source  │ │ Audio Engine  │  │
                                       │  │  Plugins    │ │ ┌───────────┐ │  │
                                       │  │  (YouTube,  │ │ │  Decoder  │ │  │
                                       │  │   Spotify,  │ │ │(Symphonia)│ │  │
                                       │  │   Deezer..) │ │ └─────┬─────┘ │  │
-                                      │  └────────────┘ │ │ ┌────▼─────┐ │  │
-                                      │                │ │ │ Resampler │ │  │
+                                      │  └────────────┘ │ ┌────▼─────┐ │  │
+                                      │                │ │ Resampler │ │  │
                                       │                │ │ └────┬─────┘ │  │
                                       │                │ │ ┌────▼─────┐ │  │
                                       │                │ │ │ Filters  │ │  │
@@ -73,37 +121,65 @@ KizunaLink is a standalone audio sending node for Discord bots. It implements th
                                       └──────────────────────────────────────┘
 ```
 
-## Quick Start
+## 🚀 Quick Start
 
-### Docker (Recommended)
+Spin up a music node in ~30 seconds. The only thing you must change is `authorization` — everything else works out of the box.
+
+### 🐳 Docker (Recommended)
 
 ```bash
-# Copy and edit config
+# 1. Get the config and tailor it (auth + your Spotify keys if you use them)
 cp config.example.toml config.toml
-# Edit config.toml with your settings
+$EDITOR config.toml
 
+# 2. Run
 docker compose up -d
+
+# 3. Verify
+curl -s http://localhost:2333/health
+# → {"status":"ok",...}
 ```
 
-### From Source
+### 🦀 From Source
 
 **Prerequisites:** Rust 1.88+ and `libopus-dev`
 
 ```bash
 # Ubuntu/Debian
 sudo apt-get install -y libopus-dev cmake pkg-config libclang-dev clang
-
 # macOS
 brew install opus cmake pkg-config
 
-# Build
-git clone https://github.com/nikcodex/Kizunalink.git
-cd KizunaLink
+git clone https://github.com/nikcodex/Kizunalink.git && cd KizunaLink
 cargo build --release
 ./target/release/kizuna-server
 ```
 
-## Configuration
+### 🗝️ First run — connect your bot
+
+Anything that speaks Lavalink **v4** works unchanged — `lavalink-client` (discord.js), `lavalink-rs` (serenity), `lavaplayer` wrappers, etc. Point it at KizunaLink like any Lavalink node:
+
+```js
+// discord.js + lavalink-client
+const manager = new LavalinkManager({
+  nodes: [{
+    host: "localhost",
+    port: 2333,
+    authorization: "youshallnotpass", // ← change to match config.toml
+    secure: false,                    // true when server.tls.enabled
+  }]
+});
+```
+
+Then play something:
+
+```
+/v4/loadtracks?identifier=ytsearch:never gonna give you up
+```
+
+KizunaLink resolves it, streams it, and your bot (already connected via Lavalink) hears **you** — not a robot.
+
+## ⚙️ Configuration
 
 ```toml
 [server]
@@ -127,6 +203,33 @@ timescale = true
 # ... see config.example.toml for all 24 filters
 ```
 
+### 🧹 SponsorBlock (built-in)
+
+KizunaLink natively skips sponsor / intro / outro / self-promo segments on
+YouTube tracks — no JVM plugin needed. Enable it in `config.toml`:
+
+```toml
+[player.sponsorblock]
+enabled = true
+categories = ["sponsor", "intro", "outro", "interaction", "selfpromo", "music_offtopic"]
+# api_url = "https://sponsor.ajay.app"
+```
+
+Segments are fetched from the [SponsorBlock API](https://sponsor.ajay.app) when
+a track starts, skipped mid-playback with seek, and announced over the WebSocket
+as `SegmentsLoaded` / `SegmentSkipped` / `ChaptersLoaded` / `ChapterStarted` —
+the same event names the official `SponsorBlock-Plugin` emits, so existing bots
+work unchanged.
+
+REST (mirrors the plugin API):
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/v4/sessions/:session/players/:guild/sponsorblock/categories` | List active categories |
+| `PUT` | `/v4/sessions/:session/players/:guild/sponsorblock/categories` | Replace categories |
+| `DELETE` | `/v4/sessions/:session/players/:guild/sponsorblock/categories` | Disable SponsorBlock |
+| `GET` | `/v4/sessions/:session/players/:guild/sponsorblock/segments` | Cached segments for active track |
+
 On startup (`AppConfig::load`) KizunaLink reads `config.toml` in the working
 directory, falling back to `config.example.toml` if absent. It then applies
 `KIZUNA_*` environment-var overrides and validates the result, failing fast on
@@ -134,7 +237,7 @@ bad values. See [TLS](#tls-httpswss), [Environment Variable
 Overrides](#environment-variable-overrides), and [Prometheus
 Metrics](#prometheus-metrics) below.
 
-## Supported Sources
+## 🎵 Supported Sources
 
 | Source | Search | ISRC | Lyrics | Status |
 |--------|--------|------|--------|--------|
@@ -174,7 +277,7 @@ Metrics](#prometheus-metrics) below.
 > `[sources.shazam]` in `config.example.toml` (only works in networks where those
 > providers don't block you).
 
-## Bot Integration
+## 🤖 Bot Integration
 
 KizunaLink is compatible with any Lavalink v4 client library:
 
@@ -196,7 +299,7 @@ let lava_client = LavalinkClient::builder("bot_id")
     .build();
 ```
 
-## REST API
+## 🔌 REST API
 
 KizunaLink exposes a REST + WebSocket API compatible with Lavalink v4. All
 `/v4` routes require an `Authorization: <password>` header matching
@@ -246,7 +349,7 @@ KizunaLink exposes a REST + WebSocket API compatible with Lavalink v4. All
 | `bcsearch:` | Bandcamp (disabled by default) |
 | `shsearch:` | Shazam (disabled by default) |
 
-## TLS (HTTPS/WSS)
+## 🔒 TLS (HTTPS/WSS)
 
 KizunaLink can terminate TLS in-process with rustls, so `authorization` is never
 sent in cleartext — no reverse proxy required.
@@ -264,7 +367,7 @@ TLS at a reverse proxy (Caddy/nginx) instead. `server.tls.enabled = true`
 requires both `cert_path` and `key_path`; the server fails fast if the PEM files
 are missing or unparseable.
 
-## Environment Variable Overrides
+## 🌍 Environment Variable Overrides
 
 For 12-factor deployments (Docker secrets, Kubernetes Secrets), every config
 value can be overridden with a `KIZUNA_*` environment variable. Env vars win
@@ -292,7 +395,7 @@ KIZUNA_PORT=2333 \
 ./target/release/kizuna-server
 ```
 
-## Prometheus Metrics
+## 📊 Prometheus Metrics
 
 Enable raw metrics with:
 
@@ -306,7 +409,7 @@ Requests to the metrics endpoint are authenticated (same `Authorization`
 header) and include the KizunaLink REST/WS traffic (request count, latency
 histogram) plus process/runtime metrics, ready to scrape with Prometheus.
 
-## KizunaLink vs Lavalink
+## ⚔️ KizunaLink vs Lavalink
 
 | Feature | KizunaLink | Lavalink |
 |---------|-----------|----------|
@@ -320,7 +423,7 @@ histogram) plus process/runtime metrics, ready to scrape with Prometheus.
 | Docker Image Size | ~30 MB | ~200 MB |
 | Protocol | Lavalink v4 | Lavalink v4 |
 
-## Troubleshooting
+## 🧯 Troubleshooting
 
 **`libopus not found`**
 ```bash
@@ -342,6 +445,6 @@ sudo pacman -S opus
 - YouTube frequently changes their API; update to the latest KizunaLink version
 - Configure OAuth tokens for more reliable access
 
-## License
+## ⚖️ License
 
 MIT License — see [LICENSE](LICENSE) for details.

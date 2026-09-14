@@ -100,6 +100,37 @@ pub enum KizunaLinkEvent {
         #[serde(rename = "byRemote")]
         by_remote: bool,
     },
+
+    // ---- SponsorBlock events (wire-compatible with SponsorBlock-Plugin) ----
+    #[serde(rename = "SegmentsLoaded")]
+    SegmentsLoaded {
+        #[serde(rename = "guildId")]
+        guild_id: crate::common::types::GuildId,
+        #[serde(rename = "track")]
+        track: Track,
+        segments: Vec<crate::lavalink::sponsorblock::Segment>,
+    },
+
+    #[serde(rename = "SegmentSkipped")]
+    SegmentSkipped {
+        #[serde(rename = "guildId")]
+        guild_id: crate::common::types::GuildId,
+        segment: crate::lavalink::sponsorblock::Segment,
+    },
+
+    #[serde(rename = "ChaptersLoaded")]
+    ChaptersLoaded {
+        #[serde(rename = "guildId")]
+        guild_id: crate::common::types::GuildId,
+        chapters: Vec<crate::lavalink::sponsorblock::Chapter>,
+    },
+
+    #[serde(rename = "ChapterStarted")]
+    ChapterStarted {
+        #[serde(rename = "guildId")]
+        guild_id: crate::common::types::GuildId,
+        chapter: crate::lavalink::sponsorblock::Chapter,
+    },
 }
 
 /// Why a track stopped playing.

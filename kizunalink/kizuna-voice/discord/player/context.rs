@@ -40,6 +40,7 @@ pub struct PlayerContext {
     pub lyrics_subscribed: Arc<AtomicBool>,
     pub lyrics_data: Arc<Mutex<Option<crate::lavalink::protocol::models::LyricsData>>>,
     pub last_lyric_index: Arc<AtomicI64>,
+    pub sponsorblock: Arc<super::manager::sponsorblock::SponsorBlockState>,
     pub tape_stop: Arc<AtomicBool>,
     pub state: Arc<dyn ServerContext>,
 }
@@ -74,6 +75,7 @@ impl PlayerContext {
             lyrics_subscribed: Arc::new(AtomicBool::new(false)),
             lyrics_data: Arc::new(Mutex::new(None)),
             last_lyric_index: Arc::new(AtomicI64::new(-1)),
+            sponsorblock: Arc::new(super::manager::sponsorblock::SponsorBlockState::new()),
             tape_stop: Arc::new(AtomicBool::new(config.tape.tape_stop)),
             state,
         }

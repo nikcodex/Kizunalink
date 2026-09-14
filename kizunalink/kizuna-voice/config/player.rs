@@ -19,6 +19,43 @@ pub struct PlayerConfig {
     pub tape: TapeConfig,
     #[serde(default)]
     pub mirrors: Option<crate::config::server::MirrorsConfig>,
+    #[serde(default)]
+    pub sponsorblock: SponsorBlockConfig,
+}
+
+/// SponsorBlock integration: automatically skip sponsored/annoying segments on
+/// YouTube tracks. Mirror-compatible with the `SponsorBlock-Plugin` REST API
+/// (`/v4/sessions/{s}/players/{g}/sponsorblock/categories`) but implemented fully
+/// in-process, no JVM needed.
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct SponsorBlockConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default = "default_sponsorblock_categories")]
+    pub categories: Vec<String>,
+    #[serde(default = "default_sponsorblock_api_url")]
+    pub api_url: String,
+}
+
+impl Default for SponsorBlockConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            categories: default_sponsorblock_categories(),
+            api_url: default_sponsorblock_api_url(),
+        }
+    }
+}
+
+fn default_sponsorblock_categories() -> Vec<String> {
+    crate::lavalink::sponsorblock::DEFAULT_CATEGORIES
+        .iter()
+        .map(|s| s.to_string())
+        .collect()
+}
+
+fn default_sponsorblock_api_url() -> String {
+    crate::lavalink::sponsorblock::DEFAULT_API_URL.to_string()
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone, Default, Copy, PartialEq)]
@@ -69,6 +106,7 @@ impl Default for PlayerConfig {
             opus_encoding_quality: default_opus_encoding_quality(),
             tape: TapeConfig::default(),
             mirrors: None,
+            sponsorblock: SponsorBlockConfig::default(),
         }
     }
 }

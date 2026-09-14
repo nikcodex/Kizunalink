@@ -35,6 +35,13 @@ resampling_quality = "medium"                                                  #
 opus_encoding_quality = 10                                                     # 1-10
 tape = { tape_stop = true, tape_stop_duration_ms = 500, curve = "sinusoidal" } # curve: linear | exponential | sinusoidal
 
+[player.sponsorblock]
+# Natively skips sponsor / intro / outro segments (API-compatible with the
+# SponsorBlock plugin; no JVM plugin required).
+enabled = false
+categories = ["sponsor", "intro", "outro", "interaction", "selfpromo", "music_offtopic"]
+# api_url = "https://sponsor.ajay.app"
+
 [player.mirrors]
 # List of mirror provider patterns. %ISRC% or %QUERY%
 providers = ["tdsearch:%ISRC%","dzsearch:%ISRC%","jssearch:%QUERY%","amksearch:%QUERY%","gnsearch:%QUERY%","dzsearch:%QUERY%","ytsearch:%ISRC%", "ytsearch:%QUERY%", "scsearch:%QUERY%"]

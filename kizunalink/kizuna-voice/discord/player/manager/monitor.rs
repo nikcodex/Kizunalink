@@ -31,6 +31,8 @@ pub struct MonitorCtx {
     pub lyrics_subscribed: Arc<std::sync::atomic::AtomicBool>,
     pub lyrics_data: Arc<tokio::sync::Mutex<Option<LyricsData>>>,
     pub last_lyric_index: Arc<std::sync::atomic::AtomicI64>,
+    pub sponsorblock: Arc<super::sponsorblock::SponsorBlockState>,
+    pub sponsorblock_enabled: bool,
     pub end_time_ms: Option<u64>,
 }
 
@@ -57,7 +59,7 @@ pub async fn monitor_loop(ctx: MonitorCtx) {
             break;
         }
 
-        let cur_pos = ctx.handle.get_position();
+        let mut cur_pos = ctx.handle.get_position();
 
         if let Some(end_ms) = ctx.end_time_ms
             && cur_pos >= end_ms
@@ -104,6 +106,26 @@ pub async fn monitor_loop(ctx: MonitorCtx) {
                 ctx.session.as_ref(),
             )
             .await;
+        }
+
+        if ctx.sponsorblock_enabled
+            && state == PlaybackState::Playing
+            && let Some(target_ms) = super::sponsorblock::check_for_skip(
+                &ctx.sponsorblock,
+                &ctx.guild_id,
+                cur_pos,
+                ctx.session.as_ref(),
+            )
+            .await
+        {
+            tracing::info!(
+                "[{}] SponsorBlock: seeking {}ms → {}ms",
+                ctx.guild_id,
+                cur_pos,
+                target_ms
+            );
+            ctx.handle.seek(target_ms);
+            cur_pos = target_ms;
         }
     }
 }
