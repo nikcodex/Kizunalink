@@ -90,11 +90,12 @@ mod tests {
     }
 
     #[test]
-    fn severity_variants_serialize() {
+    fn severity_variants_serialize() -> Result<(), serde_json::Error> {
         // Ensure serde works
-        let json = serde_json::to_string(&Severity::Common).unwrap();
+        let json = serde_json::to_string(&Severity::Common)?;
         assert_eq!(json, "\"common\"");
-        let json = serde_json::to_string(&Severity::Fault).unwrap();
+        let json = serde_json::to_string(&Severity::Fault)?;
         assert_eq!(json, "\"fault\"");
+        Ok(())
     }
 }
