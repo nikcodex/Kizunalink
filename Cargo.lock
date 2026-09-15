@@ -108,6 +108,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "audiopus_sys"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "62314a1546a2064e033665d658e88c620a62904be945f8147e6b16c3db9f8651"
+dependencies = [
+ "cmake",
+ "log",
+ "pkg-config",
+]
+
+[[package]]
 name = "autocfg"
 version = "1.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1657,6 +1668,7 @@ dependencies = [
  "aes",
  "aes-gcm",
  "async-trait",
+ "audiopus_sys",
  "axum",
  "base64",
  "block-padding 0.4.2",
@@ -1677,7 +1689,6 @@ dependencies = [
  "md-5",
  "parking_lot 0.12.5",
  "perf_monitor",
- "pkg-config",
  "prometheus",
  "rand 0.8.8",
  "regex",
