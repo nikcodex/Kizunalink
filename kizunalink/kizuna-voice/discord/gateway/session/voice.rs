@@ -9,7 +9,7 @@ use std::{
 
 use tokio::sync::mpsc::Sender;
 use tokio_util::sync::CancellationToken;
-use tracing::error;
+use tracing::{debug, error, warn};
 
 use super::types::GatewayError;
 use crate::{
@@ -36,17 +36,32 @@ pub async fn discover_ip(
     packet[2..4].copy_from_slice(&70u16.to_be_bytes());
     packet[4..8].copy_from_slice(&ssrc.to_be_bytes());
 
+    // A failed discovery would otherwise be completely silent for the whole retry budget
+    // (~30s by default), which reaches users as "the track started but no audio ever plays".
+    // Log the target up front and every attempt so the cause is visible.
+    debug!(
+        "IP discovery: target={addr} ssrc={ssrc} attempts={IP_DISCOVERY_RETRIES} \
+         timeout={IP_DISCOVERY_TIMEOUT_SECS}s interval={IP_DISCOVERY_RETRY_INTERVAL_MS}ms"
+    );
+
     for attempt in 1..=IP_DISCOVERY_RETRIES {
         if attempt > 1 {
             tokio::time::sleep(Duration::from_millis(IP_DISCOVERY_RETRY_INTERVAL_MS)).await;
         }
 
         if let Err(e) = socket.send_to(&packet, addr).await {
+            warn!(
+                "IP discovery: attempt {attempt}/{IP_DISCOVERY_RETRIES} send to {addr} failed: {e}"
+            );
             if attempt == IP_DISCOVERY_RETRIES {
-                return Err(GatewayError::Discovery(e.to_string()));
+                return Err(GatewayError::Discovery(format!(
+                    "send to {addr} failed: {e}"
+                )));
             }
             continue;
         }
+
+        debug!("IP discovery: attempt {attempt}/{IP_DISCOVERY_RETRIES} sent probe to {addr}");
 
         let mut client_buf = [0u8; DISCOVERY_PACKET_SIZE];
         match tokio::time::timeout(
@@ -57,6 +72,11 @@ pub async fn discover_ip(
         {
             Ok(Ok((n, peer))) if n >= DISCOVERY_PACKET_SIZE => {
                 if peer != addr {
+                    // Reference implementations accept any well-formed reply; we require it to
+                    // come from the address we queried so a stray datagram cannot redirect the
+                    // voice stream. Log it, because discarding silently looks identical to a
+                    // total network failure.
+                    debug!("IP discovery: ignoring {n}B reply from {peer} (expected {addr})");
                     continue;
                 }
                 let ip = std::str::from_utf8(&client_buf[8..72])
@@ -64,16 +84,29 @@ pub async fn discover_ip(
                     .trim_matches('\0')
                     .to_string();
                 let port = u16::from_be_bytes([client_buf[72], client_buf[73]]);
+                debug!("IP discovery: ok after {attempt} attempt(s) — external {ip}:{port}");
                 return Ok((ip, port));
+            }
+            Ok(Ok((n, peer))) => {
+                debug!(
+                    "IP discovery: short {n}B reply from {peer} (need {DISCOVERY_PACKET_SIZE}B)"
+                );
+                if attempt == IP_DISCOVERY_RETRIES {
+                    return Err(GatewayError::Discovery(format!(
+                        "short reply ({n}B) from {peer}, need {DISCOVERY_PACKET_SIZE}B"
+                    )));
+                }
             }
             _ => {
                 if attempt == IP_DISCOVERY_RETRIES {
-                    return Err(GatewayError::Discovery("Timed out".into()));
+                    return Err(GatewayError::Discovery(format!(
+                        "no reply from {addr} after {IP_DISCOVERY_RETRIES} attempts"
+                    )));
                 }
             }
         }
     }
-    Err(GatewayError::Discovery("Exhausted".into()))
+    Err(GatewayError::Discovery(format!("no reply from {addr}")))
 }
 
 pub struct SpeakConfig {
@@ -93,6 +126,10 @@ pub struct SpeakConfig {
 }
 
 pub async fn speak_loop(config: SpeakConfig) -> Result<(), GatewayError> {
+    debug!(
+        "speak_loop starting: addr={} ssrc={} mode={}",
+        config.addr, config.ssrc, config.mode
+    );
     let rtp_state = { config.persistent_state.lock().await.rtp_state };
     let transport = UDPVoiceTransport::new(
         config.socket.clone(),
@@ -136,9 +173,21 @@ impl VoiceSession {
         let mut opus = vec![0u8; MAX_OPUS_FRAME_SIZE];
         let mut ts_pcm = vec![0i16; PCM_FRAME_SAMPLES * 2];
 
+        let mut ticks: u64 = 0;
         while !self.config.cancel_token.is_cancelled() {
             interval.tick().await;
             self.tick(encoder, &mut pcm, &mut opus, &mut ts_pcm).await?;
+
+            // Diagnostic: 100 ticks must span ~2s at the correct 50 Hz cadence.
+            // A longer span means the send loop is falling behind real time.
+            ticks += 1;
+            if ticks.is_multiple_of(100) {
+                debug!(
+                    "speak_loop: {ticks} ticks, frames_sent={} frames_nulled={}",
+                    self.config.frames_sent.load(Ordering::Relaxed),
+                    self.config.frames_nulled.load(Ordering::Relaxed),
+                );
+            }
 
             if self
                 .config

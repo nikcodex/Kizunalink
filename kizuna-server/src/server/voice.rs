@@ -3,7 +3,7 @@
 
 use std::sync::{
     Arc,
-    atomic::{AtomicI64, AtomicU64},
+    atomic::{AtomicBool, AtomicI64, AtomicU64},
 };
 
 use tracing::error;
@@ -23,6 +23,9 @@ pub struct VoiceConnectConfig {
     pub voice: VoiceConnectionState,
     pub filter_chain: Shared<FilterChain>,
     pub ping: Arc<AtomicI64>,
+    /// Shared with the player so `playerUpdate.state.connected` reflects the
+    /// real voice session rather than the mere presence of a voice token.
+    pub voice_ready: Arc<AtomicBool>,
     pub event_tx: Option<tokio::sync::mpsc::UnboundedSender<KizunaLinkEvent>>,
     pub frames_sent: Arc<AtomicU64>,
     pub frames_nulled: Arc<AtomicU64>,
@@ -53,6 +56,7 @@ pub async fn connect_voice(config: VoiceConnectConfig) -> tokio::task::JoinHandl
         mixer,
         filter_chain: config.filter_chain,
         ping: config.ping,
+        voice_ready: config.voice_ready,
         event_tx: config.event_tx,
         frames_sent: config.frames_sent,
         frames_nulled: config.frames_nulled,

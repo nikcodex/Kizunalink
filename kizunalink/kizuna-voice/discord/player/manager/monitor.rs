@@ -26,6 +26,9 @@ pub struct MonitorCtx {
     pub track: Track,
     pub stop_signal: Arc<std::sync::atomic::AtomicBool>,
     pub ping: Arc<std::sync::atomic::AtomicI64>,
+    /// Mirrors `PlayerContext::voice_ready` so updates report the real voice
+    /// socket state instead of a hardcoded `true`.
+    pub voice_ready: Arc<std::sync::atomic::AtomicBool>,
     pub stuck_threshold_ms: u64,
     pub update_every_n: u64,
     pub lyrics_subscribed: Arc<std::sync::atomic::AtomicBool>,
@@ -70,7 +73,17 @@ pub async fn monitor_loop(ctx: MonitorCtx) {
         }
 
         if state == PlaybackState::Playing {
-            if cur_pos != last_pos {
+            if !ctx.voice_ready.load(Ordering::Acquire) {
+                // Without a voice transport there is nowhere for audio to go, so a stalled
+                // position is not a stuck track — upstream Lavalink does not even start a
+                // track until the voice connection is ready. Reporting `trackStuck` here
+                // replaces the real cause (a failed voice connection, which the gateway logs)
+                // with a misleading playback error. Keep the timer fresh so a genuine stall is
+                // still caught promptly once the connection comes up.
+                last_pos_changed_at = std::time::Instant::now();
+                buffering_started_at = None;
+                stuck_fired = false;
+            } else if cur_pos != last_pos {
                 last_pos_changed_at = std::time::Instant::now();
                 buffering_started_at = None;
                 stuck_fired = false;
@@ -228,7 +241,7 @@ fn send_player_update(ctx: &MonitorCtx, cur_pos: u64) {
             state: PlayerState {
                 time: crate::common::utils::now_ms(),
                 position: cur_pos,
-                connected: true,
+                connected: ctx.voice_ready.load(Ordering::Acquire),
                 ping: ctx.ping.load(Ordering::Acquire),
             },
         });

@@ -46,6 +46,9 @@ pub struct VoiceGateway {
     pub mixer: Shared<Mixer>,
     pub filter_chain: Shared<FilterChain>,
     pub ping: Arc<AtomicI64>,
+    /// Set while a Discord voice session is actually established on this
+    /// gateway. Cleared whenever the session is torn down or retried.
+    pub voice_ready: Arc<std::sync::atomic::AtomicBool>,
     event_tx: Option<UnboundedSender<KizunaLinkEvent>>,
     pub frames_sent: Arc<std::sync::atomic::AtomicU64>,
     pub frames_nulled: Arc<std::sync::atomic::AtomicU64>,
@@ -65,6 +68,9 @@ pub struct VoiceGatewayConfig {
     pub mixer: Shared<Mixer>,
     pub filter_chain: Shared<FilterChain>,
     pub ping: Arc<AtomicI64>,
+    /// Set while a Discord voice session is actually established on this
+    /// gateway. Cleared whenever the session is torn down or retried.
+    pub voice_ready: Arc<std::sync::atomic::AtomicBool>,
     pub event_tx: Option<UnboundedSender<KizunaLinkEvent>>,
     pub frames_sent: Arc<std::sync::atomic::AtomicU64>,
     pub frames_nulled: Arc<std::sync::atomic::AtomicU64>,
@@ -82,6 +88,7 @@ impl VoiceGateway {
             mixer: config.mixer,
             filter_chain: config.filter_chain,
             ping: config.ping,
+            voice_ready: config.voice_ready,
             event_tx: config.event_tx,
             frames_sent: config.frames_sent,
             frames_nulled: config.frames_nulled,
@@ -125,6 +132,7 @@ impl VoiceGateway {
                         seq_ack.store(-1, Ordering::Relaxed);
                         *persistent_state.lock().await = PersistentSessionState::default();
                         *self.udp_socket.lock().await = None;
+                        self.voice_ready.store(false, Ordering::Release);
                         self.dave.lock().await.reset();
                     }
 
@@ -147,6 +155,7 @@ impl VoiceGateway {
                     seq_ack.store(-1, Ordering::Relaxed);
                     *persistent_state.lock().await = PersistentSessionState::default();
                     *self.udp_socket.lock().await = None;
+                    self.voice_ready.store(false, Ordering::Release);
                     self.dave.lock().await.reset();
                     tokio::time::sleep(delay).await;
                     is_resume = false;
@@ -173,6 +182,10 @@ impl VoiceGateway {
         } else {
             &self.endpoint
         };
+        debug!(
+            "[{}] Dialing voice endpoint {endpoint} (resume={is_resume})",
+            self.guild_id
+        );
 
         let url = format!("wss://{}/?v={}", endpoint, VOICE_GATEWAY_VERSION);
         let mut config = WebSocketConfig::default();
@@ -181,6 +194,10 @@ impl VoiceGateway {
         const MAX_VOICE_GATEWAY_PAYLOAD: usize = 1024 * 1024;
         config.max_message_size = Some(MAX_VOICE_GATEWAY_PAYLOAD);
         config.max_frame_size = Some(MAX_VOICE_GATEWAY_PAYLOAD);
+
+        // The voice socket is the first TLS client to run. Ensure a provider is
+        // installed even if the embedding binary forgot to (see `common::tls`).
+        crate::common::tls::install_crypto_provider();
 
         let (ws_stream, _) =
             tokio_tungstenite::connect_async_with_config(&url, Some(config), true).await?;

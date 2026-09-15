@@ -17,9 +17,15 @@ extra/*
 config.toml
 local.config.toml
 .env
+.env.local
+.env.*.local
+kizuna.local.json
+
+# Node
+docs/node_modules/
+**/node_modules/
 
 # VitePress Docs
-docs/node_modules/
 docs/.vitepress/dist/
 docs/.vitepress/cache/
 

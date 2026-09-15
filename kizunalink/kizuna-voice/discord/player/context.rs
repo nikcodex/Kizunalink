@@ -31,6 +31,10 @@ pub struct PlayerContext {
     pub end_time: Option<u64>,
     pub stop_signal: Arc<AtomicBool>,
     pub ping: Arc<AtomicI64>,
+    /// True only while the voice gateway holds an established Discord voice
+    /// session. `playerUpdate.state.connected` reports this, rather than merely
+    /// "we were handed a voice token", so clients can trust the field.
+    pub voice_ready: Arc<AtomicBool>,
     pub gateway_task: Option<tokio::task::JoinHandle<()>>,
     pub track_task: Option<tokio::task::JoinHandle<()>>,
     pub user_data: serde_json::Value,
@@ -66,6 +70,7 @@ impl PlayerContext {
             end_time: None,
             stop_signal: Arc::new(AtomicBool::new(false)),
             ping: Arc::new(AtomicI64::new(-1)),
+            voice_ready: Arc::new(AtomicBool::new(false)),
             gateway_task: None,
             track_task: None,
             user_data: serde_json::json!({}),
@@ -180,7 +185,7 @@ impl PlayerContext {
                     .as_ref()
                     .map(|h| h.get_position())
                     .unwrap_or(self.position),
-                connected: !self.voice.token.is_empty(),
+                connected: self.voice_ready.load(Ordering::Acquire),
                 ping: self.ping.load(Ordering::Acquire),
             },
             voice: VoiceState {
@@ -195,7 +200,18 @@ impl PlayerContext {
     }
 
     pub async fn to_response(arc: Arc<tokio::sync::RwLock<Self>>) -> Player {
-        let (guild_id, track_info, volume, paused, position, voice, ping, filters, engine_shared) = {
+        let (
+            guild_id,
+            track_info,
+            volume,
+            paused,
+            position,
+            voice,
+            ping,
+            voice_ready,
+            filters,
+            engine_shared,
+        ) = {
             let this = arc.read().await;
             (
                 this.guild_id.clone(),
@@ -208,6 +224,7 @@ impl PlayerContext {
                     .unwrap_or(this.position),
                 this.voice.clone(),
                 this.ping.load(Ordering::Acquire),
+                this.voice_ready.load(Ordering::Acquire),
                 this.filters.clone(),
                 this.engine.clone(),
             )
@@ -234,7 +251,7 @@ impl PlayerContext {
             state: PlayerState {
                 time: crate::common::utils::now_ms(),
                 position,
-                connected: !voice.token.is_empty(),
+                connected: voice_ready,
                 ping,
             },
             voice: VoiceState {

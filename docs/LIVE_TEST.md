@@ -35,17 +35,15 @@ So you don't re-test what's green:
    $EDITOR config.toml    # server.authorization = "<long random string>"
    ```
 3. Run it: `./target/release/kizuna-server` (keep the terminal open).
-4. Create a minimal bot with [lavalink-client](https://npmjs.com/lavalink-client):
-   ```js
-   const { LavalinkManager } = require("lavalink-client");
-   const manager = new LavalinkManager({
-     nodes: [{
-       host: "localhost", port: 2333,
-       authorization: "<your password>", secure: false,
-     }],
-     client: { id: process.env.CLIENT_ID, username: "TestBot" },
-   });
+4. Use the bundled test bot — it is already written for exactly this:
+   ```bash
+   cd examples/discord-bot
+   npm install
+   node src/index.js --self-test   # automated join + playback verification
    ```
+   Or use any other Lavalink v4 client library; see
+   [examples/discord-bot/README.md](../examples/discord-bot/README.md) for the
+   environment variables and the Discord application setup steps.
 5. Invite the bot to a test server with a voice channel you can join.
 
 **Pass gate:** bot connects, logs show
@@ -165,6 +163,49 @@ during playback (`playing_players_total`, `cpu_lavalink_load_percentage`).
 - [ ] [PRODUCTION.md](./PRODUCTION.md) checklist complete
 
 ---
+
+## No audio? Read these lines first
+
+The node walks the voice handshake step by step now, so a silent failure is no longer
+invisible. Grep the node log (or `logs/kizunalink.log`) for these, in order:
+
+| Log line | Meaning |
+|---|---|
+| `Dialing voice endpoint <host>:<port>` | Voice WebSocket to Discord is about to connect. |
+| `Ready: ssrc=..., mode=...` | Discord accepted the session — **TLS and the WebSocket work**. |
+| `IP discovery: target=<ip>:<udp-port>` | The UDP probe target. That port is allocated **per session**, so probing it after the session ends will always time out. |
+| `IP discovery: ok after N attempt(s) — external <ip>:<port>` | UDP works; audio is about to flow. |
+| `no reply from <ip>:<port> after N attempts` | Discord never answered the UDP probe — a **network** problem, not a KizunaLink one. |
+
+Two related behaviours worth knowing:
+
+- The player only ever reports `trackStuck` once a voice transport exists. While the
+  connection is down a stalled position is reported as "not connected" instead, so a
+  `trackStuck` event always means playback genuinely stalled mid-flight.
+- `playerUpdate.state.connected` reflects the real voice socket, not merely "a voice
+  payload arrived". If it is `false`, no audio is being sent, whatever the position says.
+- Do not measure progress with `player.position` on the client — that getter extrapolates
+  (`lastPosition + elapsedSinceUpdate`) and keeps climbing even when the node produces
+  nothing. Use the raw `player.lastPosition`, which only moves when the node moves it.
+
+If discovery reports no reply, confirm from the **same host**, while a session is live,
+that a hand-built probe gets an answer:
+
+```bash
+python3 - <<'PY'
+import socket, struct
+ip, port = "1.2.3.4", 12345  # copy from the "IP discovery: target=" log line
+pkt = struct.pack(">HHI", 1, 70, 999) + b"\x00" * 66
+s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+s.settimeout(3)
+s.sendto(pkt, (ip, port))
+print(s.recvfrom(74))
+PY
+```
+
+No reply there means outbound UDP to Discord's voice endpoints is blocked from that
+network (common in restricted containers and cloud sandboxes). Run the node somewhere
+UDP egress is unrestricted.
 
 ## Filing failures
 

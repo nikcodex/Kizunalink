@@ -182,6 +182,7 @@ pub async fn start_playback(player: &mut PlayerContext, config: PlaybackStartCon
         track: track_response,
         stop_signal: player.stop_signal.clone(),
         ping: player.ping.clone(),
+        voice_ready: player.voice_ready.clone(),
         stuck_threshold_ms: player.config.stuck_threshold_ms,
         // one tick == 20 ms; Lavalink semantics keep updates every `interval`, and
         // the mixer runs at 50 Hz, hence `as_secs() * 2`.

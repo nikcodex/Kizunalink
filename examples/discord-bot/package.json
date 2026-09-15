@@ -1,0 +1,20 @@
+{
+  "name": "kizunalink-discord-bot",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Minimal discord.js v14 + lavalink-client bot used to verify a KizunaLink node end to end.",
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node --env-file-if-exists=.env --env-file-if-exists=.env.local src/index.js",
+    "selftest": "node --env-file-if-exists=.env --env-file-if-exists=.env.local src/index.js --self-test",
+    "channels": "node --env-file-if-exists=.env --env-file-if-exists=.env.local src/list-channels.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "discord.js": "^14.27.0",
+    "lavalink-client": "^2.11.0"
+  }
+}

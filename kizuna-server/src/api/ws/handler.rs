@@ -240,7 +240,9 @@ async fn send_initial_state(socket: &mut WebSocket, session: &Arc<Session>, resu
                         .as_ref()
                         .map(|h| h.get_position())
                         .unwrap_or(player.position),
-                    connected: !player.voice.token.is_empty(),
+                    connected: player
+                        .voice_ready
+                        .load(std::sync::atomic::Ordering::Acquire),
                     ping: player.ping.load(Relaxed),
                 },
             };

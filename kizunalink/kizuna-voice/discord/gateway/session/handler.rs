@@ -708,11 +708,20 @@ impl<'a> SessionState<'a> {
 
         let guild_id = self.gateway.guild_id.clone();
         let conn_token = self.conn_token.clone();
+        let voice_ready = self.gateway.voice_ready.clone();
+        debug!(
+            "[{guild_id}] Voice session established: ssrc={} addr={addr} mode={}",
+            self.ssrc, self.selected_mode
+        );
+        // Only from this point can audio actually reach Discord, so this — not
+        // "a voice token arrived" — is what `playerUpdate.state.connected` reports.
+        voice_ready.store(true, Ordering::Release);
         self.speak_task = Some(tokio::spawn(async move {
             if let Err(e) = speak_loop(config).await {
                 error!("[{guild_id}] speak_loop failed: {e}");
                 conn_token.cancel();
             }
+            voice_ready.store(false, Ordering::Release);
         }));
 
         self.send_json(

@@ -19,6 +19,10 @@ use tracing::info;
 /// word into child threads — every tokio worker and every audio thread spawned from this
 /// main thread then inherits the denormal-free setting for free.
 fn main() -> AnyResult<()> {
+    // Installed before the runtime exists so no spawned task can start a TLS handshake
+    // without a provider selected (see `kizunalink::common::tls`).
+    kizunalink::common::tls::install_crypto_provider();
+
     kizunalink::engine::disable_denormals();
 
     let runtime = tokio::runtime::Builder::new_multi_thread()

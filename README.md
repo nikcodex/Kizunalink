@@ -291,6 +291,11 @@ const manager = new LavalinkManager({
 });
 ```
 
+> **Runnable example:** [`examples/discord-bot`](./examples/discord-bot) is a
+> complete discord.js v14 + `lavalink-client` bot with a `--self-test` mode that
+> verifies the whole voice path (join → voice payloads → `trackStart` → advancing
+> position → pause/seek/volume) and tells you which link broke if one does.
+
 **Serenity (Rust)**
 ```rust
 use lavalink_rs::LavalinkClient;

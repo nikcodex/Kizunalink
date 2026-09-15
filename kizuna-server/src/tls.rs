@@ -76,14 +76,11 @@ pub fn load_acceptor(cert_path: &Path, key_path: &Path) -> Result<TlsAcceptor, S
     let certs = load_certs(cert_path).map_err(|e| format!("failed to load TLS cert: {e}"))?;
     let key = load_key(key_path).map_err(|e| format!("failed to load TLS key: {e}"))?;
 
-    // rustls can't auto-detect a provider when both `ring` and `aws-lc-rs` are in
-    // the tree via feature unification (reqwest pulls in one, we use the other).
-    // Pin the ring provider explicitly so `ServerConfig::builder()` can't panic.
-    if rustls::crypto::CryptoProvider::get_default().is_none() {
-        let _ = rustls::crypto::CryptoProvider::install_default(
-            rustls::crypto::ring::default_provider(),
-        );
-    }
+    // Pin the provider before building any config; rustls refuses to choose one
+    // implicitly when both `ring` and `aws-lc-rs` are compiled in. The binary already
+    // installs it at startup (see `kizunalink::common::tls`) — repeated here so this
+    // helper is correct when reached on its own.
+    kizunalink::common::tls::install_crypto_provider();
 
     let config = rustls::ServerConfig::builder()
         .with_no_client_auth()

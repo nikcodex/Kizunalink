@@ -125,7 +125,9 @@ fn handle_player_state(
                     state: kizunalink::discord::player::PlayerState {
                         time: kizunalink::common::utils::now_ms(),
                         position: pos,
-                        connected: !player.voice.token.is_empty(),
+                        connected: player
+                            .voice_ready
+                            .load(std::sync::atomic::Ordering::Acquire),
                         ping: player.ping.load(std::sync::atomic::Ordering::Relaxed),
                     },
                 };
@@ -184,7 +186,9 @@ async fn handle_filters(
                 .as_ref()
                 .map(|h| h.get_position())
                 .unwrap_or(player.position),
-            connected: !player.voice.token.is_empty(),
+            connected: player
+                .voice_ready
+                .load(std::sync::atomic::Ordering::Acquire),
             ping: player.ping.load(std::sync::atomic::Ordering::Relaxed),
         },
     });
@@ -233,6 +237,7 @@ async fn handle_voice(
             voice: player.voice.clone(),
             filter_chain: player.filter_chain.clone(),
             ping: player.ping.clone(),
+            voice_ready: player.voice_ready.clone(),
             event_tx: Some(event_tx),
             frames_sent: player.frames_sent.clone(),
             frames_nulled: player.frames_nulled.clone(),
@@ -243,6 +248,14 @@ async fn handle_voice(
         if let Some(old_task) = player.gateway_task.replace(handle) {
             old_task.abort();
         }
+    } else {
+        // Without a user id we cannot run DAVE key exchange or build a voice
+        // session, so this update would otherwise be dropped in total silence
+        // while the node still looked healthy.
+        tracing::warn!(
+            "[{}] Dropping voice update: session has no user id (missing or unparseable User-Id header)",
+            player.guild_id
+        );
     }
 
     Ok(())

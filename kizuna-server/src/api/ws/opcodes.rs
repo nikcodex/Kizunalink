@@ -115,6 +115,7 @@ async fn handle_voice_update(
                 player.voice.clone(),
                 player.filter_chain.clone(),
                 player.ping.clone(),
+                player.voice_ready.clone(),
                 player.frames_sent.clone(),
                 player.frames_nulled.clone(),
             ))
@@ -123,8 +124,16 @@ async fn handle_voice_update(
         }
     };
 
-    if let Some((engine, guild, voice_state, filter_chain, ping, frames_sent, frames_nulled)) =
-        spawn
+    if let Some((
+        engine,
+        guild,
+        voice_state,
+        filter_chain,
+        ping,
+        voice_ready,
+        frames_sent,
+        frames_nulled,
+    )) = spawn
     {
         let session_clone = session.clone();
         let (event_tx, mut event_rx) = tokio::sync::mpsc::unbounded_channel();
@@ -144,6 +153,7 @@ async fn handle_voice_update(
             voice: voice_state,
             filter_chain,
             ping,
+            voice_ready,
             event_tx: Some(event_tx),
             frames_sent,
             frames_nulled,
@@ -160,6 +170,14 @@ async fn handle_voice_update(
             session.register_task(new_task.abort_handle());
             player.gateway_task = Some(new_task);
         }
+    } else {
+        // Without a user id we cannot run DAVE key exchange or build a voice
+        // session, so this update would otherwise vanish while the node still
+        // reported itself as healthy.
+        tracing::warn!(
+            "[{}] Dropping voice update: session has no user id (missing or unparseable User-Id header)",
+            guild_id
+        );
     }
 
     Ok(())

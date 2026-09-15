@@ -119,6 +119,9 @@ workspace = true
 [dependencies.reqwest]
 workspace = true
 
+[dependencies.rustls]
+workspace = true
+
 [dependencies.tokio]
 workspace = true
 
