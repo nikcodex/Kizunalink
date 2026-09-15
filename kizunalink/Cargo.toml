@@ -6,12 +6,22 @@ rust-version = "1.88"
 license = "MIT"
 authors = [ "Nikhil",]
 repository = "https://github.com/nikcodex/Kizunalink"
+build = "build.rs"
 
 [lib]
 path = "kizuna-voice/lib.rs"
 
+# Build script provides libopus for the hand-rolled FFI in `kizuna-voice/opus/ffi.rs`:
+# pkg-config probe on Unix when available, otherwise a vendored CMake build of opus
+# (Windows, Android, and containerized builds). Replaces the unmaintained audiopus_sys
+# (RUSTSEC-2026-0150).
+[build-dependencies]
+cmake = "0.1"
+pkg-config = "0.3"
+
 [dependencies]
 aes-gcm = "0.10.3"
+
 # XChaCha20-Poly1305 is the transport encryption mode Discord *requires*
 # (`aead_xchacha20_poly1305_rtpsize`).
 chacha20poly1305 = "0.10.1"
@@ -30,10 +40,6 @@ hmac = "0.12"
 sha1 = "0.10"
 sha2 = "0.10"
 perf_monitor = "0.2.1"
-# Provides libopus for the hand-rolled FFI in `kizuna-voice/opus/ffi.rs`
-# (`#[link(name = "opus")]`): pkg-config probe when available, otherwise a
-# vendored CMake build of opus (Windows, Android, and containerized builds).
-audiopus_sys = { version = "0.2", default-features = false }
 
 [dependencies.base64]
 workspace = true

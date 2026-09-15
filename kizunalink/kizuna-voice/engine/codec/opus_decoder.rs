@@ -24,8 +24,8 @@ pub struct OpusCodecDecoder {
     pcm: Vec<i16>,
 }
 
-// audiopus::coder::Decoder is Send but not Sync.
-// We only touch it via `&mut self`, so Sync is safe.
+// libopus decoder states are not Sync; we only touch the state via
+// `&mut self`, so Sync is safe.
 unsafe impl Sync for OpusCodecDecoder {}
 
 impl Decoder for OpusCodecDecoder {
@@ -76,7 +76,7 @@ impl Decoder for OpusCodecDecoder {
         &[CodecDescriptor {
             codec: CODEC_TYPE_OPUS,
             short_name: "opus",
-            long_name: "Opus (via audiopus)",
+            long_name: "Opus (via native libopus)",
             inst_func: |params, opts| Ok(Box::new(OpusCodecDecoder::try_new(params, opts)?)),
         }]
     }

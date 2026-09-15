@@ -29,8 +29,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 ENV LIBOPUS_STATIC=1 \
     OPUS_STATIC=1 \
-    AUDIOPUS_STATIC=1 \
-    CMAKE_POLICY_VERSION_MINIMUM=3.5 \
     CARGO_TERM_COLOR=always
 
 WORKDIR /build

@@ -5,6 +5,13 @@
 //!
 //! This module provides direct foreign function interface declarations and
 //! C constants for the reference Opus codec implementation (`opus.h` and `opus_defines.h`).
+//!
+//! The `libopus` symbols are resolved at link time by the crate's `build.rs`,
+//! which locates or builds the library (pkg-config, `LIBOPUS_LIB_DIR`, or the
+//! vendored CMake build). Do **not** add `#[link(...)]` to the extern block
+//! below: on `x86_64-pc-windows-msvc` rustc marks `#[link]` externs as
+//! `dllimport`, which makes the linker look for `__imp_opus_*` stubs that a
+//! statically linked opus does not provide (LNK2019).
 
 use std::os::raw::c_char;
 
@@ -129,8 +136,9 @@ pub const OPUS_BANDWIDTH_SUPERWIDEBAND: i32 = 1104;
 pub const OPUS_BANDWIDTH_FULLBAND: i32 = 1105;
 
 // --- C Foreign Function Declarations ---
-
-#[link(name = "opus")]
+//
+// NOTE: deliberately no `#[link(name = "opus")]` here — see the module docs.
+// The `build.rs` of this crate emits the `cargo:rustc-link-lib=opus` directive.
 #[allow(non_snake_case)]
 unsafe extern "C" {
     /// Allocates and initializes an `OpusEncoder` state.
