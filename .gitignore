@@ -1,0 +1,35 @@
+/target
+
+# EDITOR
+.vscode
+.idea
+
+# AGENTS
+.agents/
+.agents_tmp/
+
+# LOGS
+logs/*
+
+# Extra folder
+extra/*
+
+config.toml
+local.config.toml
+.env
+.env.local
+.env.*.local
+kizuna.local.json
+
+# Node
+docs/node_modules/
+**/node_modules/
+
+# VitePress Docs
+docs/.vitepress/dist/
+docs/.vitepress/cache/
+
+/librust_out.rlib
+/bin/
+kizunalink-linux-*
+test_bot.py

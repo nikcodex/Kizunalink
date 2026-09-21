@@ -1,0 +1,816 @@
+// Copyright (c) 2026 nikcodex (KizunaLink)
+// Licensed under the MIT License
+
+use std::{
+    collections::HashSet,
+    net::{IpAddr, SocketAddr},
+    sync::{
+        Arc,
+        atomic::{AtomicI64, Ordering},
+    },
+};
+
+use serde_json::Value;
+use tokio::sync::mpsc::Sender;
+use tokio_tungstenite::tungstenite::protocol::Message;
+use tokio_util::sync::CancellationToken;
+use tracing::{debug, error, trace, warn};
+use uuid::Uuid;
+
+use super::protocol::{GatewayPayload, OpCode};
+use super::{
+    VoiceGateway,
+    backoff::Backoff,
+    heartbeat::HeartbeatTracker,
+    types::{GatewayError, PersistentSessionState, SessionOutcome},
+    voice::{SpeakConfig, discover_ip, speak_loop},
+};
+use crate::{
+    common::types::{Shared, UserId},
+    discord::crypto::{DaveHandler, EpochOutcome},
+    discord::gateway::constants::{DAVE_INITIAL_VERSION, DEFAULT_VOICE_MODE},
+};
+
+pub struct SessionState<'a> {
+    gateway: &'a VoiceGateway,
+    tx: Sender<Message>,
+    seq_ack: Arc<AtomicI64>,
+    ssrc: u32,
+    udp_addr: Option<SocketAddr>,
+    selected_mode: String,
+    connected_users: HashSet<UserId>,
+    udp_socket: Arc<tokio::net::UdpSocket>,
+    dave: Shared<DaveHandler>,
+    heartbeat: HeartbeatTracker,
+    heartbeat_handle: Option<tokio::task::JoinHandle<()>>,
+    conn_token: CancellationToken,
+    speaking_tx: Option<Sender<bool>>,
+    session_key: Option<[u8; 32]>,
+    speak_task: Option<tokio::task::JoinHandle<()>>,
+    persistent_state: Arc<tokio::sync::Mutex<PersistentSessionState>>,
+    backoff: &'a mut Backoff,
+}
+
+fn parse_u16_field(payload: &Value, field: &str) -> Option<u16> {
+    payload
+        .get(field)
+        .and_then(Value::as_u64)
+        .and_then(|value| u16::try_from(value).ok())
+}
+
+fn parse_dave_protocol_version(payload: &Value) -> Result<u16, u64> {
+    match payload.get("dave_protocol_version").and_then(Value::as_u64) {
+        None => Ok(0),
+        Some(value) => u16::try_from(value).map_err(|_| value),
+    }
+}
+
+impl<'a> SessionState<'a> {
+    pub async fn new(
+        gateway: &'a VoiceGateway,
+        tx: Sender<Message>,
+        seq_ack: Arc<AtomicI64>,
+        conn_token: CancellationToken,
+        persistent_state: Arc<tokio::sync::Mutex<PersistentSessionState>>,
+        backoff: &'a mut Backoff,
+    ) -> Result<Self, GatewayError> {
+        let mut socket_guard = gateway.udp_socket.lock().await;
+        let udp_socket = if let Some(existing) = &*socket_guard {
+            existing.clone()
+        } else {
+            let udp = std::net::UdpSocket::bind("0.0.0.0:0")?;
+            udp.set_nonblocking(true)?;
+            let socket = Arc::new(tokio::net::UdpSocket::from_std(udp)?);
+            *socket_guard = Some(socket.clone());
+            socket
+        };
+
+        Ok(Self {
+            gateway,
+            tx,
+            seq_ack,
+            ssrc: 0,
+            udp_addr: None,
+            selected_mode: DEFAULT_VOICE_MODE.to_string(),
+            connected_users: HashSet::from([gateway.user_id]),
+            udp_socket,
+            dave: gateway.dave.clone(),
+            heartbeat: HeartbeatTracker::new(),
+            heartbeat_handle: None,
+            conn_token,
+            speaking_tx: None,
+            session_key: None,
+            speak_task: None,
+            persistent_state,
+            backoff,
+        })
+    }
+
+    pub fn set_speaking_tx(&mut self, tx: Sender<bool>) {
+        self.speaking_tx = Some(tx);
+    }
+
+    pub fn ssrc(&self) -> u32 {
+        self.ssrc
+    }
+    pub fn tx(&self) -> &Sender<Message> {
+        &self.tx
+    }
+    pub fn attempt(&self) -> u32 {
+        self.backoff.attempt()
+    }
+    pub fn has_heartbeat(&self) -> bool {
+        self.heartbeat_handle.is_some()
+    }
+
+    pub async fn handle_text(&mut self, text: String) -> Option<SessionOutcome> {
+        let payload: GatewayPayload = match serde_json::from_str(&text) {
+            Ok(p) => p,
+            Err(e) => {
+                warn!("[{}] JSON Parse error: {e}", self.gateway.guild_id);
+                return None;
+            }
+        };
+
+        if let Some(seq) = payload.seq {
+            self.seq_ack.store(seq as i64, Ordering::Relaxed);
+        }
+
+        let op = OpCode::from(payload.op);
+        trace!(
+            "[{}] RX OP: {:?} (op={})",
+            self.gateway.guild_id, op, payload.op
+        );
+
+        match op {
+            OpCode::Hello => self.on_hello(payload.d),
+            OpCode::Ready => self.on_ready(payload.d).await,
+            OpCode::SessionDescription => self.on_session_description(payload.d).await,
+            OpCode::HeartbeatAck => self.on_heartbeat_ack(payload.d),
+            OpCode::Resumed => self.on_resumed().await,
+            OpCode::ClientConnect => self.on_user_connect(payload.d).await,
+            OpCode::ClientDisconnect => self.on_user_disconnect(payload.d).await,
+            OpCode::VoiceBackendVersion => {
+                debug!(
+                    "[{}] Voice Backend Version: {:?}",
+                    self.gateway.guild_id, payload.d
+                );
+                None
+            }
+            OpCode::MediaSinkWants => {
+                debug!(
+                    "[{}] Media Sink Wants: {:?}",
+                    self.gateway.guild_id, payload.d
+                );
+                None
+            }
+            OpCode::DavePrepareTransition => self.on_dave_prepare_transition(payload.d).await,
+            OpCode::DaveExecuteTransition => self.on_dave_execute_transition(payload.d).await,
+            OpCode::DavePrepareEpoch => self.on_dave_prepare_epoch(payload.d).await,
+            OpCode::MlsAnnounceCommitTransition => self.on_mls_transition(payload.d).await,
+            OpCode::MlsInvalidCommitWelcome => {
+                warn!(
+                    "[{}] DAVE MLS Invalid Commit Welcome received, resetting session",
+                    self.gateway.guild_id
+                );
+                self.reset_dave(0).await;
+                None
+            }
+            OpCode::NoRoute => {
+                warn!(
+                    "[{}] No Route received: {:?}",
+                    self.gateway.guild_id, payload.d
+                );
+                None
+            }
+            OpCode::Speaking
+            | OpCode::Video
+            | OpCode::Codecs
+            | OpCode::UserFlags
+            | OpCode::VoicePlatform => None,
+            _ => None,
+        }
+    }
+
+    pub async fn handle_binary(&mut self, bin: Vec<u8>) {
+        if bin.len() < 3 {
+            return;
+        }
+        let seq = u16::from_be_bytes([bin[0], bin[1]]);
+        let op = bin[2];
+        let data = &bin[3..];
+
+        self.seq_ack.store(seq as i64, Ordering::Relaxed);
+        let mut dave = self.dave.lock().await;
+
+        match op {
+            25 => {
+                // MlsExternalSender
+                match dave.process_external_sender(data) {
+                    Ok(responses) => {
+                        for response in responses {
+                            self.send_binary(28, &response);
+                        }
+                    }
+                    Err(e) => {
+                        warn!(
+                            "[{}] DAVE external sender failed: {e}",
+                            self.gateway.guild_id
+                        );
+                        self.reset_dave_locked(&mut dave, 0).await;
+                    }
+                }
+            }
+            27 => {
+                // MlsProposals
+                match dave.process_proposals(data) {
+                    Ok(Some(cw)) => self.send_binary(28, &cw),
+                    Err(e) => {
+                        warn!("[{}] DAVE proposals failed: {e}", self.gateway.guild_id);
+                        self.reset_dave_locked(&mut dave, 0).await;
+                    }
+                    _ => {}
+                }
+            }
+            29 | 30 => {
+                // Commit / Welcome
+                let res = if op == 30 {
+                    dave.process_welcome(data)
+                } else {
+                    dave.process_commit(data)
+                };
+                match res {
+                    Ok(tid) if tid != 0 => {
+                        self.send_json(23, serde_json::json!({ "transition_id": tid }))
+                    }
+                    Err(e) => {
+                        let tid = if data.len() >= 2 {
+                            u16::from_be_bytes([data[0], data[1]])
+                        } else {
+                            0
+                        };
+                        warn!(
+                            "[{}] DAVE {} failed (tid {tid}): {e}",
+                            self.gateway.guild_id,
+                            if op == 30 { "welcome" } else { "commit" }
+                        );
+                        self.reset_dave_locked(&mut dave, tid).await;
+                    }
+                    _ => {}
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn on_hello(&mut self, d: Value) -> Option<SessionOutcome> {
+        let Some(interval) = d["heartbeat_interval"].as_u64().filter(|&value| value > 0) else {
+            warn!(
+                "[{}] HELLO contained an invalid heartbeat interval",
+                self.gateway.guild_id
+            );
+            return Some(SessionOutcome::Reconnect);
+        };
+        if self.heartbeat_handle.is_some() {
+            warn!(
+                "[{}] Received unexpected mid-session HELLO. Forcing re-identify.",
+                self.gateway.guild_id
+            );
+            return Some(SessionOutcome::Identify);
+        }
+
+        trace!(
+            "[{}] Heartbeat interval: {interval}ms",
+            self.gateway.guild_id
+        );
+
+        self.heartbeat_handle = Some(self.heartbeat.spawn(
+            self.tx.clone(),
+            self.seq_ack.clone(),
+            self.conn_token.clone(),
+            interval,
+        ));
+        None
+    }
+
+    /// Applies a READY payload and negotiates the UDP transport.
+    ///
+    /// Returns [`SessionOutcome::Reconnect`] when the advertised endpoint is
+    /// malformed or external address discovery fails.
+    async fn on_ready(&mut self, d: Value) -> Option<SessionOutcome> {
+        let ssrc = d["ssrc"].as_u64();
+        let ip = d["ip"].as_str();
+        let port = d["port"].as_u64();
+
+        match (ssrc, ip, port) {
+            (Some(ssrc), Some(ip), Some(port)) if ssrc <= u32::MAX as u64 && port <= 65535 => {
+                self.ssrc = ssrc as u32;
+                match ip.parse::<IpAddr>() {
+                    Ok(ip) => self.udp_addr = Some(SocketAddr::new(ip, port as u16)),
+                    Err(_) => {
+                        error!(
+                            "[{}] Invalid READY address: {ip}:{port}",
+                            self.gateway.guild_id
+                        );
+                        return Some(SessionOutcome::Reconnect);
+                    }
+                }
+            }
+            _ => {
+                error!("[{}] Malformed READY payload", self.gateway.guild_id);
+                return Some(SessionOutcome::Reconnect);
+            }
+        }
+
+        if let Some(modes) = d["modes"].as_array() {
+            // Discord now *requires* `aead_xchacha20_poly1305_rtpsize` and prefers
+            // `aead_aes256_gcm_rtpsize`; the old `xsalsa20_poly1305*` modes were
+            // discontinued. Only offer modes `CryptoBackend::from_mode` can actually
+            // encrypt — picking a mode the transport rejects would fail the voice
+            // session right after negotiation — and never pick one the server omitted.
+            let offered = |mode: &str| modes.iter().any(|m| m.as_str() == Some(mode));
+            match ["aead_aes256_gcm_rtpsize", "aead_xchacha20_poly1305_rtpsize"]
+                .into_iter()
+                .find(|&mode| offered(mode))
+            {
+                Some(mode) => self.selected_mode = mode.to_string(),
+                None => {
+                    error!(
+                        "[{}] Voice server offered no supported encryption mode: {:?}",
+                        self.gateway.guild_id, modes
+                    );
+                    return Some(SessionOutcome::Reconnect);
+                }
+            }
+        }
+
+        debug!(
+            "[{}] Ready: ssrc={}, mode={}",
+            self.gateway.guild_id, self.ssrc, self.selected_mode
+        );
+
+        {
+            let mut state = self.persistent_state.lock().await;
+            state.ssrc = self.ssrc;
+            state.selected_mode = Some(self.selected_mode.clone());
+        }
+
+        let target_addr = match self.udp_addr {
+            Some(a) => a,
+            None => return Some(SessionOutcome::Reconnect),
+        };
+
+        match discover_ip(&self.udp_socket, target_addr, self.ssrc).await {
+            Ok((my_ip, my_port)) => {
+                self.send_json(OpCode::SelectProtocol as u8, serde_json::json!({
+                    "protocol": "udp",
+                    "rtc_connection_id": Uuid::new_v4().to_string(),
+                    "codecs": [{"name": "opus", "type": "audio", "priority": 1000, "payload_type": 120}],
+                    "data": { "address": my_ip, "port": my_port, "mode": self.selected_mode },
+                    "address": my_ip,
+                    "port": my_port,
+                    "mode": self.selected_mode
+                }));
+
+                self.send_json(
+                    OpCode::Video as u8,
+                    serde_json::json!({"audio_ssrc": self.ssrc, "video_ssrc": 0, "rtx_ssrc": 0}),
+                );
+                self.send_json(
+                    OpCode::Speaking as u8,
+                    serde_json::json!({"speaking": 0, "delay": 0, "ssrc": self.ssrc}),
+                );
+            }
+            Err(e) => {
+                error!("[{}] IP discovery failed: {e}", self.gateway.guild_id);
+                return Some(SessionOutcome::Reconnect);
+            }
+        }
+
+        self.backoff.reset();
+        None
+    }
+
+    /// Installs the session encryption key, starts voice transport, and attempts
+    /// DAVE setup for a nonzero channel.
+    ///
+    /// Returns [`SessionOutcome::Reconnect`] for a missing or invalid key, or when
+    /// no UDP endpoint was established by READY.
+    async fn on_session_description(&mut self, d: Value) -> Option<SessionOutcome> {
+        let ka = match d["secret_key"].as_array() {
+            Some(a) if a.len() == 32 => a,
+            _ => {
+                error!(
+                    "[{}] Invalid or missing secret_key in VOICE_READY",
+                    self.gateway.guild_id
+                );
+                return Some(SessionOutcome::Reconnect);
+            }
+        };
+
+        let mut key = [0u8; 32];
+        for (i, v) in ka.iter().enumerate() {
+            if let Some(val) = v.as_u64()
+                && val <= 255
+            {
+                key[i] = val as u8;
+                continue;
+            }
+            error!(
+                "[{}] Invalid secret_key byte at index {i}",
+                self.gateway.guild_id
+            );
+            return Some(SessionOutcome::Reconnect);
+        }
+
+        self.session_key = Some(key);
+        let addr = match self.udp_addr {
+            Some(a) => a,
+            None => return Some(SessionOutcome::Reconnect),
+        };
+
+        {
+            let mut state = self.persistent_state.lock().await;
+            state.udp_addr = Some(addr);
+            state.session_key = Some(key);
+            state.ssrc = self.ssrc;
+            state.selected_mode = Some(self.selected_mode.clone());
+        }
+
+        // DAVE must be set up *before* the RTP send loop starts: the send loop
+        // encrypts every outgoing packet from the shared DAVE handler, so
+        // starting it first would emit unencrypted (and therefore rejected)
+        // packets until the session becomes ready, producing startup gaps.
+        if self.gateway.channel_id.0 > 0 {
+            let protocol_version = match parse_dave_protocol_version(&d) {
+                Ok(version) => version,
+                Err(value) => {
+                    error!(
+                        "[{}] Invalid dave_protocol_version: {value}",
+                        self.gateway.guild_id
+                    );
+                    return Some(SessionOutcome::Reconnect);
+                }
+            };
+            let mls_group_id = d["mls_group_id"].as_u64().unwrap_or(0);
+
+            let mut dave = self.dave.lock().await;
+            if protocol_version > 0 {
+                match dave.setup_session(protocol_version) {
+                    Ok(kp) => self.send_binary(26, &kp),
+                    Err(e) => {
+                        warn!(
+                            "[{}] DAVE session setup failed for protocol version {}: {e}",
+                            self.gateway.guild_id, protocol_version
+                        );
+                        dave.reset();
+                    }
+                }
+            } else {
+                dave.reset();
+            }
+            debug!(
+                "DAVE setup context: protocol_version={}, mls_group_id={}",
+                protocol_version, mls_group_id
+            );
+        }
+
+        self.start_voice(addr, key).await;
+
+        self.backoff.reset();
+        None
+    }
+
+    async fn on_resumed(&mut self) -> Option<SessionOutcome> {
+        debug!("[{}] Resumed", self.gateway.guild_id);
+
+        let (addr, key, ssrc, mode) = {
+            let state = self.persistent_state.lock().await;
+            (
+                state.udp_addr,
+                state.session_key,
+                state.ssrc,
+                state.selected_mode.clone(),
+            )
+        };
+
+        match (addr, key) {
+            (Some(addr), Some(key)) => {
+                self.udp_addr = Some(addr);
+                self.session_key = Some(key);
+                self.ssrc = ssrc;
+                if let Some(m) = mode {
+                    self.selected_mode = m;
+                }
+
+                if let Some(task) = &self.speak_task
+                    && task.is_finished()
+                {
+                    self.speak_task = None;
+                }
+
+                if self.speak_task.is_some() {
+                    debug!(
+                        "[{}] Keeping existing voice loop alive across resume",
+                        self.gateway.guild_id
+                    );
+                } else {
+                    debug!(
+                        "[{}] Starting voice loop after resume (task was dead or missing)",
+                        self.gateway.guild_id
+                    );
+                    self.start_voice(addr, key).await;
+                }
+            }
+            _ => {
+                warn!(
+                    "[{}] Resume failed: missing persistent state",
+                    self.gateway.guild_id
+                );
+                return Some(SessionOutcome::Identify);
+            }
+        }
+        None
+    }
+
+    fn on_heartbeat_ack(&self, d: Value) -> Option<SessionOutcome> {
+        let nonce = d["t"].as_u64().unwrap_or(0);
+        if let Some(rtt) = self.heartbeat.validate_ack(nonce) {
+            self.gateway.ping.store(rtt as i64, Ordering::Relaxed);
+            self.heartbeat.missed_acks.store(0, Ordering::Relaxed);
+        }
+        None
+    }
+
+    async fn on_user_connect(&mut self, d: Value) -> Option<SessionOutcome> {
+        if let Some(ids) = d["user_ids"].as_array() {
+            let mut uids = Vec::new();
+            for id in ids {
+                if let Some(uid) = id.as_str().and_then(|s| s.parse::<u64>().ok()) {
+                    self.connected_users.insert(UserId(uid));
+                    uids.push(uid);
+                }
+            }
+            if !uids.is_empty() {
+                self.dave.lock().await.add_users(&uids);
+            }
+        }
+        None
+    }
+
+    async fn on_user_disconnect(&mut self, d: Value) -> Option<SessionOutcome> {
+        if let Some(uid) = d["user_id"].as_str().and_then(|s| s.parse::<u64>().ok()) {
+            self.connected_users.remove(&UserId(uid));
+            self.dave.lock().await.remove_user(uid);
+        }
+        None
+    }
+
+    async fn on_dave_prepare_transition(&mut self, d: Value) -> Option<SessionOutcome> {
+        let Some(tid) = parse_u16_field(&d, "transition_id") else {
+            warn!(
+                "[{}] Ignoring DAVE Prepare Transition with invalid transition_id",
+                self.gateway.guild_id
+            );
+            return None;
+        };
+        let Some(ver) = parse_u16_field(&d, "protocol_version") else {
+            warn!(
+                "[{}] Ignoring DAVE Prepare Transition with invalid protocol_version",
+                self.gateway.guild_id
+            );
+            return None;
+        };
+
+        debug!(
+            "[{}] DAVE Prepare Transition: id={}, version={}",
+            self.gateway.guild_id, tid, ver
+        );
+
+        if self.dave.lock().await.prepare_transition(tid, ver) {
+            debug!(
+                "[{}] DAVE Transition Ready (tid={})",
+                self.gateway.guild_id, tid
+            );
+            self.send_json(23, serde_json::json!({ "transition_id": tid }));
+        }
+        None
+    }
+
+    async fn on_dave_execute_transition(&mut self, d: Value) -> Option<SessionOutcome> {
+        let Some(tid) = parse_u16_field(&d, "transition_id") else {
+            warn!(
+                "[{}] Ignoring DAVE Execute Transition with invalid transition_id",
+                self.gateway.guild_id
+            );
+            return None;
+        };
+        debug!(
+            "[{}] DAVE Execute Transition: id={}",
+            self.gateway.guild_id, tid
+        );
+        self.dave.lock().await.execute_transition(tid);
+        None
+    }
+
+    async fn on_dave_prepare_epoch(&mut self, d: Value) -> Option<SessionOutcome> {
+        let Some(epoch) = d["epoch"].as_u64() else {
+            warn!(
+                "[{}] Ignoring DAVE Prepare Epoch with invalid epoch",
+                self.gateway.guild_id
+            );
+            return None;
+        };
+        let Some(ver) = parse_u16_field(&d, "protocol_version") else {
+            warn!(
+                "[{}] Ignoring DAVE Prepare Epoch with invalid protocol_version",
+                self.gateway.guild_id
+            );
+            return None;
+        };
+        // Opcode 24 always names the transition it belongs to; the initial transition
+        // is 0 when the field is absent.
+        let transition_id = parse_u16_field(&d, "transition_id").unwrap_or(0);
+        debug!(
+            "[{}] DAVE Prepare Epoch: epoch={}, version={}, tid={}",
+            self.gateway.guild_id, epoch, ver, transition_id
+        );
+
+        let outcome = self.dave.lock().await.prepare_epoch(epoch, ver);
+        match outcome {
+            // epoch == 1: send the freshly generated key package.
+            EpochOutcome::KeyPackage(kp) => self.send_binary(26, &kp),
+            // epoch > 1: the MLS group is retained, so report readiness so the
+            // gateway can execute the transition instead of timing out.
+            EpochOutcome::Ready => {
+                self.send_json(23, serde_json::json!({ "transition_id": transition_id }));
+            }
+            EpochOutcome::Ignored => {}
+        }
+        None
+    }
+
+    async fn on_mls_transition(&mut self, d: Value) -> Option<SessionOutcome> {
+        let Some(tid) = parse_u16_field(&d, "transition_id") else {
+            warn!(
+                "[{}] Ignoring DAVE MLS transition with invalid transition_id",
+                self.gateway.guild_id
+            );
+            return None;
+        };
+        debug!(
+            "[{}] DAVE MLS Announce Commit Transition: tid={}",
+            self.gateway.guild_id, tid
+        );
+        let ver = d
+            .get("protocol_version")
+            .and_then(|value| value.as_u64())
+            .and_then(|value| u16::try_from(value).ok());
+        if let Some(v) = ver {
+            let mut dave = self.dave.lock().await;
+            if dave.prepare_transition(tid, v) && tid != 0 {
+                self.send_json(23, serde_json::json!({ "transition_id": tid }));
+            }
+        }
+        None
+    }
+
+    async fn start_voice(&mut self, addr: SocketAddr, key: [u8; 32]) {
+        if let Some(t) = self.speak_task.take() {
+            t.abort();
+        }
+
+        let speaking_tx = if let Some(tx) = &self.speaking_tx {
+            tx.clone()
+        } else {
+            error!(
+                "[{}] speaking_tx is missing, cannot start voice",
+                self.gateway.guild_id
+            );
+            return;
+        };
+
+        let config = SpeakConfig {
+            mixer: self.gateway.mixer.clone(),
+            socket: self.udp_socket.clone(),
+            addr,
+            ssrc: self.ssrc,
+            key,
+            mode: self.selected_mode.clone(),
+            dave: self.dave.clone(),
+            filter_chain: self.gateway.filter_chain.clone(),
+            frames_sent: self.gateway.frames_sent.clone(),
+            frames_nulled: self.gateway.frames_nulled.clone(),
+            cancel_token: self.conn_token.clone(),
+            speaking_tx,
+            persistent_state: self.persistent_state.clone(),
+        };
+
+        let guild_id = self.gateway.guild_id.clone();
+        let conn_token = self.conn_token.clone();
+        let voice_ready = self.gateway.voice_ready.clone();
+        debug!(
+            "[{guild_id}] Voice session established: ssrc={} addr={addr} mode={}",
+            self.ssrc, self.selected_mode
+        );
+        // Only from this point can audio actually reach Discord, so this — not
+        // "a voice token arrived" — is what `playerUpdate.state.connected` reports.
+        voice_ready.store(true, Ordering::Release);
+        self.speak_task = Some(tokio::spawn(async move {
+            if let Err(e) = speak_loop(config).await {
+                error!("[{guild_id}] speak_loop failed: {e}");
+                conn_token.cancel();
+            }
+            voice_ready.store(false, Ordering::Release);
+        }));
+
+        self.send_json(
+            OpCode::Video as u8,
+            serde_json::json!({"audio_ssrc": self.ssrc, "video_ssrc": 0, "rtx_ssrc": 0}),
+        );
+        self.send_json(
+            OpCode::Speaking as u8,
+            serde_json::json!({"speaking": 0, "delay": 0, "ssrc": self.ssrc}),
+        );
+    }
+
+    async fn reset_dave(&self, tid: u16) {
+        let mut dave = self.dave.lock().await;
+        self.reset_dave_locked(&mut dave, tid).await;
+    }
+
+    async fn reset_dave_locked(&self, dave: &mut DaveHandler, tid: u16) {
+        dave.reset();
+        self.send_json(31, serde_json::json!({ "transition_id": tid }));
+        if let Ok(kp) = dave.setup_session(DAVE_INITIAL_VERSION) {
+            self.send_binary(26, &kp);
+        }
+    }
+
+    fn send_json(&self, op: u8, d: Value) {
+        // Serialization of scheduled payloads is statically known-good (fixed
+        // op + object). On the impossible-but-real failure path, cancel the
+        // connection rather than panic the gateway task.
+        let Ok(text) = serde_json::to_string(&GatewayPayload { op, seq: None, d }) else {
+            self.conn_token.cancel();
+            return;
+        };
+        if self.tx.try_send(Message::Text(text.into())).is_err() {
+            self.conn_token.cancel();
+        }
+    }
+
+    fn send_binary(&self, op: u8, payload: &[u8]) {
+        let mut b = vec![op];
+        b.extend_from_slice(payload);
+        if self.tx.try_send(Message::Binary(b.into())).is_err() {
+            self.conn_token.cancel();
+        }
+    }
+}
+
+impl<'a> Drop for SessionState<'a> {
+    fn drop(&mut self) {
+        if let Some(h) = self.heartbeat_handle.take() {
+            h.abort();
+        }
+        if let Some(t) = self.speak_task.take() {
+            t.abort();
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn u16_payload_fields_reject_overflow() {
+        let payload = serde_json::json!({
+            "valid": u16::MAX,
+            "overflow": u64::from(u16::MAX) + 1,
+            "missing": null
+        });
+
+        assert_eq!(parse_u16_field(&payload, "valid"), Some(u16::MAX));
+        assert_eq!(parse_u16_field(&payload, "overflow"), None);
+        assert_eq!(parse_u16_field(&payload, "missing"), None);
+    }
+
+    #[test]
+    fn missing_dave_protocol_version_disables_dave() {
+        assert_eq!(parse_dave_protocol_version(&serde_json::json!({})), Ok(0));
+        assert_eq!(
+            parse_dave_protocol_version(&serde_json::json!({
+                "dave_protocol_version": 1
+            })),
+            Ok(1)
+        );
+        assert_eq!(
+            parse_dave_protocol_version(&serde_json::json!({
+                "dave_protocol_version": u64::from(u16::MAX) + 1
+            })),
+            Err(u64::from(u16::MAX) + 1)
+        );
+    }
+}

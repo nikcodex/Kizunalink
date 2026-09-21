@@ -1,0 +1,17 @@
+services:
+  kizunalink:
+    build: .
+    volumes:
+      # Mounted into WORKDIR (/app) so AppConfig::load() finds it. Override
+      # secrets via KIZUNA_* env vars instead of baking them into the file.
+      - ./config.toml:/app/config.toml:ro
+    ports:
+      - "2333:2333"
+    restart: unless-stopped
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp

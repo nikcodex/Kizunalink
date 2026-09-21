@@ -1,0 +1,463 @@
+// Copyright (c) 2026 nikcodex (KizunaLink)
+// Licensed under the MIT License
+
+use std::sync::Arc;
+
+use axum::{
+    extract::{Path, Query, State},
+    http::StatusCode,
+    response::{IntoResponse, Json},
+};
+
+use crate::{
+    player::{PlayerContext, PlayerUpdate, VoiceConnectionState},
+    protocol::{self},
+    server::{AppState, session::Session},
+};
+
+/// Applies a Lavalink player update and returns the resulting player state.
+///
+/// Creates the guild player when its session exists. Returns `404 Not Found` for
+/// an unknown session and rejects invalid filter or partial voice-state updates.
+pub async fn update_player(
+    Path((session_id, guild_id)): Path<(
+        kizunalink::common::types::SessionId,
+        kizunalink::common::types::GuildId,
+    )>,
+    Query(params): Query<std::collections::HashMap<String, String>>,
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<PlayerUpdate>,
+) -> impl IntoResponse {
+    tracing::debug!(
+        "PATCH /v4/sessions/{}/players/{}: track={}, encoded_track={}, identifier={}, voice_update={}, filters_update={}",
+        session_id,
+        guild_id,
+        body.track.is_some(),
+        body.encoded_track.is_some(),
+        body.identifier.is_some(),
+        body.voice.is_some(),
+        body.filters.is_some(),
+    );
+
+    let Some(session) = state.sessions.get(&session_id) else {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(kizunalink::common::KizunaLinkError::not_found(
+                "Session not found",
+                format!("/v4/sessions/{}/players/{}", session_id, guild_id),
+            )),
+        )
+            .into_response();
+    };
+
+    let no_replace = params
+        .get("noReplace")
+        .map(|v| v == "true")
+        .unwrap_or(false);
+    let player_arc = session.get_or_create_player(guild_id.clone(), state.clone());
+    let mut player = player_arc.write().await;
+
+    let loading_new_track =
+        body.track.is_some() || body.encoded_track.is_some() || body.identifier.is_some();
+
+    handle_player_state(&mut player, &body, loading_new_track, &guild_id, &session);
+
+    if let Some(filters) = body.filters.clone()
+        && let Err(e) = handle_filters(&mut player, filters, &state, &guild_id, &session).await
+    {
+        return e.into_response();
+    }
+
+    if let Some(voice) = body.voice.clone()
+        && let Err(e) = handle_voice(&mut player, voice, &session, &player_arc).await
+    {
+        return e.into_response();
+    }
+
+    if let Some(track_update) = resolve_track_update(&body) {
+        let start_time_ms = if loading_new_track {
+            body.position
+        } else {
+            None
+        };
+        // A track-bearing update bypasses the `handle_player_state` pause path
+        // (which only runs when `!loading_new_track`). Keep the actual track
+        // handle's pause state in sync instead of flipping the bare flag —
+        // `set_paused` also pauses/resumes the underlying frames.
+        if let Some(paused) = body.paused {
+            player.set_paused(paused);
+        }
+
+        apply_track_update(
+            &mut player,
+            track_update,
+            session.clone(),
+            &state,
+            no_replace,
+            body.end_time,
+            start_time_ms,
+        )
+        .await;
+    } else if let Some(et) = body.end_time {
+        player.end_time = match et {
+            kizunalink::discord::player::state::EndTime::Clear => None,
+            kizunalink::discord::player::state::EndTime::Set(val) => Some(val),
+        };
+    }
+
+    let response = player.to_player_response().await;
+    (StatusCode::OK, Json(response)).into_response()
+}
+
+fn handle_player_state(
+    player: &mut PlayerContext,
+    body: &PlayerUpdate,
+    loading_new_track: bool,
+    guild_id: &kizunalink::common::types::GuildId,
+    session: &Arc<Session>,
+) {
+    if !loading_new_track {
+        if let Some(pos) = body.position {
+            player.seek(pos);
+            if player.track.is_some() {
+                let seek_update = protocol::OutgoingMessage::PlayerUpdate {
+                    guild_id: guild_id.clone(),
+                    state: kizunalink::discord::player::PlayerState {
+                        time: kizunalink::common::utils::now_ms(),
+                        position: pos,
+                        connected: player
+                            .voice_ready
+                            .load(std::sync::atomic::Ordering::Acquire),
+                        ping: player.ping.load(std::sync::atomic::Ordering::Relaxed),
+                    },
+                };
+                let session_clone = session.clone();
+                tokio::spawn(async move {
+                    session_clone.send_message(&seek_update);
+                });
+            }
+        }
+        if let Some(paused) = body.paused {
+            player.set_paused(paused);
+        }
+    }
+
+    if let Some(vol) = body.volume {
+        player.set_volume(vol);
+    }
+}
+
+async fn handle_filters(
+    player: &mut PlayerContext,
+    filters: kizunalink::discord::player::Filters,
+    state: &AppState,
+    guild_id: &kizunalink::common::types::GuildId,
+    session: &Arc<Session>,
+) -> Result<(), (StatusCode, Json<kizunalink::common::KizunaLinkError>)> {
+    let invalid_filters =
+        kizunalink::engine::filters::validate_filters(&filters, &state.config.filters);
+    if !invalid_filters.is_empty() {
+        let message = format!(
+            "Following filters are disabled in the config: {}",
+            invalid_filters.join(", ")
+        );
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(kizunalink::common::KizunaLinkError::bad_request(
+                message,
+                format!("/v4/sessions/{}/players/{}", session.session_id, guild_id),
+            )),
+        ));
+    }
+
+    player.filters = filters;
+    let new_chain = kizunalink::engine::filters::FilterChain::from_config(&player.filters);
+    {
+        let mut lock = player.filter_chain.lock().await;
+        *lock = new_chain;
+    }
+
+    session.send_message(&protocol::OutgoingMessage::PlayerUpdate {
+        guild_id: guild_id.clone(),
+        state: kizunalink::discord::player::PlayerState {
+            time: kizunalink::common::utils::now_ms(),
+            position: player
+                .track_handle
+                .as_ref()
+                .map(|h| h.get_position())
+                .unwrap_or(player.position),
+            connected: player
+                .voice_ready
+                .load(std::sync::atomic::Ordering::Acquire),
+            ping: player.ping.load(std::sync::atomic::Ordering::Relaxed),
+        },
+    });
+
+    Ok(())
+}
+
+async fn handle_voice(
+    player: &mut PlayerContext,
+    voice: kizunalink::discord::player::VoiceState,
+    session: &Arc<Session>,
+    _player_arc: &Arc<tokio::sync::RwLock<PlayerContext>>,
+) -> Result<(), (StatusCode, Json<kizunalink::common::KizunaLinkError>)> {
+    // Discord/Lavalink signals "leave voice" as a state with a null channel.
+    // Handle it as an explicit disconnect rather than rejecting it as a partial
+    // update (which left the gateway task running with stale credentials).
+    if voice.channel_id.is_none() {
+        if let Some(task) = player.gateway_task.take() {
+            task.abort();
+        }
+        player
+            .voice_ready
+            .store(false, std::sync::atomic::Ordering::Release);
+        player.voice = VoiceConnectionState::default();
+        tracing::info!(
+            "[{}] Voice disconnect (channel_id is null); gateway task stopped",
+            player.guild_id
+        );
+        return Ok(());
+    }
+
+    if voice.token.is_empty() || voice.endpoint.is_empty() || voice.session_id.is_empty() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(kizunalink::common::KizunaLinkError::bad_request(
+                "Partial Lavalink voice state",
+                "/v4/voice_state",
+            )),
+        ));
+    }
+
+    player.voice = VoiceConnectionState {
+        token: voice.token,
+        endpoint: voice.endpoint,
+        session_id: voice.session_id,
+        channel_id: voice.channel_id,
+    };
+
+    if let Some(uid) = session.user_id {
+        // Bounded so a stalled WebSocket consumer cannot grow this queue without bound.
+        let (event_tx, mut event_rx) = tokio::sync::mpsc::channel(256);
+        let session_clone = session.clone();
+        tokio::spawn(async move {
+            while let Some(event) = event_rx.recv().await {
+                session_clone.send_message(&protocol::OutgoingMessage::Event {
+                    event: Box::new(event),
+                });
+            }
+        });
+
+        let handle = crate::server::connect_voice(crate::server::voice::VoiceConnectConfig {
+            engine: player.engine.clone(),
+            guild_id: player.guild_id.clone(),
+            user_id: uid,
+            voice: player.voice.clone(),
+            filter_chain: player.filter_chain.clone(),
+            ping: player.ping.clone(),
+            voice_ready: player.voice_ready.clone(),
+            event_tx: Some(event_tx),
+            frames_sent: player.frames_sent.clone(),
+            frames_nulled: player.frames_nulled.clone(),
+        })
+        .await;
+
+        session.register_task(handle.abort_handle());
+        if let Some(old_task) = player.gateway_task.replace(handle) {
+            old_task.abort();
+        }
+    } else {
+        // Without a user id we cannot run DAVE key exchange or build a voice
+        // session, so this update would otherwise be dropped in total silence
+        // while the node still looked healthy.
+        tracing::warn!(
+            "[{}] Dropping voice update: session has no user id (missing or unparseable User-Id header)",
+            player.guild_id
+        );
+    }
+
+    Ok(())
+}
+
+fn resolve_track_update(
+    body: &PlayerUpdate,
+) -> Option<kizunalink::discord::player::PlayerUpdateTrack> {
+    if let Some(t) = &body.track {
+        Some(t.clone())
+    } else if let Some(et) = &body.encoded_track {
+        Some(kizunalink::discord::player::PlayerUpdateTrack {
+            encoded: Some(et.clone()),
+            identifier: body.identifier.clone(),
+            user_data: None,
+        })
+    } else {
+        body.identifier
+            .as_ref()
+            .map(|ident| kizunalink::discord::player::PlayerUpdateTrack {
+                encoded: None,
+                identifier: Some(ident.clone()),
+                user_data: None,
+            })
+    }
+}
+
+async fn apply_track_update(
+    player: &mut PlayerContext,
+    track_update: kizunalink::discord::player::PlayerUpdateTrack,
+    session: Arc<Session>,
+    state: &AppState,
+    no_replace: bool,
+    end_time_input: Option<kizunalink::discord::player::state::EndTime>,
+    start_time_ms: Option<u64>,
+) {
+    if let Some(track_data) = track_update.encoded {
+        match track_data {
+            kizunalink::discord::player::state::TrackEncoded::Clear => {
+                stop_player(player, &session).await;
+            }
+            kizunalink::discord::player::state::TrackEncoded::Set(encoded) => {
+                if no_replace && player.track.is_some() {
+                    return;
+                }
+                start_playback(
+                    player,
+                    encoded,
+                    track_update.user_data,
+                    session,
+                    state,
+                    end_time_input,
+                    start_time_ms,
+                )
+                .await;
+            }
+        }
+    } else if let Some(identifier) = track_update.identifier {
+        if no_replace && player.track.is_some() {
+            return;
+        }
+        start_playback(
+            player,
+            identifier,
+            track_update.user_data,
+            session,
+            state,
+            end_time_input,
+            start_time_ms,
+        )
+        .await;
+    } else if let Some(user_data) = track_update.user_data {
+        player.user_data = user_data;
+    }
+}
+
+async fn stop_player(player: &mut PlayerContext, session: &Arc<Session>) {
+    // B08: capture the real track info *before* mutating player state so the
+    // TrackEnd event carries the actual track rather than a default stub.
+    let track_data = player.track.clone();
+    let track_info = player.track_info.clone();
+    if let Some(handle) = &player.track_handle {
+        player
+            .stop_signal
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        handle.stop();
+    }
+    {
+        let engine = player.engine.lock().await;
+        let mut mixer = engine.mixer.lock().await;
+        mixer.stop_all();
+    }
+    player.track_handle = None;
+    player.track = None;
+    player.track_info = None;
+
+    if let Some(encoded) = track_data {
+        let track_info = track_info.unwrap_or_else(|| protocol::tracks::Track {
+            encoded: encoded.clone(),
+            info: protocol::tracks::TrackInfo::default(),
+            plugin_info: serde_json::json!({}),
+            user_data: serde_json::json!({}),
+        });
+        session.send_message(&protocol::OutgoingMessage::Event {
+            event: Box::new(protocol::KizunaLinkEvent::TrackEnd {
+                guild_id: player.guild_id.clone(),
+                track: track_info,
+                reason: protocol::TrackEndReason::Stopped,
+            }),
+        });
+    }
+}
+
+async fn start_playback(
+    player: &mut PlayerContext,
+    track: String,
+    user_data: Option<serde_json::Value>,
+    session: Arc<Session>,
+    state: &AppState,
+    end_time_input: Option<kizunalink::discord::player::state::EndTime>,
+    start_time_ms: Option<u64>,
+) {
+    let end_time = match end_time_input {
+        Some(kizunalink::discord::player::state::EndTime::Set(val)) => Some(val),
+        _ => None,
+    };
+
+    // P10: track-load latency histogram (resolution + arm).
+    let load_start = std::time::Instant::now();
+    kizunalink::discord::player::start_playback(
+        player,
+        kizunalink::discord::player::manager::start::PlaybackStartConfig {
+            track,
+            session,
+            source_manager: state.source_manager.clone(),
+            lyrics_manager: state.lyrics_manager.clone(),
+            routeplanner: state.routeplanner.clone(),
+            update_interval: state.config.server.player_update_interval,
+            user_data,
+            end_time,
+            start_time_ms,
+        },
+    )
+    .await;
+    crate::monitoring::prometheus::observe_track_load(load_start.elapsed().as_secs_f64());
+}
+
+/// PATCH /v4/sessions/{sessionId}
+pub async fn update_session(
+    Path(session_id): Path<kizunalink::common::types::SessionId>,
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<protocol::SessionUpdate>,
+) -> impl IntoResponse {
+    tracing::debug!("PATCH /v4/sessions/{}: body={:?}", session_id, body);
+
+    let Some(session) = state.sessions.get(&session_id) else {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(kizunalink::common::KizunaLinkError::not_found(
+                "Session not found",
+                format!("/v4/sessions/{}", session_id),
+            )),
+        )
+            .into_response();
+    };
+
+    if let Some(resuming) = body.resuming {
+        session
+            .resumable
+            .store(resuming, std::sync::atomic::Ordering::Relaxed);
+    }
+    if let Some(timeout) = body.timeout {
+        session
+            .resume_timeout
+            .store(timeout, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    let info = protocol::SessionInfo {
+        resuming: session.resumable.load(std::sync::atomic::Ordering::Relaxed),
+        timeout: session
+            .resume_timeout
+            .load(std::sync::atomic::Ordering::Relaxed),
+    };
+
+    (StatusCode::OK, Json(info)).into_response()
+}

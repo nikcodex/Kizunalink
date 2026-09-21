@@ -1,0 +1,350 @@
+// Copyright (c) 2026 nikcodex (KizunaLink)
+// Licensed under the MIT License
+
+use std::time::{SystemTime, UNIX_EPOCH};
+
+use serde_json::{Value, json};
+use tokio::sync::RwLock;
+use uuid::Uuid;
+
+use crate::common::types::AnyResult;
+
+const CLIENT_ID: &str = "861556708454-d6dlm3lh05idd8npek18k6be8ba3oc68.apps.googleusercontent.com";
+const CLIENT_SECRET_ENV: &str = "YOUTUBE_OAUTH_CLIENT_SECRET";
+const SCOPES: &str = "http://gdata.youtube.com https://www.googleapis.com/auth/youtube";
+
+struct CachedAccessToken {
+    refresh_token: String,
+    access_token: String,
+    expires_at: u64,
+}
+
+pub struct YouTubeOAuth {
+    refresh_tokens: RwLock<Vec<String>>,
+    current_token_index: RwLock<usize>,
+    access_tokens: RwLock<Vec<Option<CachedAccessToken>>>,
+    client_secret: Option<String>,
+    client: reqwest::Client,
+}
+
+impl YouTubeOAuth {
+    pub fn new(refresh_tokens: Vec<String>) -> Self {
+        Self {
+            refresh_tokens: RwLock::new(refresh_tokens),
+            current_token_index: RwLock::new(0),
+            access_tokens: RwLock::new(Vec::new()),
+            client_secret: std::env::var(CLIENT_SECRET_ENV)
+                .ok()
+                .filter(|secret| !secret.is_empty()),
+            client: reqwest::Client::new(),
+        }
+    }
+
+    /// Interactive device-code enrollment: prints the verification box to the console so an
+    /// operator can complete it in a browser (N05 exception, and it must be visible even
+    /// when logging is misconfigured — hence `log_println!`).
+    #[allow(clippy::print_stdout)]
+    pub async fn initialize_access_token(self: std::sync::Arc<Self>) {
+        if !self.refresh_tokens.read().await.is_empty() {
+            return;
+        }
+        if self.client_secret.is_none() {
+            tracing::error!("YouTube OAuth is disabled: {CLIENT_SECRET_ENV} is not configured");
+            return;
+        }
+
+        match self.fetch_device_code().await {
+            Ok(response) => {
+                let verification_url = response["verification_url"].as_str().unwrap_or_default();
+                let user_code = response["user_code"].as_str().unwrap_or_default();
+                let device_code = response["device_code"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .to_string();
+                let interval = response["interval"].as_u64().unwrap_or(5);
+
+                let inner_width = 60;
+                let top_border = format!("  ┌{}┐", "─".repeat(inner_width));
+                let sep_border = format!("  ├{}┤", "─".repeat(inner_width));
+                let bot_border = format!("  └{}┘", "─".repeat(inner_width));
+
+                let warning = "!!! USE A BURNER ACCOUNT FOR YOUTUBE OAUTH !!!";
+                let warning_pad = inner_width.saturating_sub(warning.len());
+                let warning_left = warning_pad / 2;
+                let warning_right = warning_pad - warning_left;
+
+                crate::log_println!("\n\x1b[1;33m{}\x1b[0m", top_border);
+                crate::log_println!(
+                    "\x1b[1;33m  │\x1b[0m{:left$}\x1b[1;31m{}\x1b[0m{:right$}\x1b[1;33m│\x1b[0m",
+                    "",
+                    warning,
+                    "",
+                    left = warning_left,
+                    right = warning_right
+                );
+                crate::log_println!("\x1b[1;33m{}\x1b[0m", sep_border);
+
+                let s1_prefix = " 1. Visit: ";
+                let s1_padding =
+                    inner_width.saturating_sub(s1_prefix.len() + verification_url.len());
+                crate::log_println!(
+                    "\x1b[1;33m  │\x1b[0m\x1b[1;36m{}\x1b[0m\x1b[4;34m{}\x1b[0m{:pad$}\x1b[1;33m│\x1b[0m",
+                    s1_prefix,
+                    verification_url,
+                    "",
+                    pad = s1_padding
+                );
+
+                let s2_prefix = " 2. Enter code: ";
+                let s2_code = format!(" {} ", user_code);
+                let s2_padding = inner_width.saturating_sub(s2_prefix.len() + s2_code.len());
+                crate::log_println!(
+                    "\x1b[1;33m  │\x1b[0m\x1b[1;36m{}\x1b[0m\x1b[1;42;30m{}\x1b[0m{:pad$}\x1b[1;33m│\x1b[0m",
+                    s2_prefix,
+                    s2_code,
+                    "",
+                    pad = s2_padding
+                );
+
+                crate::log_println!("\x1b[1;33m{}\x1b[0m\n", bot_border);
+
+                let oauth = self.clone();
+                tokio::spawn(async move {
+                    oauth.poll_for_token(device_code, interval).await;
+                });
+            }
+            Err(e) => {
+                tracing::error!("Failed to fetch YouTube device code: {}", e);
+            }
+        }
+    }
+
+    fn client_secret(&self) -> AnyResult<&str> {
+        self.client_secret
+            .as_deref()
+            .ok_or_else(|| format!("{CLIENT_SECRET_ENV} is not configured").into())
+    }
+
+    async fn fetch_device_code(&self) -> AnyResult<Value> {
+        let res = self
+            .client
+            .post("https://www.youtube.com/o/oauth2/device/code")
+            .json(&json!({
+                "client_id": CLIENT_ID,
+                "scope": SCOPES,
+                "device_id": Uuid::new_v4().to_string().replace("-", ""),
+                "device_model": "ytlr::"
+            }))
+            .send()
+            .await?;
+
+        Ok(res.json().await?)
+    }
+
+    #[allow(clippy::print_stdout)] // interactive OAuth flow console output (see above)
+    async fn poll_for_token(&self, device_code: String, interval: u64) {
+        let mut interval_timer = tokio::time::interval(std::time::Duration::from_secs(interval));
+        loop {
+            interval_timer.tick().await;
+
+            match self
+                .fetch_refresh_token_from_device_code(&device_code)
+                .await
+            {
+                Ok(response) => {
+                    if let Some(error) = response["error"].as_str() {
+                        match error {
+                            "authorization_pending" => continue,
+                            "slow_down" => {
+                                interval_timer = tokio::time::interval(
+                                    std::time::Duration::from_secs(interval + 5),
+                                );
+                                continue;
+                            }
+                            "expired_token" => {
+                                tracing::error!(
+                                    "OAUTH INTEGRATION: The device token has expired. OAuth integration has been canceled."
+                                );
+                                break;
+                            }
+                            "access_denied" => {
+                                tracing::error!(
+                                    "OAUTH INTEGRATION: Account linking was denied. OAuth integration has been canceled."
+                                );
+                                break;
+                            }
+                            _ => {
+                                tracing::error!("Unhandled OAuth2 error: {}", error);
+                                break;
+                            }
+                        }
+                    }
+
+                    if let Some(refresh_token) = response["refresh_token"].as_str() {
+                        let mut tokens = self.refresh_tokens.write().await;
+                        tokens.push(refresh_token.to_string());
+                        crate::log_println!(
+                            "\x1b[1;32mOAUTH INTEGRATION: Token retrieved successfully!\x1b[0m"
+                        );
+                        break;
+                    }
+                }
+                Err(e) => {
+                    crate::log_println!(
+                        "\x1b[1;31mFailed to fetch YouTube OAuth2 token:\x1b[0m {}",
+                        e
+                    );
+                    break;
+                }
+            }
+        }
+    }
+
+    async fn fetch_refresh_token_from_device_code(&self, device_code: &str) -> AnyResult<Value> {
+        let client_secret = self.client_secret()?;
+        let res = self
+            .client
+            .post("https://www.youtube.com/o/oauth2/token")
+            .json(&json!({
+                "client_id": CLIENT_ID,
+                "client_secret": client_secret,
+                "code": device_code,
+                "grant_type": "http://oauth.net/grant_type/device/1.0"
+            }))
+            .send()
+            .await?;
+
+        Ok(res.json().await?)
+    }
+
+    pub async fn get_access_token(&self, idx: usize) -> Option<String> {
+        let (cache_index, refresh_token) = {
+            let tokens = self.refresh_tokens.read().await;
+            let max_tokens = tokens.len();
+            if max_tokens == 0 {
+                return None;
+            }
+
+            let cache_index = idx % max_tokens;
+            let refresh_token = tokens[cache_index].clone();
+            (cache_index, refresh_token)
+        };
+
+        if refresh_token.is_empty() {
+            return None;
+        }
+
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_or(0, |duration| duration.as_secs());
+
+        if let Some(Some(cached)) = self.access_tokens.read().await.get(cache_index)
+            && cached.refresh_token == refresh_token
+            && now < cached.expires_at
+        {
+            return Some(cached.access_token.clone());
+        }
+
+        match self.refresh_token_request(&refresh_token).await {
+            Ok((new_token, expires_in)) => {
+                let expires_at = now.saturating_add(expires_in.saturating_sub(30));
+                let mut cache = self.access_tokens.write().await;
+                if cache.len() <= cache_index {
+                    cache.resize_with(cache_index + 1, || None);
+                }
+                cache[cache_index] = Some(CachedAccessToken {
+                    refresh_token,
+                    access_token: new_token.clone(),
+                    expires_at,
+                });
+                Some(new_token)
+            }
+            Err(e) => {
+                tracing::error!(
+                    "Failed to refresh YouTube token for index {}: {}",
+                    cache_index,
+                    e
+                );
+                None
+            }
+        }
+    }
+
+    async fn refresh_token_request(&self, refresh_token: &str) -> AnyResult<(String, u64)> {
+        let client_secret = self.client_secret()?;
+        let res = self
+            .client
+            .post("https://www.youtube.com/o/oauth2/token")
+            .json(&json!({
+                "client_id": CLIENT_ID,
+                "client_secret": client_secret,
+                "refresh_token": refresh_token,
+                "grant_type": "refresh_token"
+            }))
+            .send()
+            .await?;
+
+        let status = res.status();
+        if status == 200 {
+            let body: Value = res.json().await?;
+            if let Some(access_token) = body.get("access_token").and_then(|t| t.as_str()) {
+                let expires_in = body
+                    .get("expires_in")
+                    .and_then(|e| e.as_u64())
+                    .unwrap_or(3600);
+                return Ok((access_token.to_string(), expires_in));
+            }
+        }
+
+        Err(format!("OAuth refresh failed with status: {}", status).into())
+    }
+
+    pub async fn get_auth_header(&self) -> Option<String> {
+        let tokens = self.refresh_tokens.read().await;
+        if tokens.is_empty() {
+            return None;
+        }
+        let num_tokens = tokens.len();
+
+        let idx = {
+            let mut current_idx = self.current_token_index.write().await;
+            let val = *current_idx;
+            *current_idx = (val + 1) % num_tokens;
+            val
+        };
+
+        drop(tokens); // Release read lock before calling get_access_token which may acquire it
+
+        self.get_access_token(idx)
+            .await
+            .map(|t| format!("Bearer {}", t))
+    }
+
+    pub async fn get_refresh_tokens(&self) -> Vec<String> {
+        self.refresh_tokens.read().await.clone()
+    }
+
+    pub async fn refresh_with_token(&self, refresh_token: &str) -> AnyResult<serde_json::Value> {
+        let client_secret = self.client_secret()?;
+        let res = self
+            .client
+            .post("https://www.youtube.com/o/oauth2/token")
+            .json(&json!({
+                "client_id": CLIENT_ID,
+                "client_secret": client_secret,
+                "refresh_token": refresh_token,
+                "grant_type": "refresh_token"
+            }))
+            .send()
+            .await?;
+
+        let status = res.status();
+        let body: serde_json::Value = res.json().await?;
+
+        if status.is_success() {
+            Ok(body)
+        } else {
+            Err(format!("OAuth refresh failed: status={}, body={}", status, body).into())
+        }
+    }
+}

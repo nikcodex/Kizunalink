@@ -1,0 +1,571 @@
+// Copyright (c) 2026 nikcodex (KizunaLink)
+// Licensed under the MIT License
+
+use std::{
+    collections::{HashMap, HashSet},
+    num::NonZeroU16,
+};
+
+use davey::{DaveSession, ProposalsOperationType};
+use tracing::{debug, trace, warn};
+
+use crate::{
+    common::types::{AnyError, AnyResult, ChannelId, UserId},
+    discord::gateway::{
+        constants::{
+            DAVE_INITIAL_VERSION, MAX_DAVE_CONTROL_PAYLOAD_BYTES, MAX_PENDING_PROPOSALS,
+            SILENCE_FRAME,
+        },
+        session::types::map_boxed_err,
+    },
+};
+
+const DAVE_MIN_VERSION: NonZeroU16 = match NonZeroU16::new(DAVE_INITIAL_VERSION) {
+    Some(v) => v,
+    // B24: give a clear const-panic message if someone sets DAVE_INITIAL_VERSION = 0.
+    None => panic!("DAVE_INITIAL_VERSION must be non-zero"),
+};
+
+/// What the caller must do in response to `dave_protocol_prepare_epoch` (24).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EpochOutcome {
+    /// The MLS group is being created (`epoch == 1`): send this key package as
+    /// `dave_mls_key_package` (opcode 26).
+    KeyPackage(Vec<u8>),
+    /// The existing MLS group is retained and only the protocol version is
+    /// changing: report readiness for the pending transition (opcode 23). No key
+    /// package is exchanged in this case.
+    Ready,
+    /// The message was unsupported or arrived before session setup; do nothing.
+    Ignored,
+}
+
+pub struct DaveHandler {
+    session: Option<DaveSession>,
+    user_id: UserId,
+    channel_id: ChannelId,
+    protocol_version: u16,
+    prepared_protocol_version: u16,
+    pending_transitions: HashMap<u16, u16>,
+    external_sender_set: bool,
+    saved_external_sender: Option<Vec<u8>>,
+    pending_proposals: Vec<Vec<u8>>,
+    pending_handshake: Vec<(Vec<u8>, bool)>,
+    was_ready: bool,
+    recognized_users: HashSet<UserId>,
+    cached_user_ids: Vec<u64>,
+}
+
+impl DaveHandler {
+    pub fn new(user_id: UserId, channel_id: ChannelId) -> Self {
+        let mut recognized_users = HashSet::new();
+        recognized_users.insert(user_id);
+        Self {
+            session: None,
+            user_id,
+            channel_id,
+            protocol_version: 0,
+            prepared_protocol_version: 0,
+            pending_transitions: HashMap::new(),
+            external_sender_set: false,
+            saved_external_sender: None,
+            pending_proposals: Vec::new(),
+            pending_handshake: Vec::new(),
+            was_ready: false,
+            recognized_users,
+            cached_user_ids: vec![user_id.0],
+        }
+    }
+
+    pub fn add_users(&mut self, uids: &[u64]) {
+        for &uid in uids {
+            self.recognized_users.insert(UserId(uid));
+        }
+        self.update_user_cache();
+        debug!("DAVE adding users: {:?}", uids);
+    }
+
+    pub fn remove_user(&mut self, uid: u64) {
+        if self.recognized_users.remove(&UserId(uid)) {
+            self.update_user_cache();
+        }
+        debug!("DAVE removing user: {}", uid);
+    }
+
+    fn update_user_cache(&mut self) {
+        self.cached_user_ids.clear();
+        self.cached_user_ids
+            .extend(self.recognized_users.iter().map(|u| u.0));
+        self.cached_user_ids.sort_unstable();
+    }
+
+    pub fn protocol_version(&self) -> u16 {
+        self.protocol_version
+    }
+
+    pub fn setup_session(&mut self, version: u16) -> AnyResult<Vec<u8>> {
+        if version == 0 {
+            self.reset();
+            return Ok(Vec::new());
+        }
+        if version != DAVE_INITIAL_VERSION {
+            return Err(map_boxed_err(format!(
+                "Unsupported DAVE protocol version: {version}"
+            )));
+        }
+
+        let nz_version = NonZeroU16::new(version).unwrap_or(DAVE_MIN_VERSION);
+
+        let reusing_session = self.session.is_some();
+        let session = if let Some(s) = &mut self.session {
+            if self.protocol_version == 0 {
+                s.reinit(nz_version, self.user_id.0, self.channel_id.0, None)
+                    .map_err(map_boxed_err)?;
+            } else {
+                s.reinit_for_transition(nz_version, self.user_id.0, self.channel_id.0, None)
+                    .map_err(map_boxed_err)?;
+            }
+            s
+        } else {
+            let session = DaveSession::new(nz_version, self.user_id.0, self.channel_id.0, None)
+                .map_err(map_boxed_err)?;
+            self.session = Some(session);
+            self.session
+                .as_mut()
+                .expect("session was just inserted above")
+        };
+
+        self.prepared_protocol_version = version;
+        self.external_sender_set = reusing_session && self.saved_external_sender.is_some();
+        self.pending_proposals.clear();
+        self.pending_handshake.clear();
+        self.was_ready = false;
+
+        debug!("DAVE session setup (v{})", version);
+        let key_package = session.create_key_package().map_err(map_boxed_err)?;
+
+        if self.external_sender_set {
+            debug!("DAVE retained external sender while preparing new epoch");
+        }
+
+        Ok(key_package)
+    }
+
+    pub fn reset(&mut self) {
+        self.protocol_version = 0;
+        self.prepared_protocol_version = 0;
+        self.pending_transitions.clear();
+        self.external_sender_set = false;
+        self.saved_external_sender = None;
+        self.pending_proposals.clear();
+        self.pending_handshake.clear();
+        self.was_ready = false;
+        self.session = None;
+        debug!("DAVE session reset to plaintext");
+    }
+
+    pub fn prepare_transition(&mut self, transition_id: u16, protocol_version: u16) -> bool {
+        if protocol_version != 0 && protocol_version != DAVE_INITIAL_VERSION {
+            warn!("Ignoring unsupported DAVE transition protocol version: {protocol_version}");
+            return false;
+        }
+
+        self.pending_transitions
+            .insert(transition_id, protocol_version);
+
+        if transition_id == 0 {
+            self.execute_transition(0);
+            return false;
+        }
+        true
+    }
+
+    pub fn execute_transition(&mut self, transition_id: u16) {
+        if let Some(next_version) = self.pending_transitions.remove(&transition_id) {
+            if let Some(session) = &mut self.session {
+                if next_version == 0 {
+                    session.discard_transition(transition_id);
+                } else {
+                    session.execute_transition(transition_id);
+                }
+            }
+            self.protocol_version = next_version;
+            trace!(
+                "DAVE transition {} executed (v{})",
+                transition_id, next_version
+            );
+        }
+    }
+
+    /// Handles `dave_protocol_prepare_epoch` (24).
+    ///
+    /// The DAVE whitepaper distinguishes two cases:
+    ///
+    /// - `epoch == 1`: the MLS group is being created or re-created, so the client
+    ///   must generate and send a fresh key package (opcode 26). Readiness (opcode
+    ///   23) is reported later, once the group's commit has been processed.
+    /// - `epoch > 1`: the announced epoch is the current one, so the MLS group is
+    ///   retained and only the protocol version is changing. No key package is
+    ///   exchanged; the client prepares the new version and reports readiness
+    ///   immediately (opcode 23).
+    ///
+    /// Previously the `epoch > 1` case was dropped without a reply, which stalled the
+    /// protocol-version transition until the gateway timed out.
+    pub fn prepare_epoch(&mut self, epoch: u64, protocol_version: u16) -> EpochOutcome {
+        if protocol_version == 0 || protocol_version > DAVE_INITIAL_VERSION {
+            warn!("Ignoring unsupported DAVE epoch protocol version: {protocol_version}");
+            return EpochOutcome::Ignored;
+        }
+
+        if epoch == 1 {
+            return match self.setup_session(protocol_version) {
+                Ok(kp) => EpochOutcome::KeyPackage(kp),
+                Err(e) => {
+                    warn!("DAVE prepare_epoch setup failed: {e}");
+                    EpochOutcome::Ignored
+                }
+            };
+        }
+
+        if epoch == 0 {
+            warn!("Ignoring DAVE Prepare Epoch with invalid epoch 0");
+            return EpochOutcome::Ignored;
+        }
+
+        if self.session.is_none() {
+            warn!("DAVE Prepare Epoch (epoch {epoch}) received before session setup; ignoring");
+            return EpochOutcome::Ignored;
+        }
+
+        // The group is retained: record the version we are transitioning to and let
+        // the caller announce readiness so the gateway can execute the transition.
+        self.prepared_protocol_version = protocol_version;
+        debug!("DAVE epoch {epoch} retains the MLS group; pending protocol v{protocol_version}");
+        EpochOutcome::Ready
+    }
+
+    pub fn process_external_sender(&mut self, data: &[u8]) -> AnyResult<Vec<Vec<u8>>> {
+        if data.len() > MAX_DAVE_CONTROL_PAYLOAD_BYTES {
+            return Err(map_boxed_err(format!(
+                "DAVE external sender payload exceeds {MAX_DAVE_CONTROL_PAYLOAD_BYTES} bytes"
+            )));
+        }
+
+        let mut responses = Vec::new();
+
+        if self.external_sender_set && self.saved_external_sender.as_deref() == Some(data) {
+            trace!("DAVE ignoring unchanged external sender package");
+            return Ok(responses);
+        }
+
+        if let Some(session) = &mut self.session {
+            session.set_external_sender(data).map_err(map_boxed_err)?;
+            self.external_sender_set = true;
+            self.saved_external_sender = Some(data.to_vec());
+
+            if !self.pending_proposals.is_empty() {
+                debug!(
+                    "DAVE processing {} buffered proposals",
+                    self.pending_proposals.len()
+                );
+                for prop_data in std::mem::take(&mut self.pending_proposals) {
+                    match Self::do_process_proposals(session, &prop_data, &self.cached_user_ids) {
+                        Ok(Some(res)) => responses.push(res),
+                        Ok(None) => {}
+                        Err(e) => return Err(e),
+                    }
+                }
+            }
+
+            if !self.pending_handshake.is_empty() {
+                debug!(
+                    "DAVE processing {} buffered handshake messages",
+                    self.pending_handshake.len()
+                );
+                for (handshake_data, is_welcome) in std::mem::take(&mut self.pending_handshake) {
+                    self.do_process_handshake(&handshake_data, is_welcome)?;
+                }
+            }
+        }
+        Ok(responses)
+    }
+
+    pub fn process_welcome(&mut self, data: &[u8]) -> AnyResult<u16> {
+        self.process_handshake_message(data, true)
+    }
+
+    pub fn process_commit(&mut self, data: &[u8]) -> AnyResult<u16> {
+        self.process_handshake_message(data, false)
+    }
+
+    fn process_handshake_message(&mut self, data: &[u8], is_welcome: bool) -> AnyResult<u16> {
+        let tag = if is_welcome { "welcome" } else { "commit" };
+        if data.len() < 2 {
+            return Err(short_payload_err(&format!("DAVE {tag}")));
+        }
+        if data.len() > MAX_DAVE_CONTROL_PAYLOAD_BYTES {
+            return Err(map_boxed_err(format!(
+                "DAVE {tag} payload exceeds {MAX_DAVE_CONTROL_PAYLOAD_BYTES} bytes"
+            )));
+        }
+
+        let transition_id = u16::from_be_bytes([data[0], data[1]]);
+
+        if !self.external_sender_set {
+            if self.pending_handshake.len() < MAX_PENDING_PROPOSALS {
+                debug!("DAVE buffering {tag} — external sender not set");
+                self.pending_handshake.push((data.to_vec(), is_welcome));
+            } else {
+                warn!("DAVE handshake buffer full, dropping {tag}");
+            }
+            return Ok(transition_id);
+        }
+
+        self.do_process_handshake(data, is_welcome)?;
+
+        Ok(transition_id)
+    }
+
+    fn do_process_handshake(&mut self, data: &[u8], is_welcome: bool) -> AnyResult<()> {
+        let transition_id = u16::from_be_bytes([data[0], data[1]]);
+        let transition_version = if transition_id == 0 {
+            self.prepared_protocol_version
+        } else {
+            self.pending_transitions
+                .get(&transition_id)
+                .copied()
+                .unwrap_or(self.prepared_protocol_version)
+        };
+
+        if let Some(session) = &mut self.session {
+            if transition_id == 0 {
+                if is_welcome {
+                    session.process_welcome(&data[2..]).map_err(map_boxed_err)?;
+                } else {
+                    session.process_commit(&data[2..]).map_err(map_boxed_err)?;
+                }
+                self.protocol_version = transition_version;
+            } else if is_welcome {
+                session
+                    .process_welcome_for_transition(&data[2..], transition_id)
+                    .map_err(map_boxed_err)?;
+            } else {
+                session
+                    .process_commit_for_transition(&data[2..], transition_id)
+                    .map_err(map_boxed_err)?;
+            }
+
+            if transition_id != 0 {
+                self.pending_transitions
+                    .insert(transition_id, transition_version);
+            }
+            debug!(
+                "DAVE {} processed (tid {})",
+                if is_welcome { "welcome" } else { "commit" },
+                transition_id
+            );
+        }
+        Ok(())
+    }
+
+    pub fn process_proposals(&mut self, data: &[u8]) -> AnyResult<Option<Vec<u8>>> {
+        if data.is_empty() {
+            return Err(short_payload_err("DAVE proposals"));
+        }
+        if data.len() > MAX_DAVE_CONTROL_PAYLOAD_BYTES {
+            return Err(map_boxed_err(format!(
+                "DAVE proposals payload exceeds {MAX_DAVE_CONTROL_PAYLOAD_BYTES} bytes"
+            )));
+        }
+
+        if !self.external_sender_set {
+            if self.pending_proposals.len() < MAX_PENDING_PROPOSALS {
+                debug!("DAVE buffering proposal — external sender not set");
+                self.pending_proposals.push(data.to_vec());
+            } else {
+                warn!("DAVE proposal buffer full, dropping proposal");
+            }
+            return Ok(None);
+        }
+
+        let session = match &mut self.session {
+            Some(s) => s,
+            None => return Ok(None),
+        };
+        Self::do_process_proposals(session, data, &self.cached_user_ids)
+    }
+
+    fn do_process_proposals(
+        session: &mut DaveSession,
+        data: &[u8],
+        user_ids: &[u64],
+    ) -> AnyResult<Option<Vec<u8>>> {
+        let op_type = match data[0] {
+            0 => ProposalsOperationType::APPEND,
+            1 => ProposalsOperationType::REVOKE,
+            raw => return Err(map_boxed_err(format!("Unknown DAVE proposals op: {raw}"))),
+        };
+
+        let result = session
+            .process_proposals(op_type, &data[1..], Some(user_ids))
+            .map_err(map_boxed_err)?;
+
+        if let Some(cw) = result {
+            let mut out = cw.commit;
+            if let Some(w) = cw.welcome {
+                out.extend_from_slice(&w);
+            }
+            return Ok(Some(out));
+        }
+        Ok(None)
+    }
+
+    pub fn encrypt_opus(&mut self, packet: &[u8]) -> AnyResult<Vec<u8>> {
+        if packet == SILENCE_FRAME || self.protocol_version == 0 {
+            return Ok(packet.to_vec());
+        }
+
+        if let Some(session) = &mut self.session {
+            let is_ready = session.is_ready();
+
+            if is_ready != self.was_ready {
+                if is_ready {
+                    debug!("DAVE session (v{}) is READY", self.protocol_version);
+                } else {
+                    warn!("DAVE session (v{}) LOST readiness", self.protocol_version);
+                }
+                self.was_ready = is_ready;
+            }
+
+            if is_ready {
+                return session
+                    .encrypt_opus(packet)
+                    .map(|c| c.into_owned())
+                    .map_err(map_boxed_err);
+            }
+        }
+
+        Ok(packet.to_vec())
+    }
+
+    pub fn voice_privacy_code(&self) -> Option<String> {
+        self.session
+            .as_ref()
+            .and_then(|s| s.voice_privacy_code().map(|c| c.to_string()))
+    }
+}
+
+#[inline]
+fn short_payload_err(context: &str) -> AnyError {
+    map_boxed_err(format!("Invalid {context} payload: too short"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::common::types::{ChannelId, UserId};
+
+    #[test]
+    fn test_handshake_buffering_logic() {
+        let mut handler = DaveHandler::new(UserId(1), ChannelId(1));
+
+        // Buffering should happen if external_sender_set is false
+        let welcome_data = vec![0, 42, 1, 2, 3]; // tid 42
+        let res = handler.process_welcome(&welcome_data);
+        assert!(res.is_ok());
+        assert_eq!(res.unwrap(), 42);
+        assert_eq!(handler.pending_handshake.len(), 1);
+
+        let commit_data = vec![0, 43, 4, 5, 6]; // tid 43
+        let res = handler.process_commit(&commit_data);
+        assert!(res.is_ok());
+        assert_eq!(res.unwrap(), 43);
+        assert_eq!(handler.pending_handshake.len(), 2);
+
+        // setup_session should clear buffers
+        handler.setup_session(1).unwrap();
+        assert_eq!(handler.pending_handshake.len(), 0);
+        assert!(!handler.external_sender_set);
+
+        // Buffering again after setup
+        handler.process_welcome(&welcome_data).unwrap();
+        assert_eq!(handler.pending_handshake.len(), 1);
+
+        // reset should clear buffers
+        handler.reset();
+        assert_eq!(handler.pending_handshake.len(), 0);
+    }
+
+    #[test]
+    fn epoch_one_creates_a_group_while_higher_epochs_only_report_readiness() {
+        let mut handler = DaveHandler::new(UserId(1), ChannelId(1));
+
+        // epoch == 1 asks for (re-)creation: a key package must be sent.
+        let outcome = handler.prepare_epoch(1, DAVE_INITIAL_VERSION);
+        assert!(matches!(outcome, EpochOutcome::KeyPackage(_)));
+        assert!(handler.session.is_some());
+
+        // epoch > 1 retains the group and only reports readiness to transition.
+        assert_eq!(
+            handler.prepare_epoch(4, DAVE_INITIAL_VERSION),
+            EpochOutcome::Ready
+        );
+
+        // Invalid epochs and unsupported versions are ignored, never "ready".
+        assert_eq!(
+            handler.prepare_epoch(0, DAVE_INITIAL_VERSION),
+            EpochOutcome::Ignored
+        );
+        assert_eq!(
+            handler.prepare_epoch(4, DAVE_INITIAL_VERSION + 1),
+            EpochOutcome::Ignored
+        );
+        assert_eq!(handler.prepare_epoch(1, 0), EpochOutcome::Ignored);
+    }
+
+    #[test]
+    fn protocol_version_changes_only_when_transition_executes() {
+        let mut handler = DaveHandler::new(UserId(1), ChannelId(1));
+
+        handler.setup_session(1).unwrap();
+        assert_eq!(handler.protocol_version(), 0);
+
+        assert!(handler.prepare_transition(42, 1));
+        assert_eq!(handler.protocol_version(), 0);
+
+        handler.execute_transition(42);
+        assert_eq!(handler.protocol_version(), 1);
+    }
+
+    #[test]
+    fn unsupported_transition_versions_are_not_acknowledged() {
+        let mut handler = DaveHandler::new(UserId(1), ChannelId(1));
+
+        assert!(!handler.prepare_transition(42, 2));
+        assert!(!handler.pending_transitions.contains_key(&42));
+        assert!(handler.setup_session(2).is_err());
+    }
+
+    #[test]
+    fn preparing_replacement_epoch_keeps_active_protocol_version() {
+        let mut handler = DaveHandler::new(UserId(1), ChannelId(1));
+        handler.protocol_version = 1;
+        assert_eq!(handler.protocol_version(), 1);
+
+        handler.setup_session(1).unwrap();
+        assert_eq!(handler.protocol_version(), 1);
+        assert_eq!(handler.prepared_protocol_version, 1);
+    }
+
+    #[test]
+    fn rejects_oversized_control_payloads_before_buffering() {
+        let mut handler = DaveHandler::new(UserId(1), ChannelId(1));
+        let oversized = vec![0; MAX_DAVE_CONTROL_PAYLOAD_BYTES + 1];
+
+        assert!(handler.process_external_sender(&oversized).is_err());
+        assert!(handler.process_proposals(&oversized).is_err());
+        assert!(handler.process_welcome(&oversized).is_err());
+        assert!(handler.pending_handshake.is_empty());
+        assert!(handler.pending_proposals.is_empty());
+    }
+}

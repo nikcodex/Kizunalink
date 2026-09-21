@@ -1,0 +1,263 @@
+// Copyright (c) 2026 nikcodex (KizunaLink)
+// Licensed under the MIT License
+
+use std::sync::{Arc, atomic::Ordering};
+
+use tracing::warn;
+
+use crate::discord::player::manager::lyrics::sync_lyrics;
+use crate::{
+    common::types::GuildId,
+    discord::player::state::PlayerState,
+    engine::playback::{PlaybackState, TrackHandle},
+    lavalink::protocol::{
+        self,
+        events::{KizunaLinkEvent, TrackEndReason, TrackException},
+        models::LyricsData,
+        tracks::Track,
+    },
+};
+
+pub struct MonitorCtx {
+    pub guild_id: GuildId,
+    pub handle: TrackHandle,
+    pub err_rx: flume::Receiver<String>,
+    pub session: Arc<dyn crate::common::server_hooks::SessionContext>,
+    pub track: Track,
+    pub stop_signal: Arc<std::sync::atomic::AtomicBool>,
+    pub ping: Arc<std::sync::atomic::AtomicI64>,
+    /// Mirrors `PlayerContext::voice_ready` so updates report the real voice
+    /// socket state instead of a hardcoded `true`.
+    pub voice_ready: Arc<std::sync::atomic::AtomicBool>,
+    pub stuck_threshold_ms: u64,
+    pub update_every_n: u64,
+    pub lyrics_subscribed: Arc<std::sync::atomic::AtomicBool>,
+    pub lyrics_data: Arc<tokio::sync::Mutex<Option<LyricsData>>>,
+    pub last_lyric_index: Arc<std::sync::atomic::AtomicI64>,
+    pub sponsorblock: Arc<super::sponsorblock::SponsorBlockState>,
+    pub sponsorblock_enabled: bool,
+    pub end_time_ms: Option<u64>,
+}
+
+pub async fn monitor_loop(ctx: MonitorCtx) {
+    let mut interval = tokio::time::interval(std::time::Duration::from_millis(500));
+    let mut tick: u64 = 0;
+    let mut last_pos = ctx.handle.get_position();
+    let mut last_pos_changed_at = std::time::Instant::now();
+    let mut stuck_fired = false;
+    let mut buffering_started_at: Option<std::time::Instant> = None;
+
+    loop {
+        interval.tick().await;
+        tick = tick.wrapping_add(1);
+
+        if ctx.stop_signal.load(Ordering::Acquire) {
+            break;
+        }
+
+        let state = ctx.handle.get_state();
+
+        if state == PlaybackState::Stopped {
+            handle_playback_stopped(&ctx).await;
+            break;
+        }
+
+        let mut cur_pos = ctx.handle.get_position();
+
+        if let Some(end_ms) = ctx.end_time_ms
+            && cur_pos >= end_ms
+            && state == PlaybackState::Playing
+        {
+            handle_track_end_marker(&ctx).await;
+            break;
+        }
+
+        if state == PlaybackState::Playing {
+            if !ctx.voice_ready.load(Ordering::Acquire) {
+                // Without a voice transport there is nowhere for audio to go, so a stalled
+                // position is not a stuck track — upstream Lavalink does not even start a
+                // track until the voice connection is ready. Reporting `trackStuck` here
+                // replaces the real cause (a failed voice connection, which the gateway logs)
+                // with a misleading playback error. Keep the timer fresh so a genuine stall is
+                // still caught promptly once the connection comes up.
+                last_pos_changed_at = std::time::Instant::now();
+                buffering_started_at = None;
+                stuck_fired = false;
+            } else if cur_pos != last_pos {
+                last_pos_changed_at = std::time::Instant::now();
+                buffering_started_at = None;
+                stuck_fired = false;
+            } else if ctx.handle.is_buffering() {
+                if buffering_started_at.is_none() {
+                    buffering_started_at = Some(std::time::Instant::now());
+                }
+            } else {
+                buffering_started_at = None;
+            }
+
+            if !stuck_fired {
+                stuck_fired =
+                    check_stuck(&ctx, cur_pos, last_pos_changed_at, buffering_started_at).await;
+            }
+        } else {
+            last_pos_changed_at = std::time::Instant::now();
+            buffering_started_at = None;
+        }
+
+        last_pos = cur_pos;
+
+        if tick.is_multiple_of(ctx.update_every_n) {
+            send_player_update(&ctx, cur_pos);
+        }
+
+        if ctx.lyrics_subscribed.load(Ordering::Relaxed) {
+            sync_lyrics(
+                &ctx.guild_id,
+                cur_pos,
+                &ctx.last_lyric_index,
+                &ctx.lyrics_data,
+                ctx.session.as_ref(),
+            )
+            .await;
+        }
+
+        if ctx.sponsorblock_enabled
+            && state == PlaybackState::Playing
+            && let Some(target_ms) = super::sponsorblock::check_for_skip(
+                &ctx.sponsorblock,
+                &ctx.guild_id,
+                cur_pos,
+                ctx.session.as_ref(),
+            )
+            .await
+        {
+            tracing::info!(
+                "[{}] SponsorBlock: seeking {}ms → {}ms",
+                ctx.guild_id,
+                cur_pos,
+                target_ms
+            );
+            ctx.handle.seek(target_ms);
+            cur_pos = target_ms;
+        }
+    }
+}
+
+async fn handle_playback_stopped(ctx: &MonitorCtx) {
+    if ctx.stop_signal.load(Ordering::Acquire) {
+        return;
+    }
+
+    let reason = match ctx.err_rx.try_recv() {
+        Ok(err) => {
+            warn!("[{}] mid-playback decoder error: {}", ctx.guild_id, err);
+            ctx.session.send_message(&protocol::OutgoingMessage::Event {
+                event: Box::new(KizunaLinkEvent::TrackException {
+                    guild_id: ctx.guild_id.clone(),
+                    track: ctx.track.clone(),
+                    exception: TrackException {
+                        message: Some(err.clone()),
+                        severity: crate::common::Severity::Fault,
+                        cause: err.clone(),
+                        cause_stack_trace: Some(err),
+                    },
+                }),
+            });
+            TrackEndReason::LoadFailed
+        }
+        Err(_) => TrackEndReason::Finished,
+    };
+
+    clear_player_state(ctx).await;
+
+    ctx.session.send_message(&protocol::OutgoingMessage::Event {
+        event: Box::new(KizunaLinkEvent::TrackEnd {
+            guild_id: ctx.guild_id.clone(),
+            track: ctx.track.clone(),
+            reason,
+        }),
+    });
+}
+
+async fn handle_track_end_marker(ctx: &MonitorCtx) {
+    ctx.stop_signal.store(true, Ordering::Release);
+    ctx.handle.stop();
+
+    clear_player_state(ctx).await;
+
+    ctx.session.send_message(&protocol::OutgoingMessage::Event {
+        event: Box::new(KizunaLinkEvent::TrackEnd {
+            guild_id: ctx.guild_id.clone(),
+            track: ctx.track.clone(),
+            reason: TrackEndReason::Finished,
+        }),
+    });
+}
+
+async fn check_stuck(
+    ctx: &MonitorCtx,
+    cur_pos: u64,
+    last_pos_changed_at: std::time::Instant,
+    buffering_started_at: Option<std::time::Instant>,
+) -> bool {
+    let elapsed_ms = match buffering_started_at {
+        Some(started) => started.elapsed().as_millis() as u64,
+        None => last_pos_changed_at.elapsed().as_millis() as u64,
+    };
+
+    if elapsed_ms >= ctx.stuck_threshold_ms {
+        ctx.session.send_message(&protocol::OutgoingMessage::Event {
+            event: Box::new(KizunaLinkEvent::TrackStuck {
+                guild_id: ctx.guild_id.clone(),
+                track: ctx.track.clone(),
+                threshold_ms: ctx.stuck_threshold_ms,
+            }),
+        });
+
+        send_player_update(ctx, cur_pos);
+
+        warn!(
+            "[{}] Track stuck: {} stalling for {}ms (threshold {}ms). is_buffering: {}",
+            ctx.guild_id,
+            if buffering_started_at.is_some() {
+                "buffering"
+            } else {
+                "position"
+            },
+            elapsed_ms,
+            ctx.stuck_threshold_ms,
+            buffering_started_at.is_some()
+        );
+        ctx.handle.stop();
+        return true;
+    }
+    false
+}
+
+fn send_player_update(ctx: &MonitorCtx, cur_pos: u64) {
+    ctx.session
+        .send_message(&protocol::OutgoingMessage::PlayerUpdate {
+            guild_id: ctx.guild_id.clone(),
+            state: PlayerState {
+                time: crate::common::utils::now_ms(),
+                position: cur_pos,
+                connected: ctx.voice_ready.load(Ordering::Acquire),
+                ping: ctx.ping.load(Ordering::Acquire),
+            },
+        });
+}
+
+async fn clear_player_state(ctx: &MonitorCtx) {
+    if let Some(player_arc) = ctx.session.get_player(&ctx.guild_id) {
+        let mut p = player_arc.write().await;
+        if p.track_handle
+            .as_ref()
+            .map(|h| h.is_same(&ctx.handle))
+            .unwrap_or(false)
+        {
+            p.track = None;
+            p.track_info = None;
+            p.track_handle = None;
+        }
+    }
+}
