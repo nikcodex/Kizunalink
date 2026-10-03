@@ -122,7 +122,7 @@ impl Default for TapeConfig {
 }
 
 fn default_stuck_threshold_ms() -> u64 {
-    10000
+    25000
 }
 fn default_buffer_duration_ms() -> u64 {
     400

@@ -135,9 +135,21 @@ impl PlayableTrack for YoutubeTrack {
                 let reader = match reader_res {
                     Ok(r) => r,
                     Err(e) => {
-                        error!("YoutubeTrack: Reader initialization failed: {}", e);
-                        let _ = err_tx.send(e.to_string());
-                        return;
+                        warn!(
+                            "YoutubeTrack: Reader initialization failed for '{}' with client {}: {}. Attempting fallback...",
+                            identifier_async, client_name, e
+                        );
+                        current_client_index += 1;
+                        if current_client_index < clients_async.len() {
+                            continue 'playback_loop;
+                        } else {
+                            error!(
+                                "YoutubeTrack: All clients failed to initialize reader for '{}'",
+                                identifier_async
+                            );
+                            let _ = err_tx.send(e.to_string());
+                            return;
+                        }
                     }
                 };
 

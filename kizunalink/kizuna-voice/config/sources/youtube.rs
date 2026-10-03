@@ -69,13 +69,13 @@ fn default_search_clients() -> Vec<String> {
 
 fn default_playback_clients() -> Vec<String> {
     vec![
+        "TV_CAST".to_string(),
+        "TV_EMBEDDED".to_string(),
+        "ANDROID_VR".to_string(),
+        "WEB_EMBEDDED".to_string(),
         "TV".to_string(),
         "ANDROID_MUSIC".to_string(),
         "WEB".to_string(),
-        "IOS".to_string(),
-        "ANDROID_VR".to_string(),
-        "TV_CAST".to_string(),
-        "WEB_EMBEDDED".to_string(),
     ]
 }
 

@@ -28,7 +28,7 @@ rate_limit_per_minute = 2000      # requests/min per client IP over REST + WS up
 # key_path = "/etc/kizuna/certs/privkey.pem"
 
 [player]
-stuck_threshold_ms = 10000
+stuck_threshold_ms = 25000
 buffer_duration_ms = 400
 frame_buffer_duration_ms = 5000
 resampling_quality = "medium"                                                  # low | medium | high
@@ -94,8 +94,8 @@ get_oauth_token = false
 
 [sources.youtube.clients]
 search = ["MUSIC_ANDROID", "MUSIC_WEB", "ANDROID", "WEB"]
-playback = ["ANDROID_VR", "TV_CAST", "WEB_EMBEDDED", "TV", "WEB", "IOS"]
-resolve = ["WEB", "IOS", "MUSIC_WEB", "ANDROID", "TVHTML5_SIMPLY"]
+playback = ["TV_CAST", "TV_EMBEDDED", "ANDROID_VR", "WEB_EMBEDDED", "ANDROID", "MUSIC_ANDROID", "WEB"]
+resolve = ["WEB", "MUSIC_WEB", "ANDROID", "TVHTML5_SIMPLY"]
 
 [sources.youtube.cipher]
 url = "https://cipher.kikkia.dev/"
