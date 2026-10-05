@@ -127,11 +127,6 @@ pub async fn youtube_stream(
     let mut last_was_exception = false;
 
     for client in &clients {
-        if client.name().to_uppercase() == "WEB" {
-            tracing::debug!("GET /youtube/stream/{}: skipping WEB client", video_id);
-            continue;
-        }
-
         tracing::debug!(
             "GET /youtube/stream/{}: attempting client '{}'",
             video_id,
