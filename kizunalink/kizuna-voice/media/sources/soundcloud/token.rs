@@ -2,6 +2,7 @@
 // Licensed under the MIT License
 
 use std::{
+    collections::HashSet,
     sync::{Arc, OnceLock},
     time::{Duration, Instant},
 };
@@ -14,18 +15,28 @@ use crate::common::types::SharedRw;
 
 const SOUNDCLOUD_URL: &str = "https://soundcloud.com";
 const CLIENT_ID_REFRESH_INTERVAL: Duration = Duration::from_secs(3600); // 1 hour
+const CLIENT_ID_REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
 
 fn asset_re() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     RE.get_or_init(|| {
-        Regex::new(r"https://a-v2\.sndcdn\.com/assets/[a-zA-Z0-9_-]+\.js").expect("valid regex")
+        Regex::new(r#"(?:https?:)?//[^"'\s<>]+(?:sndcdn\.com|soundcloud\.com)[^"'\s<>]*\.js(?:\?[^"'\s<>]*)?"#)
+            .expect("valid regex")
+    })
+}
+
+fn script_src_re() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| {
+        Regex::new(r#"<script[^>]+src\s*=\s*["']([^"']+)["']"#).expect("valid regex")
     })
 }
 
 fn client_id_re() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     RE.get_or_init(|| {
-        Regex::new(r#"[^_]client_id[:"=]+\s*"?([a-zA-Z0-9_-]{20,})"?"#).expect("valid regex")
+        Regex::new(r#"(?i)(?:client[_-]?id|clientId)\s*[:=]\s*["']?([a-zA-Z0-9_-]{16,})"#)
+            .expect("valid regex")
     })
 }
 
@@ -84,19 +95,36 @@ impl SoundCloudTokenTracker {
         debug!("Refreshing SoundCloud client_id...");
         trace!("SoundCloud: Fetching client_id from soundcloud.com...");
 
-        let html = match self.client.get(SOUNDCLOUD_URL).send().await {
-            Ok(r) => match r.text().await {
-                Ok(t) => t,
-                Err(e) => {
-                    error!("SoundCloud: Failed to read main page: {}", e);
-                    return None;
-                }
-            },
+        let response = match self
+            .client
+            .get(SOUNDCLOUD_URL)
+            .timeout(CLIENT_ID_REQUEST_TIMEOUT)
+            .send()
+            .await
+        {
+            Ok(r) => r,
             Err(e) => {
                 error!("SoundCloud: Failed to fetch main page: {}", e);
                 return None;
             }
         };
+        let status = response.status();
+        let html = match response.text().await {
+            Ok(t) => t,
+            Err(e) => {
+                error!("SoundCloud: Failed to read main page: {}", e);
+                return None;
+            }
+        };
+        if !status.is_success() || html.is_empty() {
+            warn!(
+                "SoundCloud: homepage returned HTTP {} with {} bytes; client_id discovery may be blocked",
+                status,
+                html.len()
+            );
+            return None;
+        }
+        let html = html.replace("&amp;", "&");
 
         // Try to find client_id directly in page HTML first
         if let Some(caps) = client_id_re().captures(&html)
@@ -110,10 +138,29 @@ impl SoundCloudTokenTracker {
         }
 
         // Otherwise, find all asset JS URLs and probe them
-        let asset_urls: Vec<String> = asset_re()
-            .find_iter(&html)
-            .map(|m| m.as_str().to_owned())
-            .collect();
+        let mut asset_urls = HashSet::new();
+        for caps in script_src_re().captures_iter(&html) {
+            if let Some(src) = caps.get(1).map(|m| m.as_str()) {
+                let url = if src.starts_with("//") {
+                    format!("https:{src}")
+                } else if src.starts_with('/') {
+                    format!("https://soundcloud.com{src}")
+                } else if src.starts_with("http") {
+                    src.to_owned()
+                } else {
+                    continue;
+                };
+                asset_urls.insert(url);
+            }
+        }
+        for m in asset_re().find_iter(&html) {
+            let mut url = m.as_str().to_owned();
+            if url.starts_with("//") {
+                url = format!("https:{url}");
+            }
+            asset_urls.insert(url);
+        }
+        let asset_urls: Vec<String> = asset_urls.into_iter().collect();
 
         if asset_urls.is_empty() {
             warn!("SoundCloud: No asset JS URLs found in main page");
@@ -127,7 +174,13 @@ impl SoundCloudTokenTracker {
 
         // Try the last few asset scripts (the relevant one is usually one of the last)
         for url in asset_urls.iter().rev().take(9) {
-            let js = match self.client.get(url).send().await {
+            let js = match self
+                .client
+                .get(url)
+                .timeout(CLIENT_ID_REQUEST_TIMEOUT)
+                .send()
+                .await
+            {
                 Ok(r) => match r.text().await {
                     Ok(t) => t,
                     Err(_) => continue,
