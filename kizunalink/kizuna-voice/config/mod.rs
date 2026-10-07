@@ -225,7 +225,20 @@ impl AppConfig {
             );
         }
 
-        // Warn if authorization is the default
+        if self.server.authorization == "youshallnotpass"
+            && self
+                .server
+                .address
+                .parse::<std::net::IpAddr>()
+                .map(|ip| !ip.is_loopback())
+                .unwrap_or(true)
+        {
+            return Err(
+                "server.authorization must be changed from the default when binding publicly"
+                    .into(),
+            );
+        }
+        // Warn if the default is used on a loopback-only listener.
         if self.server.authorization == "youshallnotpass" {
             tracing::warn!(
                 "server.authorization is set to the default 'youshallnotpass'. \

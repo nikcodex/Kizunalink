@@ -2,7 +2,10 @@
 // Licensed under the MIT License
 
 pub mod reader;
-use std::sync::{Arc, OnceLock};
+use std::{
+    net::ToSocketAddrs,
+    sync::{Arc, OnceLock},
+};
 
 use async_trait::async_trait;
 use regex::Regex;
@@ -47,6 +50,7 @@ impl HttpSource {
     }
 
     fn probe_metadata(url: String, local_addr: Option<std::net::IpAddr>) -> AnyResult<TrackInfo> {
+        validate_public_url(&url)?;
         let source = reader::HttpReader::new(&url, local_addr, None)?;
         let mut hint = Hint::new();
 
@@ -136,6 +140,46 @@ impl HttpSource {
     }
 }
 
+/// Reject server-side requests to loopback, private, link-local, multicast, and
+/// unspecified addresses before opening the user-supplied URL.
+pub(crate) fn validate_public_url(raw: &str) -> AnyResult<()> {
+    let parsed = reqwest::Url::parse(raw).map_err(|e| format!("invalid HTTP URL: {e}"))?;
+    if !matches!(parsed.scheme(), "http" | "https") {
+        return Err(format!("unsupported HTTP URL scheme: {}", parsed.scheme()).into());
+    }
+    let host = parsed.host_str().ok_or("HTTP URL has no host")?;
+    let port = parsed
+        .port_or_known_default()
+        .ok_or("HTTP URL has no port")?;
+    let addresses: Vec<_> = (host, port)
+        .to_socket_addrs()
+        .map_err(|e| format!("could not resolve HTTP host {host}: {e}"))?
+        .collect();
+    if addresses.is_empty() {
+        return Err(format!("HTTP host {host} resolved to no addresses").into());
+    }
+    if addresses.iter().any(|address| match address.ip() {
+        std::net::IpAddr::V4(ip) => {
+            ip.is_loopback()
+                || ip.is_private()
+                || ip.is_link_local()
+                || ip.is_multicast()
+                || ip.is_unspecified()
+        }
+        std::net::IpAddr::V6(ip) => {
+            let first = ip.segments()[0];
+            ip.is_loopback()
+                || ip.is_multicast()
+                || ip.is_unspecified()
+                || (first & 0xfe00) == 0xfc00 // unique-local fc00::/7
+                || (first & 0xffc0) == 0xfe80 // link-local fe80::/10
+        }
+    }) {
+        return Err(format!("HTTP host {host} resolves to a private or local address").into());
+    }
+    Ok(())
+}
+
 #[async_trait]
 impl SourcePlugin for HttpSource {
     fn name(&self) -> &str {
@@ -143,7 +187,7 @@ impl SourcePlugin for HttpSource {
     }
 
     fn can_handle(&self, identifier: &str) -> bool {
-        url_regex().is_match(identifier)
+        url_regex().is_match(identifier) && validate_public_url(identifier).is_ok()
     }
 
     async fn load(
@@ -255,5 +299,22 @@ impl PlayableTrack for HttpTrack {
         });
 
         (rx, cmd_tx, err_rx)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::validate_public_url;
+
+    #[test]
+    fn rejects_loopback_http_targets() {
+        assert!(validate_public_url("http://127.0.0.1:8080/audio.mp3").is_err());
+        assert!(validate_public_url("http://[::1]:8080/audio.mp3").is_err());
+    }
+
+    #[test]
+    fn rejects_non_http_schemes() {
+        assert!(validate_public_url("file:///etc/passwd").is_err());
+        assert!(validate_public_url("ftp://example.com/audio.mp3").is_err());
     }
 }

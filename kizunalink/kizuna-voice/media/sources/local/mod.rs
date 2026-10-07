@@ -30,17 +30,27 @@ use crate::{
     },
 };
 
-pub struct LocalSource;
+pub struct LocalSource {
+    media_dir: Option<std::path::PathBuf>,
+}
 
 impl Default for LocalSource {
     fn default() -> Self {
-        Self::new()
+        Self::new(None)
     }
 }
 
 impl LocalSource {
-    pub fn new() -> Self {
-        Self
+    pub fn new(media_dir: Option<String>) -> Self {
+        Self {
+            media_dir: media_dir.and_then(|path| std::fs::canonicalize(path).ok()),
+        }
+    }
+
+    fn allowed_path(&self, path: &str) -> Option<std::path::PathBuf> {
+        let root = self.media_dir.as_ref()?;
+        let candidate = std::fs::canonicalize(path).ok()?;
+        candidate.starts_with(root).then_some(candidate)
     }
 
     fn probe_file(path: &str) -> Result<TrackInfo, Box<dyn std::error::Error + Send + Sync>> {
@@ -137,7 +147,7 @@ impl SourcePlugin for LocalSource {
 
     fn can_handle(&self, identifier: &str) -> bool {
         let path = identifier.strip_prefix("file://").unwrap_or(identifier);
-        Path::new(path).is_file()
+        self.allowed_path(path).is_some_and(|path| path.is_file())
     }
 
     async fn load(
@@ -149,6 +159,10 @@ impl SourcePlugin for LocalSource {
             .strip_prefix("file://")
             .unwrap_or(identifier)
             .to_owned();
+        let Some(allowed_path) = self.allowed_path(&path) else {
+            return LoadResult::Empty {};
+        };
+        let path = allowed_path.to_string_lossy().into_owned();
         debug!("Local source probing file: {path}");
 
         let path_clone = path.clone();
@@ -187,12 +201,13 @@ impl SourcePlugin for LocalSource {
             .strip_prefix("file://")
             .unwrap_or(identifier)
             .to_owned();
-
-        if !Path::new(&path).is_file() {
-            return None;
-        }
-
-        Some(Box::new(LocalTrack { path }))
+        self.allowed_path(&path)
+            .filter(|path| path.is_file())
+            .map(|path| {
+                Box::new(LocalTrack {
+                    path: path.to_string_lossy().into_owned(),
+                }) as Box<dyn PlayableTrack>
+            })
     }
 }
 

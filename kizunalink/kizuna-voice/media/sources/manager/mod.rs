@@ -230,12 +230,18 @@ authorization = 'test'
 
     #[tokio::test]
     async fn local_file_identifier_dispatches_to_local_source() {
-        let m = manager_with("[sources.local]\nenabled = true\n");
-        let file = std::env::temp_dir().join("kizuna-can-handle-test.wav");
+        let root = std::env::temp_dir().join("kizuna-local-source-test");
+        std::fs::create_dir_all(&root).unwrap();
+        let m = manager_with(&format!(
+            "[sources.local]\nenabled = true\nmedia_dir = {:?}\n",
+            root
+        ));
+        let file = root.join("kizuna-can-handle-test.wav");
         std::fs::write(&file, []).unwrap();
         let uri = format!("file://{}", file.display());
         assert_eq!(m.dispatches_to(&uri).as_deref(), Some("local"));
         std::fs::remove_file(&file).ok();
+        std::fs::remove_dir(&root).ok();
     }
 
     #[tokio::test]

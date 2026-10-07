@@ -5,6 +5,7 @@ use std::sync::{
     Arc,
     atomic::{AtomicBool, AtomicU64, Ordering::Relaxed},
 };
+use std::time::Instant;
 
 use axum::extract::ws::{CloseFrame, Message, WebSocket, close_code};
 use futures::{SinkExt, StreamExt};
@@ -53,6 +54,11 @@ pub async fn handle_socket(
 
     let last_pong_ms = Arc::new(AtomicU64::new(now_ms()));
     let watchdog_armed = Arc::new(AtomicBool::new(false));
+    // The HTTP limiter only counts the upgrade request. Throttle control
+    // messages too so one long-lived socket cannot bypass it.
+    let ws_rate_capacity = f64::from(state.config.server.rate_limit_per_minute);
+    let mut ws_rate_tokens = ws_rate_capacity;
+    let mut ws_rate_updated = Instant::now();
 
     let (mut ws_sink, mut ws_stream) = socket.split();
     let (ws_tx, mut ws_rx) = tokio::sync::mpsc::channel::<Message>(1024);
@@ -133,6 +139,21 @@ pub async fn handle_socket(
 
                 match msg {
                     Message::Text(text) => {
+                        if ws_rate_capacity > 0.0 {
+                            let now = Instant::now();
+                            let elapsed = now
+                                .saturating_duration_since(ws_rate_updated)
+                                .as_secs_f64();
+                            ws_rate_tokens = (ws_rate_tokens
+                                + elapsed * ws_rate_capacity / 60.0)
+                                .min(ws_rate_capacity);
+                            ws_rate_updated = now;
+                            if ws_rate_tokens < 1.0 {
+                                warn!("WebSocket message rate limit exceeded: session={session_id}");
+                                break;
+                            }
+                            ws_rate_tokens -= 1.0;
+                        }
                         match serde_json::from_str::<kizunalink::lavalink::protocol::opcodes::IncomingMessage>(&text) {
                             Ok(op) => {
                                 if let Err(e) = crate::api::ws::opcodes::handle_op(op, &state, &session_id).await {
@@ -221,7 +242,7 @@ async fn send_initial_state(socket: &mut WebSocket, session: &Arc<Session>, resu
     }
 
     if resumed {
-        let queued = std::mem::take(&mut *session.event_queue.lock());
+        let queued = session.take_event_queue();
         for json in queued {
             let _ = socket.send(Message::Text(json.into())).await;
         }

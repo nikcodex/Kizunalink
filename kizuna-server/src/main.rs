@@ -3,7 +3,10 @@
 
 use std::{net::SocketAddr, sync::Arc};
 
-use axum::{Router, middleware::from_fn_with_state, routing::get, serve::ListenerExt};
+use axum::{
+    Router, extract::DefaultBodyLimit, middleware::from_fn_with_state, routing::get,
+    serve::ListenerExt,
+};
 use dashmap::DashMap;
 use kizuna_server::{
     api::{rest, ws},
@@ -92,6 +95,7 @@ async fn run() -> AnyResult<()> {
         .route("/v4/websocket", get(ws::websocket_handler))
         .with_state(shared_state.clone())
         .merge(rest::router(shared_state.clone()))
+        .layer(DefaultBodyLimit::max(4 * 1024 * 1024))
         .layer(tower_http::trace::TraceLayer::new_for_http())
         // S06: outermost layer so flood traffic is rejected before auth work.
         // Needs ConnectInfo below, hence `into_make_service_with_connect_info`.

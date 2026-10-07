@@ -3,16 +3,11 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::config::sources::default_true;
-
-#[derive(Debug, Deserialize, Serialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone, Default)]
 pub struct LocalSourceConfig {
-    #[serde(default = "default_true")]
+    #[serde(default)]
     pub enabled: bool,
-}
-
-impl Default for LocalSourceConfig {
-    fn default() -> Self {
-        Self { enabled: true }
-    }
+    /// Restrict local playback to this directory and its descendants.
+    #[serde(default)]
+    pub media_dir: Option<String>,
 }

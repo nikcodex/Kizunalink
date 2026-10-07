@@ -528,9 +528,17 @@ fn register_extra_sources(sources: &mut Vec<BoxedSource>, config: &crate::config
         sources.push(Box::new(FlowerySource::new(c.clone())));
     }
 
-    // Local Source
-    if config.sources.local.as_ref().is_some_and(|c| c.enabled) {
-        tracing::info!("Loaded source: local");
-        sources.push(Box::new(LocalSource::new()));
+    // Local Source: never expose an unscoped filesystem through the API.
+    if let Some(c) = config.sources.local.as_ref()
+        && c.enabled
+    {
+        if let Some(media_dir) = c.media_dir.clone() {
+            tracing::info!("Loaded source: local (media_dir={media_dir})");
+            sources.push(Box::new(LocalSource::new(Some(media_dir))));
+        } else {
+            tracing::warn!(
+                "Local source is enabled but sources.local.media_dir is unset; refusing unscoped filesystem access"
+            );
+        }
     }
 }

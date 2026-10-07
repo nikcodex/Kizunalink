@@ -248,7 +248,9 @@ playlist_load_limit = 100
 enabled = true
 
 [sources.local]
-enabled = true
+enabled = false
+# Required when enabling local playback; paths outside this directory are rejected.
+media_dir = "./media"
 
 [sources.google_tts]
 enabled = false

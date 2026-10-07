@@ -11,10 +11,7 @@ use axum::{
 
 use crate::{
     protocol,
-    protocol::{
-        models::*,
-        tracks::{LoadResult, Track},
-    },
+    protocol::{models::*, tracks::Track},
     server::AppState,
 };
 
@@ -22,16 +19,34 @@ use crate::{
 pub async fn load_tracks(
     Query(params): Query<LoadTracksQuery>,
     State(state): State<Arc<AppState>>,
-) -> Json<LoadResult> {
+) -> impl IntoResponse {
     let identifier = params.identifier;
-    tracing::info!("GET /v4/loadtracks: identifier='{}'", identifier);
+    if identifier.len() > 16 * 1024 {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(kizunalink::common::KizunaLinkError::bad_request(
+                "Track identifier is too long",
+                "/v4/loadtracks",
+            )),
+        )
+            .into_response();
+    }
+    tracing::info!(
+        "GET /v4/loadtracks: identifier_bytes={}, source_prefix={}",
+        identifier.len(),
+        identifier.split(':').next().unwrap_or("unknown")
+    );
 
-    Json(
-        state
-            .source_manager
-            .load(&identifier, state.routeplanner.clone())
-            .await,
+    (
+        StatusCode::OK,
+        Json(
+            state
+                .source_manager
+                .load(&identifier, state.routeplanner.clone())
+                .await,
+        ),
     )
+        .into_response()
 }
 
 pub async fn load_search(
@@ -40,11 +55,24 @@ pub async fn load_search(
 ) -> impl IntoResponse {
     let query = params.query;
     let types_str = params.types.unwrap_or_default();
+    if query.len() > 4 * 1024 || types_str.len() > 512 {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(kizunalink::common::KizunaLinkError::bad_request(
+                "Search query is too long",
+                "/v4/loadsearch",
+            )),
+        )
+            .into_response();
+    }
 
     tracing::info!(
-        "GET /v4/loadsearch: query='{}', types='{}'",
-        query,
+        "GET /v4/loadsearch: query_bytes={}, type_count={}",
+        query.len(),
         types_str
+            .split(',')
+            .filter(|s| !s.trim().is_empty())
+            .count()
     );
 
     let types: Vec<String> = types_str
@@ -71,7 +99,10 @@ pub async fn load_search(
 
 pub async fn decode_track(Query(params): Query<DecodeTrackQuery>) -> impl IntoResponse {
     let encoded = params.encoded_track.clone().or(params.track);
-    tracing::info!("GET /v4/decodetrack: encodedTrack={:?}", encoded);
+    tracing::info!(
+        "GET /v4/decodetrack: encoded_track_bytes={}",
+        encoded.as_ref().map_or(0, String::len)
+    );
 
     let Some(encoded) = encoded else {
         return (
@@ -111,6 +142,18 @@ pub async fn decode_tracks(Json(body): Json<protocol::EncodedTracks>) -> impl In
         )
             .into_response();
     }
+    if tracks_input.len() > 256
+        || tracks_input.iter().map(String::len).sum::<usize>() > 2 * 1024 * 1024
+    {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(kizunalink::common::KizunaLinkError::bad_request(
+                "Too many or too-large tracks to decode",
+                "/v4/decodetracks",
+            )),
+        )
+            .into_response();
+    }
 
     let mut tracks = Vec::with_capacity(tracks_input.len());
     for encoded in &tracks_input {
@@ -118,7 +161,7 @@ pub async fn decode_tracks(Json(body): Json<protocol::EncodedTracks>) -> impl In
             return (
                 StatusCode::BAD_REQUEST,
                 Json(kizunalink::common::KizunaLinkError::bad_request(
-                    format!("Invalid track encoding: {}", encoded),
+                    "Invalid track encoding",
                     "/v4/decodetracks",
                 )),
             )

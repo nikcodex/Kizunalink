@@ -135,6 +135,16 @@ impl Session {
                 return;
             }
 
+            if json.len() > self.max_queue_bytes {
+                tracing::warn!(
+                    "Dropping oversized paused-session event for {} ({} bytes > {} byte budget)",
+                    self.session_id,
+                    json.len(),
+                    self.max_queue_bytes
+                );
+                return;
+            }
+
             let mut queue = self.event_queue.lock();
 
             // Count cap: drop oldest events until there is room.
@@ -176,6 +186,13 @@ impl Session {
                 }
             }
         }
+    }
+
+    /// Drain queued events during session resume and reset their byte accounting atomically.
+    pub fn take_event_queue(&self) -> VecDeque<String> {
+        let mut queue = self.event_queue.lock();
+        self.queue_bytes.store(0, Ordering::Relaxed);
+        std::mem::take(&mut *queue)
     }
 
     pub fn send_message(&self, msg: &protocol::OutgoingMessage) {
@@ -259,5 +276,38 @@ mod tests {
         session.send_json("event");
 
         assert!(session.event_queue.lock().is_empty());
+    }
+
+    #[test]
+    fn oversized_paused_event_is_dropped() {
+        let (sender, _receiver) = flume::unbounded();
+        let session = Session::new(
+            kizunalink::common::types::SessionId("test-session".into()),
+            None,
+            sender,
+            1,
+        );
+        session.paused.store(true, Ordering::Relaxed);
+
+        session.send_json("x".repeat(session.max_queue_bytes + 1));
+
+        assert!(session.event_queue.lock().is_empty());
+    }
+
+    #[test]
+    fn taking_event_queue_resets_byte_accounting() {
+        let (sender, _receiver) = flume::unbounded();
+        let session = Session::new(
+            kizunalink::common::types::SessionId("test-session".into()),
+            None,
+            sender,
+            1,
+        );
+        session.paused.store(true, Ordering::Relaxed);
+        session.send_json("first");
+        assert_eq!(session.take_event_queue().len(), 1);
+        session.send_json("second");
+
+        assert_eq!(session.take_event_queue().len(), 1);
     }
 }
