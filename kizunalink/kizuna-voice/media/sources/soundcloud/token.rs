@@ -27,9 +27,7 @@ fn asset_re() -> &'static Regex {
 
 fn script_src_re() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
-    RE.get_or_init(|| {
-        Regex::new(r#"<script[^>]+src\s*=\s*["']([^"']+)["']"#).expect("valid regex")
-    })
+    RE.get_or_init(|| Regex::new(r#"<script[^>]+src\s*=\s*["']([^"']+)["']"#).expect("valid regex"))
 }
 
 fn client_id_re() -> &'static Regex {
