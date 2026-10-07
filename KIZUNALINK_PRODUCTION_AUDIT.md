@@ -577,14 +577,14 @@ So the “KizunaLink / kizuna-server / audium” inconsistency in the brief is *
 
 ## 13. Actual Runtime Verification
 
-**NOT TESTED — build toolchain unavailable in the audit environment.**
+**First pass: toolchain unavailable. Now partially re-verified — see “Final Verification Pass” at the end of this document.** A Rust toolchain (1.99.0) was subsequently installed and `cargo check --workspace --all-targets` **passed (exit 0)**; `cargo fmt --check` **failed on 1 file**. The text below is the original first-pass status and is superseded by the final pass.
 
 ```
-$ cargo --version   → cargo: command not found
-$ rustc --version   → rustc: command not found
-$ cmake --version   → cmake: command not found
-$ pkg-config --modversion opus → pkg-config: command not found
-$ which rustup → (none)
+$ cargo --version   → (first pass: command not found; final pass: 1.99.0 installed)
+$ rustc --version   → (first pass: command not found; final pass: 1.99.0 installed)
+$ cmake --version   → cmake: command not found (still absent — not required for `cargo check`)
+$ pkg-config --modversion opus → pkg-config: command not found (still absent)
+$ which rustup → (first pass: none; final pass: installed)
 ```
 
 Consequently the following could **not** be executed here and must be run in a toolchain-equipped environment (the repo’s own CI does exactly this):
@@ -711,3 +711,209 @@ Prioritized tests that should exist but currently do not:
 The one item that must be confirmed before deleting is the **unique `/players` listing response-shape fix** (and its regression test) that this audit independently identified as COMPAT-001. If `kizunalink-test` returns a bare array from `GET /v4/sessions/{id}/players`, that is the change to preserve — the current KizunaLink returns the wrong wrapper. Every other improvement attributed to it (startup authorization protection, `load_search`, response-shape fixes) **already exists in KizunaLink** and need not be ported.
 
 If, upon inspection, `kizunalink-test` contains no `/players` fix and no test the main repo lacks, then it can be deleted outright. **Do not delete it unreviewed.**
+
+---
+
+# Final Verification Pass
+
+Independent second pass. Every finding below was re-derived from the **current** source tree, not trusted from the first pass. A Rust toolchain (cargo/rustc **1.99.0**, rustfmt, clippy) was installed and used. **No source code was modified** — only this Markdown file.
+
+## Verification Environment (what was actually run)
+
+| Command | Result |
+|---|---|
+| `rustup` install (stable, rustfmt+clippy) | ✅ cargo 1.99.0 / rustc 1.99.0 |
+| `LIBOPUS_LIB_DIR=/tmp cargo check --workspace --all-targets` | ✅ **exit 0** (finished in 23.56s warm; no type errors) |
+| `cargo fmt --all -- --check` | ❌ **exit 1 — exactly 1 file differs** (`kizunalink/kizuna-voice/media/sources/soundcloud/token.rs:27`) |
+| `cargo clippy` / `cargo test` / `cargo build` | ⛔ NOT RUN — no `cmake`/`pkg-config`/`libopus` in this image; `cargo check` avoids linking, clippy/test/build do not |
+| Live Discord voice / DAVE / live sources | NOT TESTED — external dependencies unavailable |
+
+**Note on `cargo check`:** it type-checked the entire workspace *including all test targets* without a real libopus, which is valid because `cargo check` performs no link step. This proves the tree **type-checks**, not that it links/passes tests.
+
+**FMT finding (new, CONFIRMED):** `cargo fmt --check` fails on `soundcloud/token.rs` under rustfmt 1.99 because a closure body that an older rustfmt kept multi-line is now collapsed. CI pins `dtolnay/rust-toolchain@stable` (a moving target), so CI can go red on formatting without any code change. Severity LOW (formatting only, no runtime effect).
+
+## Verification verdict table
+
+| ID | Finding | Verdict | Evidence (current source) | Severity | Fix Needed |
+|---|---|---|---|---|---|
+| COMPAT-001 | `/players` response shape | **CONFIRMED** | `player/get.rs::get_players` returns `Json(Players{players})`; `state.rs` `struct Players{players}`; docs require bare array | HIGH | YES |
+| SEC-001 | HTTP SSRF redirect / DNS rebinding | **CONFIRMED** | `engine/source/client.rs::create_client` sets no redirect policy (reqwest follows ≤10); `validate_public_url` checks only the initial URL | HIGH | YES |
+| SEC-002 | Empty authorization | **CONFIRMED** | `config/mod.rs::validate` rejects `"youshallnotpass"` on public bind but **not** `""` | MEDIUM | YES |
+| SEC-003 | Blocking DNS | **CONFIRMED** | `http/mod.rs:155` `to_socket_addrs()` called from **sync** `can_handle` (line 190) and from `probe_metadata` (line 53) on the async runtime | MEDIUM | YES |
+| ROBUST-001 | Decoder `expect()` + `panic=abort` | **PARTIAL** | Only **3** sites use `.expect()` on `thread::Builder::spawn` (`http/mod.rs:292`, `local/mod.rs:286`, `youtube/hls/mod.rs:234`); **all other sources handle spawn failure** (`tracing::error!`). Plus `routeplanner/mod.rs:47` `panic!` on bad config CIDR | MEDIUM | YES (narrowed) |
+| PERF-002 | Mixer not re-enabled | **CONFIRMED** | `mixer.rs::stop_all` sets `audio_mixer.enabled=false`; `audio_mixer.add_layer` never restores it | LOW | YES |
+| COMPAT-002 | `/info` semver | **CONFIRMED** | `stats/info.rs::get_info` — `semver = 1.1.0`, `major` forced ≥4 | LOW | YES |
+| COMPAT-003 | Missing `version.build` | **CONFIRMED** | `protocol/info.rs::Version` has no `build` field | LOW | YES |
+
+No finding was confirmed merely because the first report asserted it; `ROBUST-001` was **downgraded to PARTIAL** on inspection (most sources already guard the spawn).
+
+## Confirmed Bugs
+
+### BUG-001 — `/players` returns an object, not an array
+
+**Status:** CONFIRMED · **Severity:** HIGH · **File:** `kizuna-server/src/api/rest/routes/player/get.rs` (`get_players`) + `kizunalink/kizuna-voice/discord/player/state.rs` (`Players`).
+
+Traced behavior: empty session → `{"players":[]}`; one player → `{"players":[{…}]}`; N players → `{"players":[…]}` — always an object. HTTP status is `200 OK` (correct), headers correct (`Lavalink-Api-Version: 4`); only the **body shape** is wrong. Lavalink v4 and its client libraries expect a bare array.
+
+**Minimal patch (do not apply yet):**
+```rust
+// get.rs — replace the final return
+(StatusCode::OK, Json(players)).into_response()
+// and remove `Players` from the `use` + delete/repurpose the wrapper in state.rs
+```
+
+**Regression test design (add to `kizuna-server/src/api/rest/tests.rs`):** register a session, `PATCH` to create 2 players, `GET /v4/sessions/{sid}/players`, then assert `body.is_array()`, `len == 2`, `body[0]["guildId"].is_string()`, and `body[0].get("players").is_none()` (guards against re-introducing the wrapper).
+
+### BUG-002 — Process abort on decoder-thread spawn failure (`panic = "abort"`)
+
+**Status:** CONFIRMED (narrowed) · **Severity:** MEDIUM · **Files:** `media/sources/http/mod.rs:292`, `media/sources/local/mod.rs:286`, `media/sources/youtube/hls/mod.rs:234`.
+
+With `[profile.release] panic = "abort"`, a failed `std::thread::Builder::spawn` at these three sites aborts the entire process. Trigger: thread/OS-resource exhaustion under many concurrent players. Every other source already routes the error to `tracing::error!` (see the grep evidence in the table), so the fix is to make these three consistent.
+
+**Minimal patch:** replace `.expect(…)` with `if let Err(e) = …spawn(…) { let _ = err_tx.send(format!("failed to spawn decoder thread: {e}")); }` — the `err_tx` channel already exists in each of these blocks.
+
+**Regression test:** unit-test the error branch by asserting the function returns a decoder output whose `err_rx` yields a message when spawn is made to fail (or factor the spawn into a small helper taking a closure that can be injected).
+
+## Confirmed Security Issues
+
+### SEC-001 — SSRF guard is bypassable (redirects + DNS rebinding)
+
+**Status:** CONFIRMED · **Severity:** HIGH · **Files:** `media/sources/http/mod.rs` (`validate_public_url`, `can_handle`), `engine/source/client.rs` (`create_client`), `engine/source/http/{mod,prefetcher}.rs`.
+
+Source-level trace of the lifecycle:
+
+```
+user URL
+  → reqwest::Url::parse (scheme must be http/https)
+  → validate_public_url: to_socket_addrs() → reject loopback/private/link-local/multicast/unspecified (v4+v6)
+  → create_client: build() with NO redirect policy  ──► reqwest follows up to 10 redirects, re-resolving DNS each hop
+  → TCP connect (DNS resolved AGAIN, unvalidated)
+  → final response body consumed by the prefetcher
+```
+
+Bypasses demonstrated by code inspection (no runtime exploit attempted):
+
+| Vector | Reachable? | Why |
+|---|---|---|
+| `302 → http://127.0.0.1:…` | **YES** | redirects are followed without re-validation |
+| DNS rebinding (public → `127.0.0.1`/`169.254.169.254`) | **YES** | validation and connect use separate lookups |
+| multi-hop public→public→private | **YES** | only hop 0 is validated |
+| `http://[::ffff:127.0.0.1]/` (v4-mapped v6) | **PARTIAL** | `Ipv6Addr::is_loopback()` is false for `::ffff:127.0.0.1`; it is not in the checked v6 set |
+| IPv6 loopback `::1` / link-local / ULA | blocked | explicit checks exist |
+| RFC1918 / `169.254/16` on the **initial** URL | blocked | explicit checks exist |
+| internal DNS names resolving to private IPs | blocked **initially**, bypassable via the rows above | same root cause |
+| environment proxy (`HTTP(S)_PROXY`) | **INFLUENCES** | `create_client` sets a proxy only when configured; otherwise reqwest applies default env proxies, which can resolve/route differently |
+
+### SEC-002 — Empty `authorization` is accepted
+
+**Status:** CONFIRMED · **Severity:** MEDIUM · **File:** `kizuna-voice/config/mod.rs::validate`.
+
+Behavior matrix for `authorization = ""`:
+
+| Bind address | Result |
+|---|---|
+| `127.0.0.1` (loopback) | allowed (only a warning path) |
+| `0.0.0.0` / public IPv4 / public IPv6 | **allowed** — the default-password guard only matches `"youshallnotpass"`, so an **empty** token passes and a client sending an empty `authorization` header is authenticated as `ct_eq("","")` → true |
+
+**Minimal patch:** in `validate()`, `if self.server.authorization.trim().is_empty() { return Err("server.authorization must not be empty".into()) }`.
+
+**Regression test:** `validate()` returns `Err` for `authorization=""` (and for whitespace-only) regardless of bind address.
+
+### SEC-003 — Blocking DNS on the async runtime
+
+**Status:** CONFIRMED · **Severity:** MEDIUM. `to_socket_addrs()` (`http/mod.rs:155`) is invoked from the synchronous `SourcePlugin::can_handle` (line 190) while iterating sources inside async `load`/`resolve_track`. A slow/hostile resolver stalls a Tokio worker (a DoS lever). Fix: resolve inside `spawn_blocking`, or resolve once and pin the IP (which also closes SEC-001’s rebinding).
+
+## Safest SSRF Fix (design)
+
+| Option | Description | Verdict |
+|---|---|---|
+| **A** | Disable redirects entirely (`Policy::none()`) | Safe but breaks legitimate CDN/URL redirects many sources rely on |
+| **B** | Custom `redirect::Policy` re-validating every hop (scheme + host + resolved IPs) | Necessary |
+| **C** | Resolve once and **pin** the validated IP for the connection (`ClientBuilder::resolve{,_to_addrs}`), so the address validated is the address connected | Necessary |
+| **D** | **B + C combined** | **Recommended** |
+
+**Why D is safest:** it closes both root causes — *validation says public, connection goes private* is eliminated by C (single resolution, pinned), and *redirect to private* is eliminated by B (per-hop validation). Preserve TLS correctness: keep the **hostname** for SNI/cert validation and the `Host` header while pinning only the TCP address, so HTTPS certificate validation is unaffected. Handle scheme downgrades (`https→http`) explicitly, reject non-`http(s)` hops, cap hops (≤3), and re-check the pinned set (both A and AAAA). Because connection pooling could otherwise reuse a pinned socket across a later request, build a **per-request** client (or key the pool by validated host) rather than a shared long-lived client. Note the v4-mapped IPv6 gap (`::ffff:a.b.c.d`) must be unmapped and range-checked.
+
+**Regression tests:** (1) `302 → http://127.0.0.1/` refused; (2) host resolving public-then-private refused; (3) `http://[::ffff:127.0.0.1]/` refused; (4) `https→http` redirect refused; (5) a legitimate public→public redirect still succeeds.
+
+## Potential Risks (real paths, not confirmed exploits)
+
+- **PR-1 — DAVE mutex contention:** `send_raw` locks the shared `DaveHandler` (`Arc<tokio::Mutex>`) for **every** 20 ms frame while control messages also lock it for MLS crypto. Correctness is fine (single mutex serializes access), but MLS work on the audio path can add jitter. No data race found.
+- **PR-2 — Player write lock held across `connect_voice().await`** (`player/update.rs::handle_voice`): a concurrent `GET /players` read blocks during gateway spawn. Latency coupling only.
+- **PR-3 — `stop_signal` Arc replaced per track:** `start_playback` allocates a fresh `stop_signal`; safe today because the previous monitor task is aborted first, but fragile to future reordering.
+- **PR-4 — Config-time `panic!` on bad CIDR** (`routeplanner/mod.rs:47`): an invalid `route_planner.cidrs` entry aborts startup (with `panic=abort`). Admin-controlled input only.
+- **PR-5 — Env-proxy influence** on the HTTP source (see SEC-001) when no proxy is configured.
+
+## No Issue Found (inspected and sound)
+
+- **RTP / timing:** `RTP_VERSION_BYTE=0x80`, `RTP_OPUS_PAYLOAD_TYPE=0x78` (120), `RTP_TIMESTAMP_STEP=960`, `FRAME_DURATION_MS=20`, `PCM_FRAME_SAMPLES=960`, `TARGET_SAMPLE_RATE=OPUS_SAMPLE_RATE=48_000` with a compile-time assertion. 48 kHz stereo / 20 ms / 960 samples is **exactly correct**; `RtpState::next` wraps seq/ts/nonce cleanly and is persisted across resume (`PersistentSessionState`), so reconnect does not reset the sequence.
+- **`engine/frame.rs` panics** are inside `#[cfg(test)]` — not runtime-reachable.
+- **Regex `.expect("valid regex")`** are compile-time literals — not user-triggerable.
+- **RTP crypto mode negotiation:** only `aead_aes256_gcm_rtpsize` / `aead_xchacha20_poly1305_rtpsize`, and never a mode the server did not offer — matches Discord’s current requirement.
+- **DAVE control flow:** epochs (1 vs >1), transitions (prepare/execute), buffering before external sender, readiness only on execute, reset on invalid commit/welcome, membership add/remove — all consistent; single-mutex access avoids data races. **No confirmed bug**; classified **UNDER-TESTED (live)**.
+- **Session/player lifecycle:** `get_or_create_player` is atomic per key; `handle_voice_update` re-checks after `connect_voice`; `clear_player_state` uses allocation identity (`is_same`) to avoid clobbering a replacement — the classic stale-decoder races were not found.
+- **Auth:** REST + WS both use `subtle::ConstantTimeEq` with Lavalink-correct 401/403.
+- **Path traversal (local):** canonicalize + `starts_with(root)`, and the source refuses to register without `media_dir`.
+- **Resource bounds:** body 4 MiB, WS 1 MiB, identifier 16 KiB, decodetracks 256/2 MiB, paused queue count+byte capped, rate limiter + WS message throttle.
+- **Graceful shutdown:** drains sessions and aborts gateway/track tasks.
+- **Build health:** `cargo check --workspace --all-targets` passes.
+
+## Coverage Gaps (tests needed; not known bugs)
+
+| Pri | Gap |
+|---|---|
+| P0 | `/players` array shape (BUG-001) |
+| P0 | SSRF redirect / rebinding / v4-mapped (SEC-001) |
+| P0 | empty-authorization rejection (SEC-002) |
+| P1 | decoder-spawn failure path (BUG-002) |
+| P1 | real playback from a local fixture (decode→mix→opus, non-silent, correct position/endTime) |
+| P1 | DAVE two-party MLS key exchange + epoch-transition fixtures |
+| P1 | player-state matrix (pause/seek/stop/destroy/reconnect/voice-update-while-playing) |
+| P2 | source failure mid-stream → `TrackException`/`TrackStuck`/queue-advance |
+| P2 | long-run soak with measured RSS and `frameStats.deficit` |
+
+## Final Fix Roadmap
+
+### P0 — Fix Immediately
+
+**P0-1 · `/players` shape** — *Issue:* COMPAT-001/BUG-001. *File:* `kizuna-server/src/api/rest/routes/player/get.rs`. *Function:* `get_players`. *Root cause:* serializes a wrapper struct instead of a `Vec<Player>`. *Minimal safe fix:* return `Json(Vec<Player>)`; drop `Players`. *Side effects:* none for other endpoints; any internal caller of `Players` must be updated. *Regression test:* array shape + length + no `players` key.
+
+**P0-2 · SSRF redirect/DNS** — *Issue:* SEC-001. *Files:* `engine/source/client.rs`, `media/sources/http/mod.rs`. *Function:* `create_client`, `validate_public_url`. *Root cause:* no per-hop validation; validation and connect resolve separately. *Minimal safe fix:* custom redirect policy (B) + pinned resolution (C), per-request client, unmap v4-mapped v6. *Side effects:* legitimate redirects must pass validation; SNI/Host must be preserved. *Regression test:* the 5 SSRF cases above + a legitimate redirect.
+
+**P0-3 · Empty authorization** — *Issue:* SEC-002. *File:* `kizuna-voice/config/mod.rs`. *Function:* `validate`. *Root cause:* only the literal default is rejected. *Minimal safe fix:* reject empty/whitespace `authorization`. *Side effects:* none (empty was never a valid secret). *Regression test:* `validate()` errors on empty/whitespace.
+
+**P0-4 · Process abort on spawn failure** — *Issue:* BUG-002. *Files:* `http/mod.rs`, `local/mod.rs`, `youtube/hls/mod.rs`. *Root cause:* `.expect()` on thread spawn + `panic=abort`. *Minimal safe fix:* send to `err_tx` instead of panicking. *Side effects:* a failed track yields `loadFailed` instead of killing the node (desired). *Regression test:* spawn-failure branch emits an error and does not panic.
+
+### P1 — Fix Before Production
+
+**P1-1 · Blocking DNS** — `media/sources/http/mod.rs`, `can_handle`/`probe_metadata`; resolve via `spawn_blocking` or pin. *Test:* slow resolver must not stall other requests.
+**P1-2 · `/info` semver + `build`** — `stats/info.rs` (`get_info`), `protocol/info.rs` (`Version`); emit protocol-consistent semver and optional `build`. *Test:* `major >= 4` and semver shape.
+**P1-3 · Mixer re-enable** — `engine/mix/mixer.rs` (`AudioMixer::add_layer`): set `enabled = true`. *Test:* layer added after `stop_all` is audible.
+**P1-4 · Config `panic!`** — `lavalink/routeplanner/mod.rs:47`: return an error instead of `panic!`. *Test:* invalid CIDR fails startup gracefully.
+**P1-5 · DAVE/voice/playback integration tests** (coverage gaps P1 above).
+
+### P2 — Improve Later
+
+**P2-1 · Formatting drift** — reformat `soundcloud/token.rs` (or pin the rustfmt version in CI) so `cargo fmt --check` is stable.
+**P2-2 · Benchmarks** — criterion for mixer/decoder/opus/DAVE + 1/10/50/100-player soak.
+**P2-3 · Dockerfile `HEALTHCHECK`** + writable `logs/` tmpfs under `read_only`.
+**P2-4 · DAVE-on-audio-path contention** — evaluate a dedicated MLS/ratchet worker if jitter appears.
+
+## `kizunalink-test` — final decision
+
+**SAFE TO DELETE AFTER PORTING X — or SAFE TO DELETE if `X` is absent.** The repository itself is **not present in this workspace**, so it cannot be diffed here; the decision is conditional on one inspection:
+
+- **Port if present:** a bare-array `get_players` implementation and/or an `/players` regression test (the only thing not already in KizunaLink). Exact target if porting: `kizuna-server/src/api/rest/routes/player/get.rs` + `api/rest/tests.rs`.
+- **Already present in KizunaLink (do NOT port):** startup authorization guard (`config/mod.rs::validate`), `load_search` + `/v4/loadsearch`, error/empty/exception response shapes, session/player endpoint behavior.
+
+If `kizunalink-test` contains nothing beyond the above (i.e. no `/players` fix and no missing test), it may be deleted outright.
+
+## Bottom line (answers to the seven questions)
+
+1. **Definitely broken:** `GET /v4/sessions/{id}/players` returns an object instead of an array (BUG-001). Nothing else is a proven functional break.
+2. **Definitely insecure:** the HTTP-source SSRF guard is bypassable via redirects/DNS rebinding (SEC-001); empty `authorization` is accepted (SEC-002).
+3. **Only untested:** live sources, Discord voice, DAVE key exchange, long-run playback/RTP stability, and the integration/regression tests listed as coverage gaps — **no evidence of a bug**.
+4. **Fix first:** P0-1 … P0-4.
+5. **How:** each P0/P1 block above gives file + function + root cause + minimal safe fix.
+6. **Proof:** each block names its regression test; all are additive, none weaken existing assertions.
+7. **Delete `kizunalink-test`?** Yes — after confirming/porting the `/players` array fix, or immediately if it has none.
