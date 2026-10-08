@@ -35,18 +35,21 @@ pub struct BalancingIpRoutePlanner {
 }
 
 impl BalancingIpRoutePlanner {
-    pub fn new(cidrs: Vec<String>) -> Self {
+    pub fn new(cidrs: Vec<String>) -> Result<Self, String> {
         let mut ip_blocks = Vec::with_capacity(cidrs.len());
         let mut parsed_blocks = Vec::with_capacity(cidrs.len());
 
         let mut total_ips = 0;
         for cidr in cidrs.iter() {
-            let parsed = IpNet::from_str(cidr).unwrap_or_else(|_| {
-                let suffix = if cidr.contains(':') { "/128" } else { "/32" };
-                IpNet::from_str(&format!("{}{}", cidr, suffix)).unwrap_or_else(|e| {
-                    panic!("Invalid CIDR or IP '{}' for route planner: {}", cidr, e)
-                })
-            });
+            let parsed = match IpNet::from_str(cidr) {
+                Ok(net) => net,
+                Err(_) => {
+                    let suffix = if cidr.contains(':') { "/128" } else { "/32" };
+                    IpNet::from_str(&format!("{}{}", cidr, suffix)).map_err(|e| {
+                        format!("Invalid CIDR or IP '{}' for route planner: {}", cidr, e)
+                    })?
+                }
+            };
 
             let block_type = match parsed {
                 IpNet::V4(_) => "Inet4Address",
