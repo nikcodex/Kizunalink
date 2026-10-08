@@ -183,7 +183,9 @@ fn is_blocked_ip(ip: &IpAddr) -> bool {
 /// Reject server-side requests to loopback, private, link-local, multicast, and
 /// unspecified addresses before opening the user-supplied URL.
 /// Returns (host, port, addresses) for IP pinning in the client.
-pub(crate) fn validate_public_url(raw: &str) -> AnyResult<(String, u16, Vec<std::net::SocketAddr>)> {
+pub(crate) fn validate_public_url(
+    raw: &str,
+) -> AnyResult<(String, u16, Vec<std::net::SocketAddr>)> {
     let (host, port) = validate_http_url(raw)?;
     let addresses: Vec<_> = (host.as_str(), port)
         .to_socket_addrs()
@@ -195,7 +197,9 @@ pub(crate) fn validate_public_url(raw: &str) -> AnyResult<(String, u16, Vec<std:
     if addresses.iter().any(|address| {
         let ip = address.ip();
         // Check for IPv4-mapped IPv6 addresses (e.g. ::ffff:127.0.0.1)
-        if let Some(mapped_v4) = ip.to_ipv4_mapped() {
+        if let IpAddr::V6(ipv6) = ip
+            && let Some(mapped_v4) = ipv6.to_ipv4_mapped()
+        {
             return is_blocked_ip(&IpAddr::V4(mapped_v4));
         }
         is_blocked_ip(&ip)

@@ -104,13 +104,13 @@ impl BalancingIpRoutePlanner {
             info!("Route planner initialized with virtually unlimited addresses");
         }
 
-        Self {
+        Ok(Self {
             ip_blocks,
             parsed_blocks,
             failing_addresses: Mutex::new(HashMap::new()),
             block_index: Mutex::new(0),
             ip_indices: Mutex::new(vec![0; cidrs.len()]),
-        }
+        })
     }
 
     fn calculate_ip(block: &IpNet, index: u128) -> IpAddr {
@@ -263,5 +263,33 @@ impl RoutePlanner for BalancingIpRoutePlanner {
 
     fn get_address(&self) -> Option<std::net::IpAddr> {
         self.get_address_internal()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::net::{IpAddr, Ipv4Addr};
+
+    use super::{BalancingIpRoutePlanner, RoutePlanner};
+
+    #[test]
+    fn invalid_cidr_is_returned_as_an_error() {
+        let result = BalancingIpRoutePlanner::new(vec!["not-a-cidr".to_owned()]);
+        assert!(result.is_err());
+        assert!(
+            result
+                .err()
+                .is_some_and(|error| error.contains("Invalid CIDR"))
+        );
+    }
+
+    #[test]
+    fn raw_ip_is_accepted_as_a_single_address_block() {
+        let planner = BalancingIpRoutePlanner::new(vec!["192.0.2.10".to_owned()])
+            .expect("a valid IPv4 address should initialize the route planner");
+        assert_eq!(
+            planner.get_address(),
+            Some(IpAddr::V4(Ipv4Addr::new(192, 0, 2, 10)))
+        );
     }
 }

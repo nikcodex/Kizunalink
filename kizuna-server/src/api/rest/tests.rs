@@ -117,7 +117,22 @@ async fn version_endpoint_returns_headers_and_version() {
 async fn info_endpoint_returns_lavalink_v4_schema() {
     let (status, body) = get("/v4/info").await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(body["version"]["semver"], env!("CARGO_PKG_VERSION"));
+    assert!(
+        body["version"]["semver"]
+            .as_str()
+            .is_some_and(|semver| semver.starts_with("4.")),
+        "version.semver must use the Lavalink v4 protocol major: {}",
+        body["version"]["semver"]
+    );
+    assert!(
+        body["version"]["major"]
+            .as_u64()
+            .is_some_and(|major| major >= 4)
+    );
+    assert!(
+        body["version"].get("build").is_some(),
+        "version.build must be present (it may be null)"
+    );
     assert!(body["lavaplayer"].as_str().is_some());
     assert!(body["jvm"].as_str().is_some());
     assert_eq!(body["plugins"], serde_json::json!([]));
@@ -342,26 +357,59 @@ async fn players_list_returns_bare_array() {
     assert_eq!(status, StatusCode::OK, "creating player 2");
 
     // GET the players list
-    let (status, body) = get(&format!("/v4/sessions/{}/players", sid)).await;
+    let (status, body) = request_on(
+        app.clone(),
+        "GET",
+        &format!("/v4/sessions/{}/players", sid),
+        None,
+    )
+    .await;
     assert_eq!(status, StatusCode::OK);
 
     // Assert it's a bare JSON array (not an object with "players" key)
-    assert!(body.is_array(), "response body must be a JSON array, got: {body}");
-    assert_eq!(body.as_array().unwrap().len(), 2, "expected 2 players, got: {body}");
+    assert!(
+        body.is_array(),
+        "response body must be a JSON array, got: {body}"
+    );
+    assert_eq!(
+        body.as_array().unwrap().len(),
+        2,
+        "expected 2 players, got: {body}"
+    );
 
     // Check each element has guildId and no wrapper object
     let arr = body.as_array().unwrap();
     assert_eq!(arr[0]["guildId"], guid1.0.to_string());
     assert_eq!(arr[1]["guildId"], guid2.0.to_string());
-    
+
     // Ensure no top-level "players" key (the old incorrect wrapper)
-    assert!(!body.as_object().unwrap().contains_key("players"), 
-        "response must not contain a top-level 'players' key");
+    assert!(body.get("players").is_none());
 
     // Test empty session case
     let empty_sid = kizunalink::common::types::SessionId::generate();
-    let (empty_status, empty_body) = get(&format!("/v4/sessions/{}/players", empty_sid)).await;
+    let (empty_tx, _empty_rx) = flume::unbounded();
+    let empty_session = Arc::new(crate::server::Session::new(
+        empty_sid.clone(),
+        None,
+        empty_tx,
+        state.config.server.max_event_queue_size,
+    ));
+    state.sessions.insert(empty_sid.clone(), empty_session);
+    let (empty_status, empty_body) = request_on(
+        app,
+        "GET",
+        &format!("/v4/sessions/{}/players", empty_sid),
+        None,
+    )
+    .await;
     assert_eq!(empty_status, StatusCode::OK);
-    assert!(empty_body.is_array(), "empty session response must be array");
-    assert_eq!(empty_body.as_array().unwrap().len(), 0, "empty session should have 0 players");
+    assert!(
+        empty_body.is_array(),
+        "empty session response must be array"
+    );
+    assert_eq!(
+        empty_body.as_array().unwrap().len(),
+        0,
+        "empty session should have 0 players"
+    );
 }

@@ -217,7 +217,7 @@ impl HlsReader {
         let abort_flag = Arc::new(AtomicBool::new(false));
         let abort_flag_bg = Arc::clone(&abort_flag);
 
-        let bg_thread = std::thread::Builder::new()
+        let bg_thread = match std::thread::Builder::new()
             .name("hls-prefetch".into())
             .spawn(move || {
                 prefetch_loop(
@@ -230,11 +230,13 @@ impl HlsReader {
                     bg_all_segments,
                     handle,
                 );
-            });
-        if let Err(e) = bg_thread {
-            error!("Failed to spawn HLS prefetch thread: {e}");
-            return Err(format!("failed to spawn HLS prefetch thread: {e}").into());
-        }
+            }) {
+            Ok(handle) => handle,
+            Err(e) => {
+                tracing::error!("Failed to spawn HLS prefetch thread: {e}");
+                return Err(format!("failed to spawn HLS prefetch thread: {e}").into());
+            }
+        };
 
         Ok(Self {
             buf: initial_buf,
@@ -246,6 +248,7 @@ impl HlsReader {
             segment_durations,
             has_durations,
         })
+    }
 
     /// Seek to a position in milliseconds by skipping segments.
     fn seek_to_ms(&mut self, position_ms: u64) -> io::Result<u64> {

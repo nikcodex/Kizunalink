@@ -14,12 +14,10 @@ pub async fn get_info(State(state): State<Arc<AppState>>) -> Json<protocol::Info
     let version_str = env!("CARGO_PKG_VERSION");
     let (crate_major, minor, patch, mut pre_release) = parse_semver(version_str);
 
-    let mut semver = version_str.to_string();
     if pre_release.is_none()
         && let Some(pre) = option_env!("KIZUNALINK_PRE_RELEASE")
     {
         pre_release = Some(pre.to_string());
-        semver = format!("{}-{}", version_str, pre);
     }
 
     // Clients compare `version.major` against the *Lavalink protocol* version
@@ -32,13 +30,15 @@ pub async fn get_info(State(state): State<Arc<AppState>>) -> Json<protocol::Info
     Json(protocol::Info {
         version: protocol::Version {
             // Report protocol-consistent semver: crate major 1.x → wire "4.x.y"
-            semver: format!("{major}.{minor}.{patch}"),
+            semver: match &pre_release {
+                Some(pre) => format!("{major}.{minor}.{patch}-{pre}"),
+                None => format!("{major}.{minor}.{patch}"),
+            },
             major,
             minor,
             patch,
             pre_release,
-            build: option_env!("BUILD_NUMBER")
-                .map(|s| s.to_string()),
+            build: option_env!("BUILD_NUMBER").map(|s| s.to_string()),
         },
         build_time: option_env!("BUILD_TIME")
             .and_then(|s| s.parse().ok())
