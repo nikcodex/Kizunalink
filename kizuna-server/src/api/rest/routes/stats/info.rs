@@ -31,11 +31,14 @@ pub async fn get_info(State(state): State<Arc<AppState>>) -> Json<protocol::Info
 
     Json(protocol::Info {
         version: protocol::Version {
-            semver,
+            // Report protocol-consistent semver: crate major 1.x → wire "4.x.y"
+            semver: format!("{major}.{minor}.{patch}"),
             major,
             minor,
             patch,
             pre_release,
+            build: option_env!("BUILD_NUMBER")
+                .map(|s| s.to_string()),
         },
         build_time: option_env!("BUILD_TIME")
             .and_then(|s| s.parse().ok())

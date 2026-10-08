@@ -25,6 +25,7 @@ pub struct Version {
     pub minor: u32,
     pub patch: u32,
     pub pre_release: Option<String>,
+    pub build: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
