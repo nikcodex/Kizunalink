@@ -9,7 +9,7 @@ use axum::{
     response::{IntoResponse, Json},
 };
 
-use crate::{discord::player::Players, protocol, server::AppState};
+use crate::{protocol, server::AppState};
 
 /// GET /v4/sessions/{sessionId}/players
 pub async fn get_players(
@@ -43,7 +43,9 @@ pub async fn get_players(
 
     players.sort_by(|a, b| a.guild_id.cmp(&b.guild_id));
 
-    (StatusCode::OK, Json(Players { players })).into_response()
+    // Lavalink v4 returns a bare JSON array for this endpoint (not an object
+    // with a "players" key). Serialize the Vec directly.
+    (StatusCode::OK, Json(players)).into_response()
 }
 
 /// GET /v4/sessions/{sessionId}

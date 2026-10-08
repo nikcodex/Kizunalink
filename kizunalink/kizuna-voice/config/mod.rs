@@ -225,6 +225,10 @@ impl AppConfig {
             );
         }
 
+        if self.server.authorization.trim().is_empty() {
+            return Err("server.authorization must not be empty".into());
+        }
+
         if self.server.authorization == "youshallnotpass"
             && self
                 .server
@@ -325,23 +329,46 @@ mod tests {
         assert!(!cfg.server.tls.enabled);
     }
 
-    #[test]
-    fn load_applies_env_overrides_and_validation() {
-        // Env-provided TLS should pass validation with cert+key …
-        let cfg = cfg_with_envs(&[
-            ("KIZUNA_TLS_ENABLED", "true"),
-            ("KIZUNA_TLS_CERT", "/certs/c.pem"),
-            ("KIZUNA_TLS_KEY", "/certs/k.pem"),
-        ]);
-        cfg.validate()
-            .expect("TLS env override with cert+key validates");
+#[test]
+fn load_applies_env_overrides_and_validation() {
+    // Env-provided TLS should pass validation with cert+key …
+    let cfg = cfg_with_envs(&[
+        ("KIZUNA_TLS_ENABLED", "true"),
+        ("KIZUNA_TLS_CERT", "/certs/c.pem"),
+        ("KIZUNA_TLS_KEY", "/certs/k.pem"),
+    ]);
+    cfg.validate()
+        .expect("TLS env override with cert+key validates");
 
-        // … and fail when only `enabled` is set.
-        let bad = cfg_with_envs(&[("KIZUNA_TLS_ENABLED", "true")]);
-        let err = bad.validate().unwrap_err().to_string();
-        assert!(
-            err.contains("cert"),
-            "expected TLS validation error, got: {err}"
-        );
-    }
+    // … and fail when only `enabled` is set.
+    let bad = cfg_with_envs(&[("KIZUNA_TLS_ENABLED", "true")]);
+    let err = bad.validate().unwrap_err().to_string();
+    assert!(
+        err.contains("cert"),
+        "expected TLS validation error, got: {err}"
+    );
+}
+
+#[test]
+fn empty_authorization_is_rejected() {
+    let cfg = cfg_with_envs(&[("KIZUNA_AUTHORIZATION", "")]);
+    assert!(cfg.validate().is_err());
+
+    let cfg = cfg_with_envs(&[("KIZUNA_AUTHORIZATION", "   ")]); // whitespace only
+    assert!(cfg.validate().is_err());
+}
+
+#[test]
+fn valid_authorization_passes() {
+    let cfg = cfg_with_envs(&[("KIZUNA_AUTHORIZATION", "mysecret123")]);
+    cfg.validate().expect("valid authorization should pass");
+
+    // Test default password on public bind is rejected
+    let bad = cfg_with_envs(&[("KIZUNA_ADDRESS", "0.0.0.0"), ("KIZUNA_AUTHORIZATION", "youshallnotpass")]);
+    assert!(bad.validate().is_err());
+
+    // Test default password on loopback bind is allowed (with warning)
+    let loopback_ok = cfg_with_envs(&[("KIZUNA_ADDRESS", "127.0.0.1"), ("KIZUNA_AUTHORIZATION", "youshallnotpass")]);
+    loopback_ok.validate().expect("default auth on loopback should pass (with warning)");
+}
 }

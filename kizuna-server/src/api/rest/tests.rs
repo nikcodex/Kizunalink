@@ -300,3 +300,68 @@ async fn health_endpoint_is_unauthenticated_and_reports_uptime() {
     assert!(body["uptime_ms"].as_u64().is_some());
     assert_eq!(body["players"], 0);
 }
+
+#[tokio::test]
+async fn players_list_returns_bare_array() {
+    let state = test_support::test_state();
+    let app = test_support::test_router(state.clone());
+
+    // Register a session as the WS handler would.
+    let (tx, _rx) = flume::unbounded();
+    let sid = kizunalink::common::types::SessionId::generate();
+    let session = Arc::new(crate::server::Session::new(
+        sid.clone(),
+        None,
+        tx,
+        state.config.server.max_event_queue_size,
+    ));
+    state.sessions.insert(sid.clone(), session);
+
+    // Create first player
+    let guid1 = kizunalink::common::types::GuildId::from("111111111111111111".to_string());
+    let path1 = format!("/v4/sessions/{}/players/{}", sid, guid1.0);
+    let (status, _) = request_on(
+        app.clone(),
+        "PATCH",
+        &path1,
+        Some(serde_json::json!({ "paused": true, "volume": 50 })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "creating player 1");
+
+    // Create second player
+    let guid2 = kizunalink::common::types::GuildId::from("222222222222222222".to_string());
+    let path2 = format!("/v4/sessions/{}/players/{}", sid, guid2.0);
+    let (status, _) = request_on(
+        app.clone(),
+        "PATCH",
+        &path2,
+        Some(serde_json::json!({ "paused": false, "volume": 75 })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "creating player 2");
+
+    // GET the players list
+    let (status, body) = get(&format!("/v4/sessions/{}/players", sid)).await;
+    assert_eq!(status, StatusCode::OK);
+
+    // Assert it's a bare JSON array (not an object with "players" key)
+    assert!(body.is_array(), "response body must be a JSON array, got: {body}");
+    assert_eq!(body.as_array().unwrap().len(), 2, "expected 2 players, got: {body}");
+
+    // Check each element has guildId and no wrapper object
+    let arr = body.as_array().unwrap();
+    assert_eq!(arr[0]["guildId"], guid1.0.to_string());
+    assert_eq!(arr[1]["guildId"], guid2.0.to_string());
+    
+    // Ensure no top-level "players" key (the old incorrect wrapper)
+    assert!(!body.as_object().unwrap().contains_key("players"), 
+        "response must not contain a top-level 'players' key");
+
+    // Test empty session case
+    let empty_sid = kizunalink::common::types::SessionId::generate();
+    let (empty_status, empty_body) = get(&format!("/v4/sessions/{}/players", empty_sid)).await;
+    assert_eq!(empty_status, StatusCode::OK);
+    assert!(empty_body.is_array(), "empty session response must be array");
+    assert_eq!(empty_body.as_array().unwrap().len(), 0, "empty session should have 0 players");
+}

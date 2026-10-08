@@ -282,14 +282,17 @@ impl PlayableTrack for HttpTrack {
 
             match AudioProcessor::new(reader, kind, tx, cmd_rx, Some(err_tx.clone()), config) {
                 Ok(mut processor) => {
-                    std::thread::Builder::new()
+                    let spawn_result = std::thread::Builder::new()
                         .name(format!("http-decoder-{}", url))
                         .spawn(move || {
                             if let Err(e) = processor.run() {
                                 error!("HTTP track audio processor error: {e}");
                             }
-                        })
-                        .expect("failed to spawn http decoder thread");
+                        });
+                    if let Err(e) = spawn_result {
+                        error!("Failed to spawn HTTP decoder thread: {e}");
+                        let _ = err_tx.send(format!("failed to spawn decoder thread: {e}"));
+                    }
                 }
                 Err(e) => {
                     error!("HTTP track failed to initialize processor: {e}");

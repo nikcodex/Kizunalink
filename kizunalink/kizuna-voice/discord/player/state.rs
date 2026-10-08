@@ -38,11 +38,6 @@ pub struct DaveState {
     pub privacy_code: Option<String>,
 }
 
-#[derive(Debug, Serialize)]
-pub struct Players {
-    pub players: Vec<Player>,
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PlayerState {
