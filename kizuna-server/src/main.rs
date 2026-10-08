@@ -52,7 +52,12 @@ async fn run() -> AnyResult<()> {
         Some(Arc::new(
             kizuna_server::lavalink::routeplanner::BalancingIpRoutePlanner::new(
                 config.route_planner.cidrs.clone(),
-            ),
+            )
+            .map_err(|e| {
+                Box::new(std::io::Error::other(format!(
+                    "invalid route planner CIDR: {e}"
+                ))) as kizunalink::common::types::AnyError
+            })?,
         )
             as Arc<dyn kizunalink::lavalink::routeplanner::RoutePlanner>)
     } else {

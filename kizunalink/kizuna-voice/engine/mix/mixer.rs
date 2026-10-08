@@ -78,6 +78,10 @@ impl AudioMixer {
         if self.layers.len() >= self.max_layers {
             return Err("Maximum mix layers reached");
         }
+        // Re-enable after stop_all() so layers can be added again
+        if !self.enabled {
+            self.enabled = true;
+        }
         self.layers
             .insert(id.clone(), MixLayer::new(id, rx, volume));
         Ok(())

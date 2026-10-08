@@ -3,7 +3,7 @@
 
 pub mod reader;
 use std::{
-    net::ToSocketAddrs,
+    net::{IpAddr, ToSocketAddrs},
     sync::{Arc, OnceLock},
 };
 
@@ -50,7 +50,6 @@ impl HttpSource {
     }
 
     fn probe_metadata(url: String, local_addr: Option<std::net::IpAddr>) -> AnyResult<TrackInfo> {
-        validate_public_url(&url)?;
         let source = reader::HttpReader::new(&url, local_addr, None)?;
         let mut hint = Hint::new();
 
@@ -140,44 +139,70 @@ impl HttpSource {
     }
 }
 
-/// Reject server-side requests to loopback, private, link-local, multicast, and
-/// unspecified addresses before opening the user-supplied URL.
-pub(crate) fn validate_public_url(raw: &str) -> AnyResult<()> {
+/// Validate that a URL is a valid HTTP/HTTPS URL with host and port.
+/// Does NOT perform DNS resolution (safe to call from synchronous contexts).
+pub(crate) fn validate_http_url(raw: &str) -> AnyResult<(String, u16)> {
     let parsed = reqwest::Url::parse(raw).map_err(|e| format!("invalid HTTP URL: {e}"))?;
     if !matches!(parsed.scheme(), "http" | "https") {
         return Err(format!("unsupported HTTP URL scheme: {}", parsed.scheme()).into());
     }
-    let host = parsed.host_str().ok_or("HTTP URL has no host")?;
+    let host = parsed.host_str().ok_or("HTTP URL has no host")?.to_owned();
     let port = parsed
         .port_or_known_default()
         .ok_or("HTTP URL has no port")?;
-    let addresses: Vec<_> = (host, port)
-        .to_socket_addrs()
-        .map_err(|e| format!("could not resolve HTTP host {host}: {e}"))?
-        .collect();
-    if addresses.is_empty() {
-        return Err(format!("HTTP host {host} resolved to no addresses").into());
-    }
-    if addresses.iter().any(|address| match address.ip() {
-        std::net::IpAddr::V4(ip) => {
+    Ok((host, port))
+}
+
+/// Check whether an IP address is in a blocked range (loopback, private,
+/// link-local, multicast, unspecified, IPv4-mapped IPv6 loopback, ULA).
+fn is_blocked_ip(ip: &IpAddr) -> bool {
+    match ip {
+        IpAddr::V4(ip) => {
             ip.is_loopback()
                 || ip.is_private()
                 || ip.is_link_local()
                 || ip.is_multicast()
                 || ip.is_unspecified()
         }
-        std::net::IpAddr::V6(ip) => {
-            let first = ip.segments()[0];
+        IpAddr::V6(ip) => {
+            // Check for IPv4-mapped IPv6 addresses (e.g. ::ffff:127.0.0.1)
+            if let Some(mapped_v4) = ip.to_ipv4_mapped() {
+                return is_blocked_ip(&IpAddr::V4(mapped_v4));
+            }
+            let segments = ip.segments();
+            let first = segments[0];
             ip.is_loopback()
                 || ip.is_multicast()
                 || ip.is_unspecified()
                 || (first & 0xfe00) == 0xfc00 // unique-local fc00::/7
                 || (first & 0xffc0) == 0xfe80 // link-local fe80::/10
         }
+    }
+}
+
+/// Reject server-side requests to loopback, private, link-local, multicast, and
+/// unspecified addresses before opening the user-supplied URL.
+/// Returns (host, port, addresses) for IP pinning in the client.
+pub(crate) fn validate_public_url(raw: &str) -> AnyResult<(String, u16, Vec<std::net::SocketAddr>)> {
+    let (host, port) = validate_http_url(raw)?;
+    let addresses: Vec<_> = (host.as_str(), port)
+        .to_socket_addrs()
+        .map_err(|e| format!("could not resolve HTTP host {host}: {e}"))?
+        .collect();
+    if addresses.is_empty() {
+        return Err(format!("HTTP host {host} resolved to no addresses").into());
+    }
+    if addresses.iter().any(|address| {
+        let ip = address.ip();
+        // Check for IPv4-mapped IPv6 addresses (e.g. ::ffff:127.0.0.1)
+        if let Some(mapped_v4) = ip.to_ipv4_mapped() {
+            return is_blocked_ip(&IpAddr::V4(mapped_v4));
+        }
+        is_blocked_ip(&ip)
     }) {
         return Err(format!("HTTP host {host} resolves to a private or local address").into());
     }
-    Ok(())
+    Ok((host, port, addresses))
 }
 
 #[async_trait]
@@ -187,7 +212,7 @@ impl SourcePlugin for HttpSource {
     }
 
     fn can_handle(&self, identifier: &str) -> bool {
-        url_regex().is_match(identifier) && validate_public_url(identifier).is_ok()
+        url_regex().is_match(identifier) && validate_http_url(identifier).is_ok()
     }
 
     async fn load(
@@ -282,14 +307,17 @@ impl PlayableTrack for HttpTrack {
 
             match AudioProcessor::new(reader, kind, tx, cmd_rx, Some(err_tx.clone()), config) {
                 Ok(mut processor) => {
-                    std::thread::Builder::new()
+                    let spawn_result = std::thread::Builder::new()
                         .name(format!("http-decoder-{}", url))
                         .spawn(move || {
                             if let Err(e) = processor.run() {
                                 error!("HTTP track audio processor error: {e}");
                             }
-                        })
-                        .expect("failed to spawn http decoder thread");
+                        });
+                    if let Err(e) = spawn_result {
+                        error!("Failed to spawn HTTP decoder thread: {e}");
+                        let _ = err_tx.send(format!("failed to spawn decoder thread: {e}"));
+                    }
                 }
                 Err(e) => {
                     error!("HTTP track failed to initialize processor: {e}");
@@ -316,5 +344,20 @@ mod tests {
     fn rejects_non_http_schemes() {
         assert!(validate_public_url("file:///etc/passwd").is_err());
         assert!(validate_public_url("ftp://example.com/audio.mp3").is_err());
+    }
+
+    #[test]
+    fn rejects_empty_public_url() {
+        assert!(validate_public_url("").is_err());
+    }
+
+    #[test]
+    fn accepts_valid_public_url() {
+        let result = validate_public_url("http://example.com:8080/audio.mp3");
+        assert!(result.is_ok());
+        let (host, port, addrs) = result.unwrap();
+        assert_eq!(host, "example.com");
+        assert_eq!(port, 8080);
+        assert!(!addrs.is_empty());
     }
 }

@@ -230,8 +230,11 @@ impl HlsReader {
                     bg_all_segments,
                     handle,
                 );
-            })
-            .expect("failed to spawn HLS prefetch thread");
+            });
+        if let Err(e) = bg_thread {
+            error!("Failed to spawn HLS prefetch thread: {e}");
+            return Err(format!("failed to spawn HLS prefetch thread: {e}").into());
+        }
 
         Ok(Self {
             buf: initial_buf,
@@ -243,7 +246,6 @@ impl HlsReader {
             segment_durations,
             has_durations,
         })
-    }
 
     /// Seek to a position in milliseconds by skipping segments.
     fn seek_to_ms(&mut self, position_ms: u64) -> io::Result<u64> {

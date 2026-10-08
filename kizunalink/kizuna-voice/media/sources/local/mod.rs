@@ -276,14 +276,17 @@ impl PlayableTrack for LocalTrack {
 
             match AudioProcessor::new(source, kind, tx, cmd_rx, Some(err_tx.clone()), config) {
                 Ok(mut processor) => {
-                    std::thread::Builder::new()
+                    let spawn_result = std::thread::Builder::new()
                         .name(format!("local-decoder-{}", path))
                         .spawn(move || {
                             if let Err(e) = processor.run() {
                                 error!("LocalTrack audio processor error: {e}");
                             }
-                        })
-                        .expect("failed to spawn local decoder thread");
+                        });
+                    if let Err(e) = spawn_result {
+                        error!("Failed to spawn local decoder thread: {e}");
+                        let _ = err_tx.send(format!("failed to spawn decoder thread: {e}"));
+                    }
                 }
                 Err(e) => {
                     error!("LocalTrack failed to initialize processor: {e}");
