@@ -918,6 +918,209 @@ If `kizunalink-test` contains nothing beyond the above (i.e. no `/players` fix a
 6. **Proof:** each block names its regression test; all are additive, none weaken existing assertions.
 7. **Delete `kizunalink-test`?** Yes — after confirming/porting the `/players` array fix, or immediately if it has none.
 
+
+# Final validation of current `main` — 2026-10-08
+
+## Scope and exact revision
+
+- Repository: `nikcodex/Kizunalink`, branch `main`.
+- Exact HEAD tested: `28c0282499908a33b935a88d708a9e7a6996195b` (merge commit `Merge pull request #2 from nikcodex/kilo/bitter-star-83g`).
+- `git fetch origin main` showed `HEAD == origin/main` at the time of validation.
+- Initial working tree: clean. Final working tree: only this audit document was modified; Rust source/configuration was not edited. `git diff --check` passed.
+- This validation section supersedes earlier audit conclusions wherever they conflict; earlier sections remain historical analysis.
+
+## Commands and local results
+
+Rust 1.86.0 was installed to match `rust-toolchain.toml`, along with `rustfmt` and `clippy`. CMake and pkg-config were also installed after the first attempt showed CMake missing. Final rerun results:
+
+| Command | Result | Evidence |
+|---|---|---|
+| `git fetch origin main` | PASS | `main` resolves to exact HEAD above. |
+| `git status --short --branch` / `git rev-parse HEAD` | PASS | `## main...origin/main`; clean before audit edit; SHA recorded above. |
+| `cargo fmt --all -- --check` | FAIL | Exit 1. Unclosed delimiter in `kizunalink/kizuna-voice/media/sources/youtube/hls/mod.rs:610`, referencing `impl HlsReader` at 116 and `new` at 123. Formatter also reports diffs in REST tests; parse failure prevents completion. No formatter write was requested. |
+| `cargo check --workspace --all-targets` | FAIL | Exit 101; same parse error. |
+| `cargo clippy --workspace --all-targets -- -D warnings` | FAIL | Exit 101; same parse error, so lints did not run. |
+| `cargo test --workspace --all-targets` | FAIL | Exit 101; same parse error, so no Rust tests ran. |
+| `cargo build --release --workspace` | FAIL | Exit 101; same parse error; no release artifact. |
+| `cargo deny check advisories` | SKIPPED locally | `cargo-deny` was not installed. The configured GitHub Actions advisories job passed (below). |
+| `git diff --check` | PASS | No whitespace errors. |
+
+The initial command attempt failed earlier while building vendored Opus because CMake was not installed. CMake was installed and all Rust commands rerun. The final results above are from the rerun and fail on the repository parse error, not CMake.
+
+## API and regression coverage
+
+No integration/regression test could execute locally because the Rust workspace fails to parse. Source inspection found:
+
+- `kizuna-server/src/api/rest/tests.rs::players_list_returns_bare_array` asserts that `GET /v4/sessions/{sessionId}/players` returns a bare JSON array, including the empty-session case. The handler `kizuna-server/src/api/rest/routes/player/get.rs` serializes a `Vec` directly. This is source-level evidence of intended Lavalink v4 wire format; runtime behavior was not validated.
+- `info_endpoint_returns_lavalink_v4_schema` checks `/v4/info` `version.semver`, `lavaplayer`, `jvm`, `plugins`, `sourceManagers`, and `filters`. `version.build` is optional in `kizunalink/kizuna-voice/lavalink/protocol/info.rs`, but the test does not assert it is present or inspect its value. Runtime schema/build value remain unverified.
+- Existing authorization tests include empty/invalid authorization config rejection and REST wrong-password behavior. Not executable in this run.
+- A routeplanner status test expects disabled state `204 No Content`; mixer unit tests cover disabled/empty/max-layer/remove-layer/volume behavior. Not executable in this run.
+- HTTP-source tests directly cover rejecting `127.0.0.1` and `::1`, non-HTTP schemes and empty URL, plus accepting `example.com`. No test was found for IPv4-mapped IPv6, public hostname resolving private, public-to-private redirect, multi-hop redirect to private, HTTPS-to-HTTP downgrade, or legitimate public-to-public redirect.
+- SSRF scenario status: direct loopback/private IP is only partly tested (`127.0.0.1`, `::1`); IPv4-mapped loopback has implementation logic but no test; public hostname resolving to private is untested; public→private and multi-hop→private redirects are untested; HTTPS downgrade has policy code but no test; public→public redirect is untested. None of the existing tests ran.
+- Decoder/prefetch thread creation failures have error-reporting paths in source, but were not executed. Comprehensive regression coverage for those failures was not established.
+
+## Static source review
+
+Searches across server and voice source found 306 textual `panic!`, `.unwrap()`, or `.expect()` matches and 29 `unsafe` matches; matches include tests, startup invariants and production code. These counts are review leads, not a claim every occurrence is unsafe. Numerous Tokio/OS-thread spawns and several unbounded decoder-command channels are present; bounded audio/event channels also exist. This was static scanning, not proof that every task/queue has bounded lifetime or capacity.
+
+Synchronous `ToSocketAddrs` calls occur in HTTP source/reader validation and the custom redirect policy. Initial probing/reader construction is placed on `spawn_blocking`/decoder-worker paths. Redirect-policy DNS runs from the redirect callback and deserves focused validation for Tokio-worker blocking and DNS rebinding/pinning. Static review does not certify SSRF safety.
+
+## GitHub Actions
+
+The run for the exact HEAD is [CI run 37748708409](https://github.com/nikcodex/Kizunalink/actions/runs/37748708409). Overall conclusion: **failure**.
+
+| Check | Conclusion |
+|---|---|
+| Formatting | failure |
+| Cargo Deny (advisories) | success |
+| Build (ubuntu-latest) | failure |
+| Check | failure |
+| Build (macos-latest) | failure |
+| Tests | failure |
+| Clippy | failure |
+| Build (windows-latest) | failure |
+
+Failed logs report the same unclosed delimiter in `kizunalink/kizuna-voice/media/sources/youtube/hls/mod.rs:610`; tests/check/clippy did not pass. The advisories result does not make the overall CI green.
+
+## Docker, audio, Discord/DAVE
+
+- **Docker:** SKIPPED / unavailable. `docker --version` reported command not found and no Docker daemon was available. No image build or production-container startup was performed.
+- **Audio pipeline:** NOT RUN. `ffmpeg` is installed; `yt-dlp` and an Opus development pkg-config installation were absent on initial inspection. The source itself does not parse, so source resolution → decode → PCM → Opus → mixer/player could not be exercised. No local end-to-end pass is claimed.
+- **Discord/DAVE:** NOT RUN. Neither `DISCORD_TOKEN` nor `DISCORD_BOT_TOKEN` was available. No voice connection, DAVE handshake/key exchange, audio packets, playback, pause/resume, seek, stop, or reconnect/resume was tested. Discord/DAVE is unverified.
+
+## Remaining issues and untested areas
+
+1. **Release-blocking:** resolve the unclosed delimiter in `kizunalink/kizuna-voice/media/sources/youtube/hls/mod.rs` (compiler points to line 610; opening delimiters at lines 116/123). No source fix was made, per instruction not to make speculative changes.
+2. Current main’s GitHub Actions run is red; formatting and all build/check/test/clippy jobs fail.
+3. Most adversarial SSRF/DNS/redirect scenarios lack tests; redirect-time synchronous DNS and rebinding/pinning need focused review and tests.
+4. `/v4/info` test does not assert `version.build`.
+5. Runtime `/players` and `/v4/info` requests, authorization integration, routeplanner errors, mixer lifecycle and decoder/prefetch failure regressions were not executed.
+6. Docker image/startup, complete audio pipeline and Discord voice/DAVE remain untested.
+7. Static panic/unwrap/expect, unsafe, queue/task and DNS scans do not prove all runtime paths safe or bounded.
+
+## Final production-readiness rating
+
+**NOT PRODUCTION READY / NO-GO** for `28c0282499908a33b935a88d708a9e7a6996195b`. The source does not parse; every local Rust validation command fails; and the exact-commit GitHub Actions run is red. Docker and runtime audio/Discord testing were unavailable or not run. The passing advisories check and source-level assertions do not offset these blockers. Rerun the complete suite on a corrected commit before making any production-readiness claim.
+
+
+# Final validation after fixes and CI rerun
+
+This section supersedes the earlier interim validation conclusions above. Those earlier entries document the original broken main commit and first failed attempts; the final results below are for the corrected code commit.
+
+## Commit and repository state
+
+- **Implementation commit tested:** `f2fcf53ba31bc4443fe6a8173ceecd22217cde28`
+- **Branch pushed:** `fix/final-validation-current-main`
+- **Pull request:** [#3 — Fix workspace build and harden SSRF redirect handling](https://github.com/nikcodex/Kizunalink/pull/3)
+- **Base at push time:** `main` at `28c0282499908a33b935a88d708a9e7a6996195b`; implementation commit was one commit ahead.
+- The implementation commit contains source and regression-test changes. This audit-only update follows it; no Rust source changes were made after implementation SHA was tested.
+
+## Final local commands and results
+
+| Command | Result | Evidence / notes |
+|---|---|---|
+| `cargo fmt --all` | PASS | Applied formatting to Rust source/tests. Stable rustfmt warned that nightly-only import grouping settings are ignored. |
+| `cargo fmt --all -- --check` | PASS | Final run exit 0. |
+| `cargo check --workspace --all-targets` | PASS | Final run exit 0, no warnings. |
+| `cargo clippy --workspace --all-targets -- -D warnings` | PASS | Final run exit 0. |
+| `cargo test --workspace --all-targets` | PASS | Final run exit 0: `kizuna-server` 24 passed, 0 failed, 1 ignored; `kizunalink` 193 passed, 0 failed; binary target 0 tests. **217 passed; 1 ignored; 0 failed.** Ignored test is the explicitly long-running soak harness. |
+| `cargo build --release --workspace` | PASS | Final run exit 0. |
+| `cargo install cargo-deny --locked` | PASS | Installed cargo-deny v0.20.2 locally; no repository files changed by installation. |
+| `cargo deny check advisories` | PASS | Local run printed `advisories ok`; GitHub advisories job also passed. |
+| `cargo test -p kizuna-server api::rest::tests::players_list_returns_bare_array -- --exact` | PASS | Exact targeted regression: 1 passed. |
+| `git diff --check` | PASS | No whitespace errors before implementation commit. |
+| `docker --version` / `docker info` | SKIPPED / unavailable | `docker` executable is not installed; no daemon available. No image build/container start was possible. |
+
+During the first post-parse check, compilation exposed the HLS constructor delimiter and additional type/API errors (including reqwest redirect API usage, client call signatures, routeplanner `Result` construction, and IPv4-mapped IPv6 handling). Those were corrected before the final passing check. The first full test attempt also exposed a flaw in the newly added test setup: it queried a fresh router without the registered session and then tried to treat the intended array as an object. The test now uses its session-backed router, registers its empty-session case, and asserts the array shape directly; targeted and complete reruns passed.
+
+## Regression and wire-format results
+
+- `/v4/sessions/{sessionId}/players`: **PASS**. Integration test creates two players, calls the session-scoped route, checks a bare JSON array with two entries and expected guild IDs, then checks a registered empty session returns `[]`. It rejects the `{ "players": [...] }` wrapper by asserting the top-level JSON value is an array.
+- `/v4/info`: **PASS**. Test checks Lavalink v4 protocol-major `version.semver`, `version.major`, presence of `version.build` (which may be JSON `null` when not configured), `lavaplayer`, `jvm`, `plugins`, `sourceManagers`, and `filters`.
+- Authorization: **PASS**. Existing REST auth-required/wrong-password tests and config tests for empty/whitespace authorization and unsafe default credentials ran in the full passing suite.
+- Mixer lifecycle: **PASS for existing unit coverage**. Mixer/layer lifecycle tests ran as part of the full suite; no Discord voice output was involved.
+- Routeplanner errors: **PASS**. Added tests verify invalid CIDR returns an error and valid raw IPv4 initializes and returns the single address. Both passed.
+- Decoder/prefetch thread failures: error-reporting branches compile and existing related source tests pass; HLS prefetch thread spawn now checks its result. Actual OS thread-creation failure was not induced.
+
+### SSRF/DNS/redirect test matrix
+
+All entries passed as unit-level policy/validation tests in the final suite. The hostname-to-private case supplies representative resolved socket addresses to the filtering helper used by the async resolver; it does not simulate live hostile DNS infrastructure.
+
+| Scenario | Result |
+|---|---|
+| `localhost` redirect | PASS — rejected |
+| Direct `127.0.0.1` | PASS — rejected |
+| Direct RFC1918 IPv4 (`10.0.0.4`) | PASS — rejected |
+| Direct `::1` | PASS — rejected |
+| IPv4-mapped IPv6 loopback (`::ffff:127.0.0.1`) | PASS — rejected |
+| Public-looking hostname resolving to a private IP | PASS — private address set rejected by resolver filter |
+| Public to private redirect | PASS — rejected |
+| Multi-hop public redirect chain ending at a private address | PASS — final hop rejected |
+| HTTPS to HTTP downgrade | PASS — rejected |
+| HTTPS public host to HTTPS public host | PASS — allowed by URL policy |
+
+Redirect checks are performed at each hop. DNS resolution for reqwest connections is asynchronous and filters addresses before handing them to the connector; the HTTP reader also validates and pins initial host addresses while running on its blocking-worker path.
+
+## Static source review
+
+Broad scans over `kizuna-server/src` and `kizunalink/kizuna-voice` Rust files produced these textual counts, including tests, expected-invariant handling and benign matches; they are audit leads, not a count of defects:
+
+| Pattern | Matches |
+|---|---:|
+| `panic!` | 11 |
+| `.unwrap()` | 173 |
+| `.expect(` | 123 |
+| `unsafe` | 31 |
+| `unbounded()` / `unbounded_channel` | 11 |
+| `tokio::spawn`, `spawn_blocking`, or OS-thread spawn patterns | 79 |
+
+There is one `to_socket_addrs` call in the voice source tree, in `media/sources/http/mod.rs::validate_public_url`; its production HTTP-reader call paths use `spawn_blocking`/decoder-worker contexts. The new redirect/client DNS resolver uses Tokio's asynchronous `lookup_host`. No broad claim is made that every task lifetime or unbounded command channel has a global capacity bound: command/event channels and detached worker lifetimes remain review areas. Unsafe blocks remain in native Opus/architecture code and were not removed by this patch. No blanket rewrite of every panic/unwrap/expect match was attempted; counts include test code and configuration/proven-invariant paths.
+
+## Local audio pipeline
+
+**PASS (local source only).** A temporary 0.5-second, 48 kHz stereo WAV was generated with FFmpeg. A temporary example invoked application `LocalSource` resolution/probe, started its decoder, passed PCM frames through the application mixer, and encoded them with the application Opus encoder. Observed output: **10 mixed PCM frames and 10 non-empty Opus packets**. Temporary example and WAV fixture were removed after the run. This does not validate remote HTTP/YouTube providers, Discord transport, or DAVE.
+
+## Discord voice / DAVE
+
+**NOT RUN / UNVERIFIED.** `DISCORD_TOKEN`, `DISCORD_BOT_TOKEN`, and `DISCORD_CLIENT_ID` were absent. No voice connection, DAVE handshake/key exchange, RTP/audio packets, playback, pause/resume, seek, stop, or reconnect/resume was tested. This audit makes no claim Discord or DAVE works.
+
+## Docker
+
+**SKIPPED / unavailable.** The sandbox returned `docker: command not found`, and no Docker daemon was available. No production image build or startup check was performed.
+
+## GitHub Actions and pull request status
+
+- Workflow run: [CI run 37806969749](https://github.com/nikcodex/Kizunalink/actions/runs/37806969749), for implementation SHA `f2fcf53ba31bc4443fe6a8173ceecd22217cde28`.
+- The initial run's macOS job failed before compilation because the hosted runner timed out downloading `channel-rust-stable.toml` from `static.rust-lang.org`; this was an infrastructure/network failure, not a compiler diagnostic. The failed job was explicitly rerun, and the workflow then completed with **success**.
+
+| Workflow check | Final result |
+|---|---|
+| Check | PASS |
+| Clippy | PASS |
+| Cargo Deny (advisories) | PASS |
+| Formatting | PASS |
+| Tests | PASS |
+| Build (ubuntu-latest) | PASS |
+| Build (windows-latest) | PASS |
+| Build (macos-latest) | PASS on retry |
+
+The separate CodeRabbit check reported success with review skipped; it is not one of the eight CI jobs above. The pull request remains open; this branch was pushed but not merged to `main`.
+
+## Remaining risks and untested areas
+
+1. **Discord/DAVE production voice remains unverified** without Discord credentials. This is the principal release gate for a voice product.
+2. **Docker image/container startup remains unverified** because Docker is unavailable in this environment.
+3. Remote HTTP and YouTube source resolution/playback were not exercised end-to-end. SSRF cases validate policy helpers and resolver address filtering, but no live attacker-controlled DNS/rebinding infrastructure was used.
+4. Thread-spawn failure paths were reviewed and error-propagation code compiled, but thread-creation failure was not forced at runtime. The ignored soak harness was not run.
+5. Source scans still find panic/unwrap/expect sites, unsafe code, unbounded channels and asynchronous tasks as counted above. A match-by-match audit and runtime capacity/lifetime verification were not performed as part of this repair.
+6. Explicit operator-configured proxy behavior is a trust boundary: a forwarding proxy may perform its own DNS resolution. Deployments using proxies should ensure the proxy enforces equivalent egress controls.
+
+## Final production-readiness rating
+
+**NOT PRODUCTION READY — HOLD for a production voice release.** The corrected code commit passes local formatting, all-target check, clippy, 217 active tests, release build and advisories; the pushed PR's eight CI jobs are green after retry. Nevertheless, production-container startup and actual Discord/DAVE voice were not tested, and remote provider playback plus broader task/queue bounds remain unverified. Merge/release and any claim of production readiness should wait for those environment-dependent validations.
+
+---
+
 ---
 
 ## 2026-10-09 — Milestone A verification addendum (original audit retained above)
