@@ -1357,3 +1357,26 @@ fail-open and cancellation/ownership items above still prevent any claim of
 production readiness. PR #3 has no unique source fixes left; its historical
 audit is preserved. It can be closed as superseded only after the latest PR #4
 run is verified green; neither PR is authorized for automatic merge.
+
+### Reconciliation CI and PR disposition (verified after the preceding entry)
+
+PR #4 head `3a23fc308559ec5aeba7dccf62d331bfd5ea9d07`
+completed GitHub Actions run
+[37881295645](https://github.com/nikcodex/Kizunalink/actions/runs/37881295645)
+with **success** for each job: Formatting, Check, Clippy, Tests, Build
+(ubuntu-latest), Build (macos-latest), Build (windows-latest), and Cargo Deny
+(advisories). Auto-fix run 37881291063 also succeeded without advancing the
+head. The branch and remote matched, the working tree was clean, and
+`git diff origin/main...HEAD --check` passed. The actual CI command definitions
+are in `.github/workflows/ci.yml`; all six requested Cargo commands still
+exited 127 locally because Cargo could not be installed. The CI log download
+host was unreachable from this sandbox; exact total test count is **unknown**,
+not guessed. No Docker/audio/Discord/DAVE runtime verification took place.
+
+Because the source and PR #3 historical audit are now included in PR #4 and
+that exact head had a green CI run, PR #3 was **closed as superseded**, with a
+comment identifying the cherry-picks and CI evidence. PR #4 remains **OPEN
+AND UNMERGED**. This further audit-only commit will need its own current-head
+CI run; the SHA and run immediately above validate the implementation, not a
+future audit commit. Merge readiness is separate from production readiness:
+the historical DAVE fail-open and runtime lifecycle findings remain unresolved.
