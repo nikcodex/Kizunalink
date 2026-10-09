@@ -29,7 +29,6 @@ struct ResolutionContext {
     depth: usize,
 }
 
-
 /// Boxed future returned by [`resolve_playlist_inner`]; the recursion has to be
 /// boxed so the compiler can name its type.
 type PlaylistFuture<'a> = std::pin::Pin<
@@ -40,7 +39,10 @@ pub async fn resolve_playlist(
     client: &reqwest::Client,
     url: &str,
 ) -> AnyResult<(Vec<Resource>, Option<Resource>)> {
-    let mut context = ResolutionContext { visited: HashSet::new(), depth: 0 };
+    let mut context = ResolutionContext {
+        visited: HashSet::new(),
+        depth: 0,
+    };
     resolve_playlist_inner(client, url, &mut context).await
 }
 
@@ -53,8 +55,8 @@ fn resolve_playlist_inner<'a>(
     context: &'a mut ResolutionContext,
 ) -> PlaylistFuture<'a> {
     Box::pin(async move {
-        let mut canonical = reqwest::Url::parse(url)
-            .map_err(|_| PlaylistResolutionError::InvalidUrl)?;
+        let mut canonical =
+            reqwest::Url::parse(url).map_err(|_| PlaylistResolutionError::InvalidUrl)?;
         if !matches!(canonical.scheme(), "http" | "https") || canonical.host().is_none() {
             return Err(PlaylistResolutionError::InvalidUrl.into());
         }
@@ -106,8 +108,7 @@ fn resolve_playlist_inner<'a>(
                                     group_id,
                                     uri
                                 );
-                                return resolve_playlist_inner(client, uri, context)
-                                    .await;
+                                return resolve_playlist_inner(client, uri, context).await;
                             }
                         }
 

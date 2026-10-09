@@ -15,8 +15,11 @@ pub async fn fetch_segment_into(
 ) -> AnyResult<()> {
     let range = resource.range.as_ref();
     let end = if let Some(r) = range {
-        Some(r.offset.checked_add(r.length.checked_sub(1).ok_or("empty HLS range")?)
-            .ok_or("HLS range overflow")?)
+        Some(
+            r.offset
+                .checked_add(r.length.checked_sub(1).ok_or("empty HLS range")?)
+                .ok_or("HLS range overflow")?,
+        )
     } else {
         None
     };
@@ -41,8 +44,7 @@ pub async fn fetch_segment_into(
             Err(e) => return Err(e.into()),
         };
         let status = res.status();
-        if matches!(status.as_u16(), 429 | 500 | 502 | 503 | 504)
-            && attempt < MAX_TRANSIENT_RETRIES
+        if matches!(status.as_u16(), 429 | 500 | 502 | 503 | 504) && attempt < MAX_TRANSIENT_RETRIES
         {
             tokio::time::sleep(std::time::Duration::from_millis(100 << attempt)).await;
             continue;
@@ -52,14 +54,21 @@ pub async fn fetch_segment_into(
                 validate_content_range(&res, r.offset, Some(r.length))?;
                 let bytes = read_body_capped(res, r.length as usize).await?;
                 if bytes.len() as u64 != r.length {
-                    return Err(format!("HLS fetch: truncated range body ({} of {} bytes)", bytes.len(), r.length).into());
+                    return Err(format!(
+                        "HLS fetch: truncated range body ({} of {} bytes)",
+                        bytes.len(),
+                        r.length
+                    )
+                    .into());
                 }
                 bytes
             } else if status == reqwest::StatusCode::OK {
                 // A server that ignores Range may be used only if the complete
                 // representation is declared, fits the cap, and contains the
                 // requested interval. Never mistake byte zero for a seek target.
-                let full_len = res.content_length().ok_or("HLS fetch: ignored Range without Content-Length")?;
+                let full_len = res
+                    .content_length()
+                    .ok_or("HLS fetch: ignored Range without Content-Length")?;
                 let requested_end = r.offset + r.length - 1; // checked above
                 if full_len > MAX_HLS_SEGMENT_BYTES as u64 || full_len <= requested_end {
                     return Err("HLS fetch: unsafe full-body Range fallback".into());

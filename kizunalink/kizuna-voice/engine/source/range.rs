@@ -10,7 +10,12 @@ pub(crate) fn validate_content_range(
     offset: u64,
     length: Option<u64>,
 ) -> io::Result<u64> {
-    let invalid = || io::Error::new(io::ErrorKind::InvalidData, "invalid or mismatched Content-Range");
+    let invalid = || {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            "invalid or mismatched Content-Range",
+        )
+    };
     if response.status() != reqwest::StatusCode::PARTIAL_CONTENT {
         return Err(invalid());
     }
@@ -28,7 +33,10 @@ pub(crate) fn validate_content_range(
     let start = start.parse::<u64>().map_err(|_| invalid())?;
     let end = end.parse::<u64>().map_err(|_| invalid())?;
     let total = total.parse::<u64>().map_err(|_| invalid())?;
-    let count = end.checked_sub(start).and_then(|n| n.checked_add(1)).ok_or_else(invalid)?;
+    let count = end
+        .checked_sub(start)
+        .and_then(|n| n.checked_add(1))
+        .ok_or_else(invalid)?;
     if start != offset || end >= total || length.is_some_and(|len| len != count) {
         return Err(invalid());
     }

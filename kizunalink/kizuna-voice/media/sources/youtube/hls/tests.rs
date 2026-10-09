@@ -26,12 +26,19 @@ struct Reply {
 impl Reply {
     fn ok(body: impl AsRef<[u8]>) -> Self {
         let body = body.as_ref().to_vec();
-        Self { status: 200, headers: Vec::new(), body, declared_len: None }
+        Self {
+            status: 200,
+            headers: Vec::new(),
+            body,
+            declared_len: None,
+        }
     }
     fn range(start: u64, end: u64, total: u64, body: impl Into<Vec<u8>>) -> Self {
         let mut reply = Self::ok(body);
         reply.status = 206;
-        reply.headers.push(("Content-Range", format!("bytes {start}-{end}/{total}")));
+        reply
+            .headers
+            .push(("Content-Range", format!("bytes {start}-{end}/{total}")));
         reply
     }
 }
@@ -56,7 +63,8 @@ impl TestServer {
                         stream.set_read_timeout(Some(Duration::from_secs(3))).ok();
                         let mut request = Vec::new();
                         let mut buf = [0; 2048];
-                        while !request.windows(4).any(|b| b == b"\r\n\r\n") && request.len() < 8192 {
+                        while !request.windows(4).any(|b| b == b"\r\n\r\n") && request.len() < 8192
+                        {
                             match stream.read(&mut buf) {
                                 Ok(0) | Err(_) => break,
                                 Ok(n) => request.extend_from_slice(&buf[..n]),
@@ -64,11 +72,16 @@ impl TestServer {
                         }
                         let request = String::from_utf8_lossy(&request);
                         let path = request.split_whitespace().nth(1).unwrap_or("/");
-                        let range = request.lines().find(|line| line.to_ascii_lowercase().starts_with("range:"))
+                        let range = request
+                            .lines()
+                            .find(|line| line.to_ascii_lowercase().starts_with("range:"))
                             .unwrap_or("");
                         let reply = handler(path, range);
-                        let mut headers = format!("HTTP/1.1 {} Test\r\nContent-Length: {}\r\nConnection: close\r\n",
-                            reply.status, reply.declared_len.unwrap_or(reply.body.len()));
+                        let mut headers = format!(
+                            "HTTP/1.1 {} Test\r\nContent-Length: {}\r\nConnection: close\r\n",
+                            reply.status,
+                            reply.declared_len.unwrap_or(reply.body.len())
+                        );
                         for (name, value) in reply.headers {
                             headers.push_str(&format!("{name}: {value}\r\n"));
                         }
@@ -83,7 +96,11 @@ impl TestServer {
                 }
             }
         });
-        Self { url, stop, thread: Some(thread) }
+        Self {
+            url,
+            stop,
+            thread: Some(thread),
+        }
     }
     fn url(&self, path: &str) -> String {
         format!("{}{path}", self.url)
@@ -100,7 +117,11 @@ impl Drop for TestServer {
 }
 
 fn resource(url: String, offset: u64, length: u64) -> Resource {
-    Resource { url, range: Some(ByteRange { offset, length }), duration: None }
+    Resource {
+        url,
+        range: Some(ByteRange { offset, length }),
+        duration: None,
+    }
 }
 
 #[tokio::test]
@@ -115,8 +136,13 @@ async fn valid_and_ignored_ranges_return_only_requested_bytes() {
     });
     for path in ["/partial", "/ignored"] {
         let mut out = vec![b'!'];
-        fetch_segment_into(&reqwest::Client::new(), &resource(server.url(path), 2, 2), &mut out)
-            .await.expect("correct range");
+        fetch_segment_into(
+            &reqwest::Client::new(),
+            &resource(server.url(path), 2, 2),
+            &mut out,
+        )
+        .await
+        .expect("correct range");
         assert_eq!(out, b"!cd");
     }
 }
@@ -139,11 +165,32 @@ async fn rejects_bad_ranges_truncation_oversize_and_server_errors_without_commit
             r.declared_len = Some(super::fetcher::MAX_HLS_SEGMENT_BYTES + 1);
             r
         }
-        _ => { let mut r = Reply::ok(Vec::<u8>::new()); r.status = 403; r }
+        _ => {
+            let mut r = Reply::ok(Vec::<u8>::new());
+            r.status = 403;
+            r
+        }
     });
-    for path in ["/wrong", "/malformed", "/truncated", "/oversize", "/short-full", "/huge-full", "/forbidden"] {
+    for path in [
+        "/wrong",
+        "/malformed",
+        "/truncated",
+        "/oversize",
+        "/short-full",
+        "/huge-full",
+        "/forbidden",
+    ] {
         let mut out = vec![b'!'];
-        assert!(fetch_segment_into(&reqwest::Client::new(), &resource(server.url(path), 2, 2), &mut out).await.is_err(), "{path}");
+        assert!(
+            fetch_segment_into(
+                &reqwest::Client::new(),
+                &resource(server.url(path), 2, 2),
+                &mut out
+            )
+            .await
+            .is_err(),
+            "{path}"
+        );
         assert_eq!(out, b"!", "{path} committed unvalidated data");
     }
 }
@@ -154,33 +201,55 @@ fn master(child: &str) -> String {
 
 #[tokio::test]
 async fn playlist_cycles_depth_and_malformed_urls_are_typed() {
-    let server = TestServer::new(|path, _| Reply::ok(match path {
-        "/self" => master("/self#fragment"),
-        "/a" => master("/b"),
-        "/b" => master("/a"),
-        other if other.starts_with("/level") => {
-            let n: usize = other.trim_start_matches("/level").parse().expect("numbered path");
-            master(&format!("/level{}", n + 1))
-        }
-        "/nested" => master("/media"),
-        "/bad" => master("http://[invalid"),
-        "/media" => "#EXTM3U\n#EXTINF:2.0,\nsegment.aac\n".to_string(),
-        _ => master("http://[invalid"),
-    }));
+    let server = TestServer::new(|path, _| {
+        Reply::ok(match path {
+            "/self" => master("/self#fragment"),
+            "/a" => master("/b"),
+            "/b" => master("/a"),
+            other if other.starts_with("/level") => {
+                let n: usize = other
+                    .trim_start_matches("/level")
+                    .parse()
+                    .expect("numbered path");
+                master(&format!("/level{}", n + 1))
+            }
+            "/nested" => master("/media"),
+            "/bad" => master("http://[invalid"),
+            "/media" => "#EXTM3U\n#EXTINF:2.0,\nsegment.aac\n".to_string(),
+            _ => master("http://[invalid"),
+        })
+    });
     let client = reqwest::Client::new();
     for (path, is_depth) in [("/self", false), ("/a", false), ("/level0", true)] {
-        let err = resolve_playlist(&client, &server.url(path)).await.err().expect("must reject cycle or depth");
+        let err = resolve_playlist(&client, &server.url(path))
+            .await
+            .err()
+            .expect("must reject cycle or depth");
         if is_depth {
-            assert!(err.downcast_ref::<PlaylistResolutionError>().is_some_and(|e| matches!(e, PlaylistResolutionError::Depth)));
+            assert!(
+                err.downcast_ref::<PlaylistResolutionError>()
+                    .is_some_and(|e| matches!(e, PlaylistResolutionError::Depth))
+            );
         } else {
-            assert!(err.downcast_ref::<PlaylistResolutionError>().is_some_and(|e| matches!(e, PlaylistResolutionError::Cycle)));
+            assert!(
+                err.downcast_ref::<PlaylistResolutionError>()
+                    .is_some_and(|e| matches!(e, PlaylistResolutionError::Cycle))
+            );
         }
     }
     for url in ["not a URL".to_string(), server.url("/bad")] {
-    let err = resolve_playlist(&client, &url).await.err().expect("malformed URL");
-    assert!(err.downcast_ref::<PlaylistResolutionError>().is_some_and(|e| matches!(e, PlaylistResolutionError::InvalidUrl)));
+        let err = resolve_playlist(&client, &url)
+            .await
+            .err()
+            .expect("malformed URL");
+        assert!(
+            err.downcast_ref::<PlaylistResolutionError>()
+                .is_some_and(|e| matches!(e, PlaylistResolutionError::InvalidUrl))
+        );
     }
-    let (segments, _) = resolve_playlist(&client, &server.url("/nested")).await.expect("valid nesting");
+    let (segments, _) = resolve_playlist(&client, &server.url("/nested"))
+        .await
+        .expect("valid nesting");
     assert_eq!(segments.len(), 1);
     assert_eq!(segments[0].url, server.url("/segment.aac"));
 }
@@ -190,22 +259,37 @@ async fn failed_second_segment_is_sticky_and_third_segment_is_not_fetched() {
     let third = Arc::new(AtomicUsize::new(0));
     let count = Arc::clone(&third);
     let server = TestServer::new(move |path, _| match path {
-        "/playlist" => Reply::ok("#EXTM3U\n#EXTINF:1,\n/one\n#EXTINF:1,\n/two\n#EXTINF:1,\n/three\n"),
+        "/playlist" => {
+            Reply::ok("#EXTM3U\n#EXTINF:1,\n/one\n#EXTINF:1,\n/two\n#EXTINF:1,\n/three\n")
+        }
         "/one" => Reply::ok(b"first".to_vec()),
-        "/two" => { let mut r = Reply::ok(b"failure".to_vec()); r.status = 500; r }
-        _ => { count.fetch_add(1, Ordering::SeqCst); Reply::ok(b"third".to_vec()) }
+        "/two" => {
+            let mut r = Reply::ok(b"failure".to_vec());
+            r.status = 500;
+            r
+        }
+        _ => {
+            count.fetch_add(1, Ordering::SeqCst);
+            Reply::ok(b"third".to_vec())
+        }
     });
     let url = server.url("/playlist");
-    let result = tokio::time::timeout(Duration::from_secs(8), tokio::task::spawn_blocking(move || {
-        let mut reader = HlsReader::new(&url, None, None, None, None).expect("first segment loads");
-        let mut buf = [0; 32];
-        let n = reader.read(&mut buf).expect("first segment readable");
-        assert_eq!(&buf[..n], b"first");
-        let first_error = reader.read(&mut buf).expect_err("segment two failed");
-        assert!(first_error.to_string().contains("500"), "{first_error}");
-        let second_error = reader.read(&mut buf).expect_err("error is sticky, not EOS");
-        assert_eq!(first_error.to_string(), second_error.to_string());
-    })).await.expect("reader must wake");
+    let result = tokio::time::timeout(
+        Duration::from_secs(8),
+        tokio::task::spawn_blocking(move || {
+            let mut reader =
+                HlsReader::new(&url, None, None, None, None).expect("first segment loads");
+            let mut buf = [0; 32];
+            let n = reader.read(&mut buf).expect("first segment readable");
+            assert_eq!(&buf[..n], b"first");
+            let first_error = reader.read(&mut buf).expect_err("segment two failed");
+            assert!(first_error.to_string().contains("500"), "{first_error}");
+            let second_error = reader.read(&mut buf).expect_err("error is sticky, not EOS");
+            assert_eq!(first_error.to_string(), second_error.to_string());
+        }),
+    )
+    .await
+    .expect("reader must wake");
     result.expect("reader thread finished");
     assert_eq!(third.load(Ordering::SeqCst), 0);
 }
@@ -220,7 +304,9 @@ async fn failed_ts_demux_does_not_forward_raw_bytes() {
         }
     });
     let url = server.url("/playlist");
-    let result = tokio::task::spawn_blocking(move || HlsReader::new(&url, None, None, None, None)).await.expect("reader thread");
+    let result = tokio::task::spawn_blocking(move || HlsReader::new(&url, None, None, None, None))
+        .await
+        .expect("reader thread");
     assert!(result.is_err(), "invalid TS must not be accepted as audio");
 }
 
@@ -234,13 +320,25 @@ async fn segmented_and_http_sources_reject_mismatched_ranges() {
         _ => Reply::ok(b"abcdef".to_vec()),
     });
     let client = reqwest::Client::new();
-    let bytes = fetch_chunk(&client, &server.url("/good"), 2, 2).await.expect("valid chunk");
+    let bytes = fetch_chunk(&client, &server.url("/good"), 2, 2)
+        .await
+        .expect("valid chunk");
     assert_eq!(bytes.as_ref(), b"cd");
     for path in ["/wrong", "/short", "/ignored"] {
-        assert!(fetch_chunk(&client, &server.url(path), 2, 2).await.is_err(), "{path} segmented");
-        assert!(HttpSource::fetch_stream(&client, &server.url(path), 2, Some(2)).await.is_err(), "{path} HTTP");
+        assert!(
+            fetch_chunk(&client, &server.url(path), 2, 2).await.is_err(),
+            "{path} segmented"
+        );
+        assert!(
+            HttpSource::fetch_stream(&client, &server.url(path), 2, Some(2))
+                .await
+                .is_err(),
+            "{path} HTTP"
+        );
     }
-    let res = HttpSource::fetch_stream(&client, &server.url("/good"), 2, Some(2)).await.expect("valid HTTP response");
+    let res = HttpSource::fetch_stream(&client, &server.url("/good"), 2, Some(2))
+        .await
+        .expect("valid HTTP response");
     assert_eq!(res.bytes().await.expect("body"), b"cd"[..]);
 }
 
@@ -253,8 +351,10 @@ async fn segmented_probe_requires_valid_one_byte_range() {
     });
     for path in ["/wrong", "/ignored"] {
         let url = server.url(path);
-        let result = tokio::task::spawn_blocking(move || SegmentedSource::new(reqwest::Client::new(), &url))
-            .await.expect("probe thread");
+        let result =
+            tokio::task::spawn_blocking(move || SegmentedSource::new(reqwest::Client::new(), &url))
+                .await
+                .expect("probe thread");
         assert!(result.is_err(), "{path}");
     }
 }

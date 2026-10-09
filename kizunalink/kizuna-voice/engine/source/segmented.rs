@@ -257,7 +257,11 @@ pub(crate) async fn fetch_chunk(
         out.extend_from_slice(&chunk);
     }
     if out.len() as u64 != size {
-        return Err(format!("fetch_chunk: truncated body ({} of {size} bytes)", out.len()).into());
+        return Err(format!(
+            "fetch_chunk: truncated body ({} of {size} bytes)",
+            out.len()
+        )
+        .into());
     }
     Ok(Bytes::from(out))
 }

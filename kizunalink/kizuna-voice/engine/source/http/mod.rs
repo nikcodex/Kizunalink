@@ -80,7 +80,8 @@ impl HttpSource {
     ) -> AnyResult<reqwest::Response> {
         let range = match limit {
             Some(l) => {
-                let end = offset.checked_add(l.checked_sub(1).ok_or("empty HTTP range")?)
+                let end = offset
+                    .checked_add(l.checked_sub(1).ok_or("empty HTTP range")?)
                     .ok_or("HTTP range overflow")?;
                 format!("bytes={offset}-{end}")
             }
