@@ -126,7 +126,7 @@ pub async fn fetch_segment_into(
         if let Some(expected_len) = expected_len
             && bytes.len() as u64 != expected_len
         {
-            if bytes.len() as u64 < expected_len && attempt < MAX_TRANSIENT_RETRIES {
+            if (bytes.len() as u64) < expected_len && attempt < MAX_TRANSIENT_RETRIES {
                 retry_pause(attempt).await;
                 continue;
             }
