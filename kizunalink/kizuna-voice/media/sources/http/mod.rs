@@ -353,7 +353,9 @@ mod loopback_integration_tests {
             "[::ffff:127.0.0.1]",
         ] {
             let url = format!("http://{host}:{port}/fixture");
-            assert!(!source.can_handle(&url), "unexpectedly allowed {host}");
+            // can_handle is deliberately syntax-only; DNS/IP validation occurs
+            // at the actual reader before its first network request.
+            assert!(source.can_handle(&url));
             assert!(reader::HttpReader::new(&url, None, None).is_err());
         }
         assert!(matches!(listener.accept(), Err(e) if e.kind() == std::io::ErrorKind::WouldBlock));
