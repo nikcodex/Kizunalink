@@ -1391,9 +1391,15 @@ uses that same budget for a fresh whole request on a transient body transport
 error or a short declared/ranged response. Each attempt uses an isolated staging
 buffer, validates status/range/declared length and the 32 MiB cap, and only
 appends after a complete successful response. Oversized bodies, malformed
-ranges, invalid/decode failures and permanent statuses remain terminal. A
+ranges, non-I/O decode failures and permanent statuses remain terminal. A
 cancelled future drops the response/sleep instead of starting another request.
-Scripted local HTTP tests cover a dropped connection partway through a 206 body
+The first CI attempt found that reqwest classifies truncated Content-Length as
+`Decode` wrapping an `io::Error(UnexpectedEof)`, not `Body`; the initial
+classification left both new interrupted-body tests failing (run 37883139234,
+207 passed, 2 failed; formatting also failed). The follow-up inspects the
+error source chain and retries only known I/O interruption kinds or timeout /
+connect failures, not all decode errors. Those interim failures are **not**
+claimed as validation of this updated implementation. Scripted HTTP tests cover a dropped connection partway through a 206 body
 followed by a successful fresh response, retry exhaustion after three incomplete
 responses, and single-request handling for 403 and oversized bodies. Previously
 recorded parser and unknown-total range comments have explicit resolved

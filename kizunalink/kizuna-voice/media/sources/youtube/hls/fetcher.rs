@@ -19,11 +19,30 @@ enum BodyReadError {
 impl BodyReadError {
     fn is_transient(&self) -> bool {
         match self {
-            // reqwest classifies a dropped connection during streaming as a
-            // body error. Decode errors (e.g. invalid compression) are not
-            // transport failures and must not be retried.
+            // reqwest may label an incomplete HTTP body as Decode rather than
+            // Body. Inspect its error chain for an actual I/O interruption;
+            // malformed compression/data errors are not retryable.
             Self::Transport(e) => {
-                e.is_timeout() || e.is_connect() || (e.is_body() && !e.is_decode())
+                if e.is_timeout() || e.is_connect() {
+                    return true;
+                }
+                let mut cause: &(dyn std::error::Error + 'static) = e;
+                loop {
+                    if let Some(io) = cause.downcast_ref::<std::io::Error>() {
+                        return matches!(
+                            io.kind(),
+                            std::io::ErrorKind::UnexpectedEof
+                                | std::io::ErrorKind::TimedOut
+                                | std::io::ErrorKind::ConnectionReset
+                                | std::io::ErrorKind::ConnectionAborted
+                                | std::io::ErrorKind::BrokenPipe
+                        );
+                    }
+                    match cause.source() {
+                        Some(source) => cause = source,
+                        None => return false,
+                    }
+                }
             }
             Self::TooLarge(_) => false,
         }
