@@ -149,7 +149,10 @@ pub async fn fetch_segment_into(
 
 /// Read a response body into a temporary buffer; the caller commits it only
 /// after validating the complete response (no partial segment exposure).
-async fn read_body_capped(mut res: reqwest::Response, max: usize) -> Result<Vec<u8>, BodyReadError> {
+async fn read_body_capped(
+    mut res: reqwest::Response,
+    max: usize,
+) -> Result<Vec<u8>, BodyReadError> {
     if res.content_length().is_some_and(|len| len > max as u64) {
         return Err(BodyReadError::TooLarge(max));
     }
