@@ -955,9 +955,9 @@ to `kizunalink/kizuna-voice/` unless prefixed `server/` (meaning `kizuna-server/
 
 | ID | Reported defect; current file/function | Disposition and reproduction evidence | Planned change / regression | Actual regression result |
 |---|---|---|---|---|
-| A01 | Range validation: `media/sources/youtube/hls/fetcher.rs::fetch_segment_into`, `engine/source/{segmented,http}` | **Partially confirmed**: old 200 guard and size cap existed; 206 Content-Range/start/length were unchecked, segmented probe trusted unvalidated total. | Added strict shared validator, capped full-body HLS fallback only with declared complete length, exact body checks; scripted 206/200/malformed/truncated/oversize/403/probe tests. | 7 scripted tests passed in CI run 37875356459 (985107d); local Cargo unavailable. |
-| A02 | HLS failure lost: `media/sources/youtube/hls/mod.rs::{prefetch_loop,read}` | **Partially confirmed**: prefetcher already stored error/woke reader and stopped on error; `read` consumed the error with `.take()`, subsequent read could report EOS; seek after fatal could hang. | Keep error sticky, reject seek after terminal error, bounded retry only for 429/500/502/503/504 and timeout/connect; segment 2 HTTP 500 test asserts no segment 3. | Scripted regression passed in CI 37875356459; latest HEAD still needs CI. |
-| A03 | Playlist recursion: `media/sources/youtube/hls/resolver.rs::resolve_playlist_inner` | **Partially confirmed**: raw URL cycle set AND depth 8 already existed; no canonical URL or typed cycle/depth error; invalid URL not checked before fetch. | Canonicalize URL (including fragment removal), typed errors and self/A-B-A/depth/invalid/nested tests. | Scripted regression passed in CI 37875356459; latest HEAD still needs CI. |
+| A01 | Range validation: `media/sources/youtube/hls/fetcher.rs::fetch_segment_into`, `engine/source/{segmented,http}` | **Partially confirmed**: old 200 guard and size cap existed; 206 Content-Range/start/length were unchecked, segmented probe trusted unvalidated total. | Added strict shared validator, capped full-body HLS fallback only with declared complete length, exact body checks; scripted 206/200/malformed/truncated/oversize/403/probe tests. | PASS: seven new tests within Tests job, CI 37876259144 at dbb266a; local Cargo unavailable. |
+| A02 | HLS failure lost: `media/sources/youtube/hls/mod.rs::{prefetch_loop,read}` | **Partially confirmed**: prefetcher already stored error/woke reader and stopped on error; `read` consumed the error with `.take()`, subsequent read could report EOS; seek after fatal could hang. | Keep error sticky, reject seek after terminal error, bounded retry only for 429/500/502/503/504 and timeout/connect; segment 2 HTTP 500 test asserts no segment 3. | PASS: scripted regression in CI 37876259144 at dbb266a. |
+| A03 | Playlist recursion: `media/sources/youtube/hls/resolver.rs::resolve_playlist_inner` | **Partially confirmed**: raw URL cycle set AND depth 8 already existed; no canonical URL or typed cycle/depth error; invalid URL not checked before fetch. | Canonicalize URL (including fragment removal), typed errors and self/A-B-A/depth/invalid/nested tests. | PASS: scripted regression in CI 37876259144 at dbb266a. |
 | A04 | Stale voice readiness: `server/api/ws/opcodes.rs::handle_voice_update` and `discord/gateway/session/handler.rs::start_voice` | **Partially confirmed**: null channel disconnect already handled, but replacement aborts old task without clearing readiness first or a generation guard; old speak task can write shared flag. | Milestone C generation and bounded join; race regression. | Not run. |
 | A05 | DAVE setup/readiness: `discord/crypto/dave.rs::encrypt_opus`, `discord/gateway/session/handler.rs::on_session_description` | **Confirmed**: if protocol version >0 and session not ready, `encrypt_opus` returns input unchanged; setup failure resets and start_voice still runs, then readiness set true. Transport encryption remains separate, but this is not DAVE encryption. | Milestone C fail-closed gated send and negotiated readiness; test no media before DAVE ready/failed setup. | Not run; real Discord UNTESTED. |
 | A06 | Worker ownership: `engine/source/{http,segmented}.rs`, `discord/player/context.rs::stop_track` | **Partially confirmed**: stop/abort paths exist but HTTP worker handle discarded, segmented tasks spawned without owned handles and stop aborts without awaiting. | Milestone B cancellation + bounded joins, blocked-response stress and worker-count test. | Not run. |
@@ -973,7 +973,7 @@ to `kizunalink/kizuna-voice/` unless prefixed `server/` (meaning `kizuna-server/
 | A16 | Event queue visibility: `server/session.rs::send_message`, `discord/gateway/session/mod.rs` | **Partially confirmed**: bounded try_send and some warnings exist; overflow outcomes not consistently observable. | Milestone F counters and overflow tests. | Not run. |
 | A17 | SoundCloud terminal error: `media/sources/soundcloud/reader.rs::read,prefetch_loop` | **Partially confirmed**: error is stored and surfaced once, then consumed with `.take()`; repeated read can look like EOS. | Milestone B sticky failure + segment 2 error test. | Not run. |
 | A18 | RTP underruns: `discord/gateway/session/voice.rs::speak_loop` | **Unable to verify live effect**: `MissedTickBehavior::Skip` is present, but frame-clock drift/underrun impact needs timing measurement; no live voice. | Milestone C deterministic clock/load test and authorized live check. | Not run. |
-| A19 | TS fallback: `media/sources/youtube/hls/mod.rs::fetch_and_demux_into` | **Confirmed**: on empty ADTS extraction it appended raw TS bytes. | Replaced with terminal error; invalid 188-byte TS bootstrap regression. SoundCloud/Twitch need independent review. | Invalid-TS regression passed in CI 37875356459; latest HEAD still needs CI. |
+| A19 | TS fallback: `media/sources/youtube/hls/mod.rs::fetch_and_demux_into` | **Confirmed**: on empty ADTS extraction it appended raw TS bytes. | Replaced with terminal error; invalid 188-byte TS bootstrap regression. SoundCloud/Twitch need independent review. | PASS: invalid-TS regression in CI 37876259144 at dbb266a. |
 | A20 | Session registry/identity: `server/app_state.rs::AppState`, `server/api/rest` | **Partially confirmed**: public session maps exist; shared-token/session-ID cross-user exploitability not established by an authorization integration test. | Milestone E explicit ownership decision + two-user REST/WS test. | Not run. |
 | A21 | Lifecycle metrics: `server/monitoring`, `server/health.rs` | **Partially confirmed**: existing Prometheus/stat counters exist; no verified coverage of all requested worker/voice/retry/shutdown metrics. | Milestone F bounded-cardinality metric tests. | Not run. |
 | A22 | Container policy: `Dockerfile`, `docker-compose.yml` | **Partially confirmed**: non-root/read-only/cap-drop exist; no healthcheck, PID/memory limits or explicit grace period. | Milestone F health/limits after readiness works; Docker test. | Docker unavailable locally; not run. |
@@ -1016,3 +1016,29 @@ security-sensitive DAVE behavior are reviewed.
 
 - Final candidate at time of this entry: `bebd53e42d0690adb431509ecb70f0c5f354bf85`; **not fully validated** (its CI run 37875733643 is `action_required` because auto-fix pushed with GitHub Actions token). This documentation-only update will trigger a fresh human-authored PR CI run.
 - A latest-SHA green run and test counts are required before saying Milestone A is validated; when jobs finish, append their exact results here. Runtime checks remain UNTESTED as above.
+
+### Milestone A implementation validation — 2026-10-09
+
+Validated implementation SHA: `dbb266ab02637c455156b8ef0ccc683e4159fa18`.
+PR #4 GitHub Actions CI run **37876259144** completed **success** at that
+exact SHA. Individual required jobs: Formatting **success** (`cargo fmt
+--all -- --check`), Check **success** (`cargo check --workspace
+--all-targets`), Clippy **success** (`cargo clippy --workspace --all-targets
+-- -D warnings`), Tests **success** (`cargo test --workspace --all-targets`),
+Build (ubuntu-latest) **success**, Build (macos-latest) **success**, Build
+(windows-latest) **success** (each `cargo build --release --workspace`),
+Cargo Deny (advisories) **success** (`cargo deny check advisories`).
+Auto-fix run 37876256184 was also successful and did not advance the SHA;
+GitHub CodeRabbit status was successful. The full CI logs could not be fetched
+from this sandbox (`results-receiver.actions.githubusercontent.com` returned
+EOF); **the exact total test count is unavailable**, and must not be inferred
+from earlier runs. The seven new scripted tests are in
+`media/sources/youtube/hls/tests.rs`, and their job passed. Docker, audio
+playback, voice, and DAVE live runtime checks were not run here.
+
+This is validation of the *implementation*, not production readiness:
+HLS in-flight fetch cancellation and worker ownership are outstanding, and
+A05's potential plaintext-DAVE fallback is confirmed by source review.
+An audit-document-only commit after the above SHA needs its own latest-commit
+CI run to satisfy branch protection; do not treat this entry as a result for
+that future commit. The verdict remains **NOT READY**.
