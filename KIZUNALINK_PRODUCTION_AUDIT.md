@@ -1245,3 +1245,85 @@ A05's potential plaintext-DAVE fallback is confirmed by source review.
 An audit-document-only commit after the above SHA needs its own latest-commit
 CI run to satisfy branch protection; do not treat this entry as a result for
 that future commit. The verdict remains **NOT READY**.
+
+---
+
+## 2026-10-09 — PR #3 / PR #4 reconciliation (follow-up; earlier sections historical)
+
+### Baselines, divergence, and environment
+
+`git fetch origin main pull/3/head pull/4/head` on the fixed session branch
+`arena/9058f455-kizunalink` gave: main
+`28c0282499908a33b935a88d708a9e7a6996195b`, PR #3
+`759705a1a8885cad28ebeaf89ae1f6a4219004b9`, PR #4
+`993363c632dc5c68145cb80e8d8ff188bafdb498`. All three pairwise
+merge-bases are `28c0282`. PR #3 consists of implementation `f2fcf53` and
+historical validation addendum `759705a`; PR #4 already cherry-picked the
+implementation as `6335046` (verified `git diff --exit-code f2fcf53 6335046
+-- kizuna-server kizunalink`: exit 0) and adds independent media changes.
+PR #3's separate audit commit was cherry-picked with an append/append conflict
+resolved chronologically: the **entire** October 8 historical section is now
+above PR #4's October 9 addendum. No historical findings or tests were deleted.
+No source-level three-way conflict existed; overlapping HLS/source/client edits
+were inspected semantically, not resolved by choosing one PR wholesale. Both
+PRs had green CI *on their pre-reconciliation SHAs*; those are not results for
+the new commits. Review comments on both PRs were inspected; findings and
+decisions appear below.
+
+This sandbox is Debian 12 x86_64, uid 1001 with passwordless sudo and 20 GB
+free. At inspection, `cargo`, `rustc`, `rustup`, `rustfmt`, `cmake`, and
+`pkg-config` were absent; `apt-cache policy` had no package index. The
+**official** `rustup.rs` and `static.rust-lang.org` both returned TLS
+`SSL_ERROR_SYSCALL` (HTTP code 000), while `sudo apt-get update` failed to
+connect to Debian mirrors (apt itself misleadingly exited 0 with warnings).
+The repository is behind a sandbox network allowlist, so no official toolchain
+or native dependencies could be installed. None is claimed installed. Attempts
+after the source changes to run all six Cargo commands below each returned
+**127** (`bash: cargo: command not found`). GitHub Actions must provide remote
+compiler/test evidence; it does not substitute for a local run.
+
+### Reconciliation matrix (reviewed source and regression evidence)
+
+| Feature | PR #3 | PR #4 | Decision / safer implementation | Relevant tests; evidence gate |
+|---|---|---|---|---|
+| HLS constructor/spawn errors | Repairs unmatched brace and returns thread-spawn error | Contains exact cherry-pick | Retain #3 unchanged; no duplicate patch | Workspace compilation; forced spawn failure not tested |
+| SSRF initial URL/DNS/pinning | Async public DNS resolver + checked and pinned initial IP | Same cherry-pick | Retain, reuse one IP predicate; validate even caller-supplied pins | Direct/private/CGNAT/mapped-IP and pin tests; public-to-private DNS rebinding not live-tested |
+| Redirect policy | Reqwest Attempt policy blocks downgrade and private literals; filtered resolver handles names | Same cherry-pick | Retain; redact target URL in warning; fail closed if a pinned user-supplied URL is paired with a forwarding proxy (proxy resolves independently) | Policy and proxy tests; real public-to-public redirect not tested end-to-end |
+| Auth | Existing main already checks trimmed empty/default public-bind token | Same | Preserve original; do not duplicate | `empty_authorization_is_rejected` and public bind tests |
+| `/players` response | Already fixed on main before both PRs | Same | Retain main's bare-array handler | REST players-list test |
+| `/v4/info` | Uses protocol 4.x.y and optional build metadata | Cherry-pick | Retain; reject malformed/empty build-time pre-release labels | REST schema and valid/invalid label tests |
+| Route-planner CIDR | Invalid CIDR returned as error | Cherry-pick | Retain unchanged | Invalid CIDR and single-address tests |
+| HTTP 206/Content-Range | Only rejects ignored 200 in limited paths | Adds shared offset, length, body validation | Retain #4; accept RFC 9110 unknown total `*` for bounded 206; segmented probe still needs numeric total | Scripted 206/200/malformed/oversize/star tests |
+| HLS ignored range | Rejects ignored 200 | Bounded full-body fallback with declared complete length and exact slice | Retain #4; no byte-zero-as-nonzero | Scripted fallback, oversized and short response tests |
+| Transient segment errors | Existing sticky first error and wakeup (but one-shot `.take()` in reader) | Two retries only for transient send/status; sticky reader error | Retain #4; do not retry malformed ranges; mid-body connection errors still fail visibly | Segment-2 500 and two-503-then-200 scripted tests |
+| Playlist recursion | Raw URL visited and max depth 8 already exist | Canonical URL and typed cycle/depth errors | Retain #4 enhancement | Self, A→B→A, depth, invalid, nested tests |
+| Byte-range playlist parser | Historical `EXTINF` lookahead parsed following BYTERANGE twice | Same historical issue | Parse each tag once; preserve implicit offsets | New chained implicit-range parser test |
+| TS demux failure | Raw TS fallback existed | Rejects empty demux | Retain #4 | Invalid TS bootstrap test; SoundCloud/Twitch still require separate audit |
+| SoundCloud assets | Relative script-source discovery | Same cherry-pick | Retain; HTML tag/attribute match now case-insensitive | Uppercase SCRIPT regression; live SoundCloud untested |
+| Audit history | Adds October 8 failed-main and PR #3 final verification | Adds October 9 23-finding matrix and CI results | Combine both in chronological order, no deletion | Compare source/commit history and latest CI |
+
+PR review comments on `Content-Range: */unknown`, CGNAT, malformed pre-release,
+uppercase HTML tags, proxied SSRF and double-parsed implicit byte ranges were
+checked against source and addressed above. The internal/private forwarding
+proxy compatibility comment is real: **user-supplied pinned HTTP source URLs
+now reject an explicit forwarding proxy** because pinning cannot constrain its
+DNS; other trusted-provider proxy settings were left unchanged. The review
+comment about transient *mid-body* errors remains a known limitation: such
+errors fail the segment, never become successful EOS or committed partial data.
+
+### Changed files and results pending for the reconciled code
+
+New follow-up changes: `engine/source/{client.rs,range.rs}`,
+`media/sources/{http/mod.rs,soundcloud/token.rs,youtube/hls/parser.rs,youtube/hls/tests.rs}`,
+`server/api/rest/routes/stats/info.rs`, plus this audit. The seven scripted
+HTTP tests from PR #4 are retained; six follow-up test functions cover chained
+ranges, unknown totals, bounded retries, proxy/pins, pre-release validation,
+and uppercase SoundCloud script tags. Existing tests for auth, `/players`,
+`/v4/info`, CIDRs, redirects and ranges remain intact. Test results for these
+follow-up changes must be filled from the **new** CI run, not the historical
+runs above. Local commands (format, check, Clippy, test, release build, deny)
+all exited 127 for missing Cargo. Local Docker, audio playback, Discord voice,
+DAVE negotiation/encrypted packets, real DNS rebinding, and forced thread-spawn
+failure were NOT RUN. Production verdict remains **NOT READY** due to the
+confirmed DAVE fail-open behavior and outstanding lifecycle issues in the
+23-finding matrix. Do not merge either PR on the strength of this addendum.
