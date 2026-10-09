@@ -1416,3 +1416,30 @@ playback, SSRF redirect/DNS-rebinding integration, Discord voice, and DAVE
 packet-flow testing **remain outstanding**. The verdict remains **NOT READY**:
 passing static checks/tests does not resolve the historical DAVE fail-open and
 runtime lifecycle issues. PR #4 must not be merged on this evidence alone.
+
+### Exact-head validation of the HLS body retry follow-up
+
+PR #4 head `96da831a99f39fd443af073fa2b8b1ddd0cce93f` passed
+[GitHub Actions run 37884031393](https://github.com/nikcodex/Kizunalink/actions/runs/37884031393):
+**all eight configured CI jobs succeeded** — Formatting (`cargo fmt --all --
+--check`), Check (`cargo check --workspace --all-targets`), Clippy (`cargo
+clippy --workspace --all-targets -- -D warnings`), Tests (`cargo test
+--workspace --all-targets`), release Build on Ubuntu, macOS and Windows
+(`cargo build --release --workspace`), and Cargo Deny advisories (`cargo deny
+check advisories`). Auto-fix run 37884027553 passed on the same SHA without
+changing the tree. The two newly added mid-body regression tests were included
+in the successful Tests job; no exact total test count is asserted because CI
+log download from this sandbox remains unavailable. Prior runs 37883139234
+(early body classification failure and formatting failure) and 37883053895
+(cancelled) do not validate the final implementation.
+
+The mid-body review thread 4226100528 was answered with this exact-head CI
+evidence and marked resolved; the other two review threads were already
+resolved. The historical audit sections above are not retroactively rewritten.
+The six equivalent Cargo commands were attempted locally and each exited 127
+(`cargo: command not found`); passing CI is remote evidence, **not** a local
+Rust toolchain installation or a local test run. This audit-only documentation
+commit requires its own exact-head CI confirmation. PR #4 remains **OPEN,
+UNMERGED** and the production verdict is **NOT READY**. Docker startup, real
+audio playback, SSRF redirect/DNS-rebinding integration, Discord voice, and
+DAVE packet-flow testing all remain outstanding.
