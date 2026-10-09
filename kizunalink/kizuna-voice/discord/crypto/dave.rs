@@ -12,9 +12,7 @@ use tracing::{debug, trace, warn};
 use crate::{
     common::types::{AnyError, AnyResult, ChannelId, UserId},
     discord::gateway::{
-        constants::{
-            DAVE_INITIAL_VERSION, MAX_DAVE_CONTROL_PAYLOAD_BYTES, MAX_PENDING_PROPOSALS,
-        },
+        constants::{DAVE_INITIAL_VERSION, MAX_DAVE_CONTROL_PAYLOAD_BYTES, MAX_PENDING_PROPOSALS},
         session::types::map_boxed_err,
     },
 };
@@ -438,7 +436,8 @@ impl DaveHandler {
     /// Silence is exempted by davey's implementation *after* readiness is checked.
     pub fn can_send_media(&self) -> bool {
         !self.encryption_required
-            || (self.protocol_version != 0 && self.session.as_ref().is_some_and(DaveSession::is_ready))
+            || (self.protocol_version != 0
+                && self.session.as_ref().is_some_and(DaveSession::is_ready))
     }
 
     pub fn encrypt_opus(&mut self, packet: &[u8]) -> AnyResult<Vec<u8>> {
@@ -448,12 +447,18 @@ impl DaveHandler {
         if !self.can_send_media() {
             return Err(map_boxed_err("DAVE required but session is not ready"));
         }
-        let session = self.session.as_mut().ok_or_else(|| map_boxed_err("DAVE session missing"))?;
+        let session = self
+            .session
+            .as_mut()
+            .ok_or_else(|| map_boxed_err("DAVE session missing"))?;
         if !self.was_ready {
             debug!("DAVE session (v{}) is READY", self.protocol_version);
             self.was_ready = true;
         }
-        session.encrypt_opus(packet).map(|c| c.into_owned()).map_err(map_boxed_err)
+        session
+            .encrypt_opus(packet)
+            .map(|c| c.into_owned())
+            .map_err(map_boxed_err)
     }
 
     pub fn voice_privacy_code(&self) -> Option<String> {
@@ -575,7 +580,11 @@ mod tests {
         assert!(handler.encrypt_opus(media).is_err());
         // The davey library permits a silence packet in a *ready* session;
         // it must not bypass the readiness gate during a failed negotiation.
-        assert!(handler.encrypt_opus(&crate::discord::gateway::constants::SILENCE_FRAME).is_err());
+        assert!(
+            handler
+                .encrypt_opus(&crate::discord::gateway::constants::SILENCE_FRAME)
+                .is_err()
+        );
 
         assert!(handler.prepare_transition(42, DAVE_INITIAL_VERSION));
         handler.execute_transition(42);

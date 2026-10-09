@@ -462,7 +462,10 @@ impl<'a> SessionState<'a> {
                 && d.get("dave_protocol_version").is_none()
                 && dave.requires_encryption()
             {
-                error!("[{}] Missing DAVE version after nonzero negotiation", self.gateway.guild_id);
+                error!(
+                    "[{}] Missing DAVE version after nonzero negotiation",
+                    self.gateway.guild_id
+                );
                 return Some(SessionOutcome::Identify);
             }
             if protocol_version > 0 {
@@ -694,7 +697,10 @@ impl<'a> SessionState<'a> {
         self.gateway.voice_ready.store(false, Ordering::Release);
         if let Some(t) = self.speak_task.take() {
             t.abort();
-            if tokio::time::timeout(std::time::Duration::from_secs(2), t).await.is_err() {
+            if tokio::time::timeout(std::time::Duration::from_secs(2), t)
+                .await
+                .is_err()
+            {
                 self.conn_token.cancel();
                 return; // never overlap old and new voice loops
             }
@@ -836,7 +842,10 @@ mod tests {
     #[test]
     fn missing_dave_protocol_version_disables_dave() {
         assert_eq!(parse_dave_protocol_version(&serde_json::json!({})), Ok(0));
-        assert!(parse_dave_protocol_version(&serde_json::json!({ "dave_protocol_version": null })).is_err());
+        assert!(
+            parse_dave_protocol_version(&serde_json::json!({ "dave_protocol_version": null }))
+                .is_err()
+        );
         assert_eq!(
             parse_dave_protocol_version(&serde_json::json!({
                 "dave_protocol_version": 1

@@ -524,9 +524,15 @@ async fn permanent_status_and_oversized_body_are_not_retried() {
 
 #[tokio::test]
 async fn cancelling_mid_body_fetch_keeps_output_unchanged() {
-    use tokio::{io::{AsyncReadExt, AsyncWriteExt}, net::TcpListener, sync::oneshot};
+    use tokio::{
+        io::{AsyncReadExt, AsyncWriteExt},
+        net::TcpListener,
+        sync::oneshot,
+    };
 
-    let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind fixture");
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind fixture");
     let addr = listener.local_addr().expect("fixture address");
     let (partial_tx, partial_rx) = oneshot::channel();
     let server = tokio::spawn(async move {

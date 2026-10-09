@@ -243,7 +243,9 @@ async fn handle_voice(
             old_task.abort();
             let _ = old_task.await;
         }
-        player.voice_ready.store(false, std::sync::atomic::Ordering::Release);
+        player
+            .voice_ready
+            .store(false, std::sync::atomic::Ordering::Release);
         // Bounded so a stalled WebSocket consumer cannot grow this queue without bound.
         let (event_tx, mut event_rx) = tokio::sync::mpsc::channel(256);
         let session_clone = session.clone();
