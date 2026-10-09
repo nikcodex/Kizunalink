@@ -1550,3 +1550,28 @@ the connection as failed before cancelling it; `VoiceGateway::connect` chooses
 Identify (not a resume with the old transport key/MLS state) after that error.
 The new handler regression is a local mock-gateway/UDP fixture, not authorized
 Discord E2EE validation. New exact-head CI is required.
+
+### Verified follow-up implementation and remaining blockers
+
+The final **implementation** SHA
+`f33896247cd3afbc1d78db1d0358684a84549f65` passed
+[CI 37888471473](https://github.com/nikcodex/Kizunalink/actions/runs/37888471473):
+Formatting, Check, Clippy (`-D warnings`), Tests, release Build (Ubuntu),
+release Build (macOS), release Build (Windows), Cargo Deny (advisories) —
+**eight of eight successful**. Auto-fix run 37888467244 succeeded without
+advancing that SHA. `git diff --check` succeeded. All new tests above ran in
+the successful Tests job, including the handler's no-plaintext UDP fixture and
+the generated-WAV local pipeline. The exact aggregate test count is unknown
+(the Actions log download endpoint is inaccessible here), not inferred.
+
+The current audit-only commit following that tested source SHA needs its own
+exact-head CI confirmation. The code fixes do **not** eliminate the following
+release gates: real Discord connection and two-party DAVE/MLS key exchange,
+packet decrypt/receive verification by an authorized participant, audible
+playback, real public redirect/DNS-rebinding/proxy integration, Docker
+startup/shutdown, HTTP prefetch worker lifetime under adversarial slow
+responses, unbounded decoder seek queues, repeated play/stop/reconnect soak,
+HTTP URL/error redaction review, TLS idle-handshake timeout, and explicit
+maintainer acceptance of remaining HIGH risks. The loopback and scripted
+fixtures are valuable regression evidence, not production runtime proof.
+**Verdict: NOT READY. PR #4 remains OPEN and UNMERGED.**
