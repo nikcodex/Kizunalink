@@ -280,6 +280,7 @@ impl VoiceGateway {
             .await
             .is_err()
         {
+            state.shutdown().await;
             conn_token.cancel();
             writer_handle.abort();
             let _ = writer_handle.await;

@@ -1523,3 +1523,20 @@ IP validation before connecting. The assertion and table above have been
 corrected. This interim run is NOT final validation. The local-source PCM to
 UDP-loopback integration and DAVE/lifecycle regressions did pass within this
 interim Tests job, but must pass again on the corrected exact head.
+
+Corrected source/test/audit SHA `c3f9e093ebd6a807c6953344fc38b7e998f119fb`
+passed [CI run 37886714493](https://github.com/nikcodex/Kizunalink/actions/runs/37886714493):
+Formatting, Check, Clippy with `-D warnings`, Tests, release builds on
+Ubuntu/macOS/Windows and Cargo Deny advisories all succeeded. Auto-fix
+37886710426 succeeded without modifying that head. This validates the
+loopback UDP local-WAV integration, DAVE and worker regressions in that SHA,
+not subsequent changes. Exact aggregate test count is unavailable because
+CI log download is blocked; do not infer it from the earlier 214/1 run.
+
+Additional deterministic handler test exercises a nonzero *unsupported*
+negotiation: `on_session_description` returns Identify without starting voice
+or allowing plaintext. A supported nonzero negotiation before MLS readiness
+starts a gated loop and produces no UDP traffic or connected signal to the
+local fixture. The first test is not a real Discord connection and does not
+produce valid MLS keys. The handshake-send error branch also now drains
+connection-owned tasks. This later code needs a new exact-head CI run.

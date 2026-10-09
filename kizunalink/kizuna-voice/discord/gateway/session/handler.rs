@@ -826,6 +826,61 @@ impl<'a> Drop for SessionState<'a> {
 mod tests {
     use super::*;
 
+    #[tokio::test]
+    async fn failed_dave_setup_cannot_start_voice_or_send_plaintext() {
+        use crate::{
+            common::types::{ChannelId, GuildId, SessionId},
+            discord::{gateway::session::VoiceGatewayConfig, player::state::Filters},
+            engine::{Mixer, filters::FilterChain},
+        };
+        use std::sync::atomic::{AtomicBool, AtomicU64};
+
+        let ready = Arc::new(AtomicBool::new(false));
+        let gateway = VoiceGateway::new(VoiceGatewayConfig {
+            guild_id: GuildId("fixture".into()),
+            user_id: UserId(1),
+            channel_id: ChannelId(2),
+            session_id: SessionId("fixture".into()),
+            token: "fixture".into(),
+            endpoint: "fixture.invalid".into(),
+            mixer: Arc::new(tokio::sync::Mutex::new(Mixer::new(48_000))),
+            filter_chain: Arc::new(tokio::sync::Mutex::new(FilterChain::from_config(&Filters::default()))),
+            ping: Arc::new(AtomicI64::new(-1)),
+            voice_ready: Arc::clone(&ready),
+            event_tx: None,
+            frames_sent: Arc::new(AtomicU64::new(0)),
+            frames_nulled: Arc::new(AtomicU64::new(0)),
+        });
+        let listener = tokio::net::UdpSocket::bind("127.0.0.1:0").await.expect("fixture UDP socket");
+        let (tx, _rx) = tokio::sync::mpsc::channel(8);
+        let mut backoff = Backoff::new();
+        let mut state = SessionState::new(
+            &gateway, tx, Arc::new(AtomicI64::new(-1)), CancellationToken::new(),
+            Arc::new(tokio::sync::Mutex::new(PersistentSessionState::default())), &mut backoff,
+        ).await.expect("fixture state");
+        state.udp_addr = Some(listener.local_addr().expect("fixture address"));
+        let key = vec![7u8; 32];
+        let result = state.on_session_description(serde_json::json!({
+            "secret_key": key, "dave_protocol_version": 2
+        })).await;
+        assert_eq!(result, Some(SessionOutcome::Identify));
+        assert!(state.speak_task.is_none());
+        assert!(!ready.load(Ordering::Acquire));
+        assert!(gateway.dave.lock().await.encrypt_opus(b"audio").is_err());
+
+        let (speaking, _notifications) = tokio::sync::mpsc::channel(8);
+        state.set_speaking_tx(speaking);
+        assert_eq!(state.on_session_description(serde_json::json!({
+            "secret_key": key, "dave_protocol_version": 1
+        })).await, None);
+        assert!(state.speak_task.is_some());
+        tokio::time::sleep(std::time::Duration::from_millis(80)).await;
+        let mut datagram = [0u8; 1024];
+        assert!(listener.try_recv_from(&mut datagram).is_err(), "unready DAVE emitted UDP");
+        assert!(!ready.load(Ordering::Acquire));
+        state.shutdown().await;
+    }
+
     #[test]
     fn u16_payload_fields_reject_overflow() {
         let payload = serde_json::json!({
