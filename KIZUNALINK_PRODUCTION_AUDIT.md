@@ -1540,3 +1540,13 @@ starts a gated loop and produces no UDP traffic or connected signal to the
 local fixture. The first test is not a real Discord connection and does not
 produce valid MLS keys. The handshake-send error branch also now drains
 connection-owned tasks. This later code needs a new exact-head CI run.
+
+`bb40dac921b1bbeddd8572916b92b2faad21c37a` passed Check, Clippy,
+Tests, all three release Builds and Cargo Deny in run 37887576194, but
+**Formatting failed** for the newly added gateway fixture. Auto-fix `e1887e6`
+changed formatting only; bot-authored CI at that SHA was action_required.
+Neither run validates this later logic change. A voice-loop failure now marks
+the connection as failed before cancelling it; `VoiceGateway::connect` chooses
+Identify (not a resume with the old transport key/MLS state) after that error.
+The new handler regression is a local mock-gateway/UDP fixture, not authorized
+Discord E2EE validation. New exact-head CI is required.

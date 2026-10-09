@@ -47,6 +47,7 @@ pub struct SessionState<'a> {
     speaking_tx: Option<Sender<bool>>,
     session_key: Option<[u8; 32]>,
     speak_task: Option<tokio::task::JoinHandle<()>>,
+    voice_failed: Arc<std::sync::atomic::AtomicBool>,
     persistent_state: Arc<tokio::sync::Mutex<PersistentSessionState>>,
     backoff: &'a mut Backoff,
 }
@@ -104,6 +105,7 @@ impl<'a> SessionState<'a> {
             speaking_tx: None,
             session_key: None,
             speak_task: None,
+            voice_failed: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             persistent_state,
             backoff,
         })
@@ -124,6 +126,10 @@ impl<'a> SessionState<'a> {
     }
     pub fn has_heartbeat(&self) -> bool {
         self.heartbeat_handle.is_some()
+    }
+
+    pub fn voice_failed(&self) -> bool {
+        self.voice_failed.load(Ordering::Acquire)
     }
 
     pub async fn handle_text(&mut self, text: String) -> Option<SessionOutcome> {
@@ -736,6 +742,7 @@ impl<'a> SessionState<'a> {
         let guild_id = self.gateway.guild_id.clone();
         let conn_token = self.conn_token.clone();
         let voice_ready = self.gateway.voice_ready.clone();
+        let voice_failed = self.voice_failed.clone();
         debug!(
             "[{guild_id}] Voice session established: ssrc={} addr={addr} mode={}",
             self.ssrc, self.selected_mode
@@ -747,6 +754,7 @@ impl<'a> SessionState<'a> {
         self.speak_task = Some(tokio::spawn(async move {
             if let Err(e) = speak_loop(config).await {
                 error!("[{guild_id}] speak_loop failed: {e}");
+                voice_failed.store(true, Ordering::Release);
                 conn_token.cancel();
             }
             voice_ready.store(false, Ordering::Release);

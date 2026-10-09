@@ -294,7 +294,13 @@ impl VoiceGateway {
             tokio::select! {
                 biased;
                 _ = self.outer_token.cancelled() => break SessionOutcome::Shutdown,
-                _ = conn_token.cancelled() => break SessionOutcome::Reconnect,
+                _ = conn_token.cancelled() => break if state.voice_failed() {
+                    // A failed encoder/encryptor/transport must not resume with
+                    // the same persistent voice key or broken MLS state.
+                    SessionOutcome::Identify
+                } else {
+                    SessionOutcome::Reconnect
+                },
                 Some(speaking) = speaking_rx.recv() => {
                     self.notify_speaking(&ws_tx, state.ssrc(), speaking);
                 }
