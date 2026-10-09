@@ -361,28 +361,45 @@ async fn segmented_probe_requires_valid_one_byte_range() {
 fn implicit_byte_ranges_advance_once_per_segment() {
     use super::{parser::parse_m3u8, types::M3u8Playlist};
     let playlist = "#EXTM3U\n#EXTINF:1,\n#EXT-X-BYTERANGE:2@0\nfile.aac\n#EXTINF:1,\n#EXT-X-BYTERANGE:2\nfile.aac\n#EXTINF:1,\n#EXT-X-BYTERANGE:2\nfile.aac\n";
-    let M3u8Playlist::Media { segments, .. } = parse_m3u8(playlist, "https://example.com/list.m3u8") else {
+    let M3u8Playlist::Media { segments, .. } =
+        parse_m3u8(playlist, "https://example.com/list.m3u8")
+    else {
         panic!("expected media playlist");
     };
     assert_eq!(segments.len(), 3);
-    assert_eq!(segments.iter().map(|s| s.range.as_ref().map(|r| (r.offset, r.length))).collect::<Vec<_>>(),
-        [Some((0, 2)), Some((2, 2)), Some((4, 2))]);
+    assert_eq!(
+        segments
+            .iter()
+            .map(|s| s.range.as_ref().map(|r| (r.offset, r.length)))
+            .collect::<Vec<_>>(),
+        [Some((0, 2)), Some((2, 2)), Some((4, 2))]
+    );
 }
 
 #[tokio::test]
 async fn unknown_total_range_is_accepted_only_with_matching_interval() {
     let server = TestServer::new(|path, _| {
         let wrong = path == "/wrong";
-        let mut reply = Reply::range(if wrong { 0 } else { 2 }, if wrong { 1 } else { 3 }, 9, b"cd");
+        let mut reply = Reply::range(
+            if wrong { 0 } else { 2 },
+            if wrong { 1 } else { 3 },
+            9,
+            b"cd",
+        );
         reply.headers[0].1 = if wrong { "bytes 0-1/*" } else { "bytes 2-3/*" }.into();
         reply
     });
     let client = reqwest::Client::new();
     let mut out = Vec::new();
     fetch_segment_into(&client, &resource(server.url("/good"), 2, 2), &mut out)
-        .await.expect("206 with unknown complete length is valid");
+        .await
+        .expect("206 with unknown complete length is valid");
     assert_eq!(out, b"cd");
-    assert!(fetch_segment_into(&client, &resource(server.url("/wrong"), 2, 2), &mut out).await.is_err());
+    assert!(
+        fetch_segment_into(&client, &resource(server.url("/wrong"), 2, 2), &mut out)
+            .await
+            .is_err()
+    );
     assert_eq!(out, b"cd");
 }
 
@@ -401,8 +418,17 @@ async fn transient_hls_status_is_retried_twice_then_committed_once() {
         }
     });
     let mut out = vec![b'!'];
-    fetch_segment_into(&reqwest::Client::new(), &Resource { url: server.url("/seg"), range: None, duration: None }, &mut out)
-        .await.expect("third attempt succeeds");
+    fetch_segment_into(
+        &reqwest::Client::new(),
+        &Resource {
+            url: server.url("/seg"),
+            range: None,
+            duration: None,
+        },
+        &mut out,
+    )
+    .await
+    .expect("third attempt succeeds");
     assert_eq!(count.load(Ordering::SeqCst), 3);
     assert_eq!(out, b"!segment");
 }

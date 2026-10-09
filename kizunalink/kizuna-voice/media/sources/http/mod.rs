@@ -22,8 +22,8 @@ use crate::{
     common::types::AnyResult,
     engine::{
         AudioFrame,
-        source::client::is_blocked_ip,
         processor::{AudioProcessor, DecoderCommand},
+        source::client::is_blocked_ip,
     },
     lavalink::protocol::tracks::{LoadError, LoadResult, Track, TrackInfo},
     media::sources::{

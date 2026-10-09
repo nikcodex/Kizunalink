@@ -43,7 +43,10 @@ pub(crate) fn validate_content_range(
         .checked_sub(start)
         .and_then(|n| n.checked_add(1))
         .ok_or_else(invalid)?;
-    if start != offset || total.is_some_and(|total| end >= total) || length.is_some_and(|len| len != count) {
+    if start != offset
+        || total.is_some_and(|total| end >= total)
+        || length.is_some_and(|len| len != count)
+    {
         return Err(invalid());
     }
     if response.content_length().is_some_and(|len| len != count) {

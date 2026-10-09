@@ -66,7 +66,9 @@ fn valid_pre_release(label: &str) -> Option<&str> {
     if label.split('.').all(|part| {
         !part.is_empty()
             && part.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
-            && !(part.len() > 1 && part.starts_with('0') && part.bytes().all(|b| b.is_ascii_digit()))
+            && !(part.len() > 1
+                && part.starts_with('0')
+                && part.bytes().all(|b| b.is_ascii_digit()))
     }) {
         Some(label)
     } else {
@@ -110,7 +112,9 @@ mod tests {
         for valid in ["alpha", "alpha.1", "rc-2", "0", "1.2"] {
             assert_eq!(valid_pre_release(valid), Some(valid));
         }
-        for invalid in ["", " ", ".alpha", "alpha.", "alpha..1", "01", "beta.02", "a_b"] {
+        for invalid in [
+            "", " ", ".alpha", "alpha.", "alpha..1", "01", "beta.02", "a_b",
+        ] {
             assert_eq!(valid_pre_release(invalid), None);
         }
     }

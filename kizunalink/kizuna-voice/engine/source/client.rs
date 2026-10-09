@@ -275,16 +275,37 @@ mod pinned_client_tests {
 
     #[test]
     fn refuses_forwarding_proxy_for_pinned_user_supplied_source() {
-        let proxy = HttpProxyConfig { url: Some("http://proxy.example:8080".into()), ..Default::default() };
-        let result = create_client_with_pinning("test".into(), None, Some(proxy), None,
-            Some("media.example".into()), Some(vec![SocketAddr::from((Ipv4Addr::new(93, 184, 216, 34), 80))]));
-        assert!(result.is_err(), "a forwarding proxy bypasses the pinned destination");
+        let proxy = HttpProxyConfig {
+            url: Some("http://proxy.example:8080".into()),
+            ..Default::default()
+        };
+        let result = create_client_with_pinning(
+            "test".into(),
+            None,
+            Some(proxy),
+            None,
+            Some("media.example".into()),
+            Some(vec![SocketAddr::from((
+                Ipv4Addr::new(93, 184, 216, 34),
+                80,
+            ))]),
+        );
+        assert!(
+            result.is_err(),
+            "a forwarding proxy bypasses the pinned destination"
+        );
     }
 
     #[test]
     fn refuses_private_pinned_address_even_when_caller_supplies_it() {
-        let result = create_client_with_pinning("test".into(), None, None, None,
-            Some("media.example".into()), Some(vec![SocketAddr::from((Ipv4Addr::new(10, 0, 0, 1), 80))]));
+        let result = create_client_with_pinning(
+            "test".into(),
+            None,
+            None,
+            None,
+            Some("media.example".into()),
+            Some(vec![SocketAddr::from((Ipv4Addr::new(10, 0, 0, 1), 80))]),
+        );
         assert!(result.is_err());
         let public = IpAddr::V4(Ipv4Addr::new(93, 184, 216, 34));
         assert!(!super::is_blocked_ip(&public));
