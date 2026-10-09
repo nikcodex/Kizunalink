@@ -152,7 +152,9 @@ impl PlayerContext {
 
         if let Some(task) = self.gateway_task.take() {
             task.abort();
+            let _ = task.await;
         }
+        self.voice_ready.store(false, Ordering::Release);
 
         let engine = self.engine.lock().await;
         let mut mixer = engine.mixer.lock().await;

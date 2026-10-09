@@ -521,3 +521,34 @@ async fn permanent_status_and_oversized_body_are_not_retried() {
         assert_eq!(out, b"!");
     }
 }
+
+#[tokio::test]
+async fn cancelling_mid_body_fetch_keeps_output_unchanged() {
+    use tokio::{io::{AsyncReadExt, AsyncWriteExt}, net::TcpListener, sync::oneshot};
+
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind fixture");
+    let addr = listener.local_addr().expect("fixture address");
+    let (partial_tx, partial_rx) = oneshot::channel();
+    let server = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.expect("accept request");
+        let mut request = [0u8; 2048];
+        let _ = stream.read(&mut request).await.expect("read request");
+        stream.write_all(b"HTTP/1.1 206 Partial Content\r\nContent-Range: bytes 2-5/10\r\nContent-Length: 4\r\nConnection: close\r\n\r\nx")
+            .await.expect("write partial response");
+        let _ = partial_tx.send(());
+        std::future::pending::<()>().await;
+    });
+    let mut out = vec![b'!'];
+    let segment = resource(format!("http://{addr}/segment"), 2, 4);
+    let client = reqwest::Client::new();
+    let mut fetch = Box::pin(fetch_segment_into(&client, &segment, &mut out));
+    tokio::select! {
+        _ = &mut fetch => panic!("fixture must not complete its body"),
+        result = tokio::time::timeout(Duration::from_secs(3), partial_rx) => {
+            result.expect("fixture sent partial body").expect("fixture signalled partial body");
+        }
+    }
+    drop(fetch);
+    server.abort();
+    assert_eq!(out, b"!", "cancelled attempt committed a partial response");
+}

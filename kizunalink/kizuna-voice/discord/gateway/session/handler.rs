@@ -59,9 +59,12 @@ fn parse_u16_field(payload: &Value, field: &str) -> Option<u16> {
 }
 
 fn parse_dave_protocol_version(payload: &Value) -> Result<u16, u64> {
-    match payload.get("dave_protocol_version").and_then(Value::as_u64) {
-        None => Ok(0),
-        Some(value) => u16::try_from(value).map_err(|_| value),
+    match payload.get("dave_protocol_version") {
+        None => Ok(0), // legacy gateway: only allowed before DAVE was negotiated
+        Some(value) => {
+            let value = value.as_u64().ok_or(u64::MAX)?;
+            u16::try_from(value).map_err(|_| value)
+        }
     }
 }
 
@@ -455,6 +458,13 @@ impl<'a> SessionState<'a> {
             let mls_group_id = d["mls_group_id"].as_u64().unwrap_or(0);
 
             let mut dave = self.dave.lock().await;
+            if protocol_version == 0
+                && d.get("dave_protocol_version").is_none()
+                && dave.requires_encryption()
+            {
+                error!("[{}] Missing DAVE version after nonzero negotiation", self.gateway.guild_id);
+                return Some(SessionOutcome::Identify);
+            }
             if protocol_version > 0 {
                 match dave.setup_session(protocol_version) {
                     Ok(kp) => self.send_binary(26, &kp),
@@ -464,10 +474,15 @@ impl<'a> SessionState<'a> {
                             self.gateway.guild_id, protocol_version
                         );
                         dave.reset();
+                        return Some(SessionOutcome::Identify);
                     }
                 }
             } else {
-                dave.reset();
+                // Only a negotiated v0 (not an MLS error) permits plaintext.
+                if let Err(e) = dave.setup_session(0) {
+                    error!("[{}] Failed to disable DAVE: {e}", self.gateway.guild_id);
+                    return Some(SessionOutcome::Identify);
+                }
             }
             debug!(
                 "DAVE setup context: protocol_version={}, mls_group_id={}",
@@ -676,8 +691,13 @@ impl<'a> SessionState<'a> {
     }
 
     async fn start_voice(&mut self, addr: SocketAddr, key: [u8; 32]) {
+        self.gateway.voice_ready.store(false, Ordering::Release);
         if let Some(t) = self.speak_task.take() {
             t.abort();
+            if tokio::time::timeout(std::time::Duration::from_secs(2), t).await.is_err() {
+                self.conn_token.cancel();
+                return; // never overlap old and new voice loops
+            }
         }
 
         let speaking_tx = if let Some(tx) = &self.speaking_tx {
@@ -701,6 +721,7 @@ impl<'a> SessionState<'a> {
             filter_chain: self.gateway.filter_chain.clone(),
             frames_sent: self.gateway.frames_sent.clone(),
             frames_nulled: self.gateway.frames_nulled.clone(),
+            voice_ready: self.gateway.voice_ready.clone(),
             cancel_token: self.conn_token.clone(),
             speaking_tx,
             persistent_state: self.persistent_state.clone(),
@@ -715,7 +736,8 @@ impl<'a> SessionState<'a> {
         );
         // Only from this point can audio actually reach Discord, so this — not
         // "a voice token arrived" — is what `playerUpdate.state.connected` reports.
-        voice_ready.store(true, Ordering::Release);
+        // The loop marks readiness only after its DAVE gate has opened.
+        voice_ready.store(false, Ordering::Release);
         self.speak_task = Some(tokio::spawn(async move {
             if let Err(e) = speak_loop(config).await {
                 error!("[{guild_id}] speak_loop failed: {e}");
@@ -732,6 +754,20 @@ impl<'a> SessionState<'a> {
             OpCode::Speaking as u8,
             serde_json::json!({"speaking": 0, "delay": 0, "ssrc": self.ssrc}),
         );
+    }
+
+    /// Drain connection-owned tasks before another connection can mark itself ready.
+    pub async fn shutdown(&mut self) {
+        self.conn_token.cancel();
+        if let Some(task) = self.speak_task.take() {
+            task.abort();
+            let _ = task.await;
+        }
+        if let Some(task) = self.heartbeat_handle.take() {
+            task.abort();
+            let _ = task.await;
+        }
+        self.gateway.voice_ready.store(false, Ordering::Release);
     }
 
     async fn reset_dave(&self, tid: u16) {
@@ -800,6 +836,7 @@ mod tests {
     #[test]
     fn missing_dave_protocol_version_disables_dave() {
         assert_eq!(parse_dave_protocol_version(&serde_json::json!({})), Ok(0));
+        assert!(parse_dave_protocol_version(&serde_json::json!({ "dave_protocol_version": null })).is_err());
         assert_eq!(
             parse_dave_protocol_version(&serde_json::json!({
                 "dave_protocol_version": 1

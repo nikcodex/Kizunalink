@@ -239,6 +239,7 @@ impl VoiceGateway {
         };
 
         if let Some(out) = outcome {
+            state.shutdown().await;
             conn_token.cancel();
             writer_handle.abort();
             let _ = writer_handle.await;
@@ -246,6 +247,7 @@ impl VoiceGateway {
         }
 
         if !state.has_heartbeat() {
+            state.shutdown().await;
             conn_token.cancel();
             writer_handle.abort();
             let _ = writer_handle.await;
@@ -305,6 +307,7 @@ impl VoiceGateway {
             }
         };
 
+        state.shutdown().await;
         conn_token.cancel();
         writer_handle.abort();
         let _ = writer_handle.await;

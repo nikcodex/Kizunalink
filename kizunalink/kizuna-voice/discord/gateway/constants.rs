@@ -15,6 +15,8 @@ pub const BACKOFF_BASE_MS: u64 = 1_000;
 pub const RECONNECT_DELAY_FRESH_MS: u64 = 3000;
 
 pub const UDP_KEEPALIVE_GAP_MS: u64 = 5000;
+/// Bound the time a negotiated DAVE voice session can wait without keys.
+pub const DAVE_READY_TIMEOUT_SECS: u64 = 60;
 pub const WRITE_TASK_SHUTDOWN_MS: u64 = 500;
 
 // --- Audio & RTP ---

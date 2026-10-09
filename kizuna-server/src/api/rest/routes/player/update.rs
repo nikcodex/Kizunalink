@@ -208,6 +208,7 @@ async fn handle_voice(
     if voice.channel_id.is_none() {
         if let Some(task) = player.gateway_task.take() {
             task.abort();
+            let _ = task.await;
         }
         player
             .voice_ready
@@ -238,6 +239,11 @@ async fn handle_voice(
     };
 
     if let Some(uid) = session.user_id {
+        if let Some(old_task) = player.gateway_task.take() {
+            old_task.abort();
+            let _ = old_task.await;
+        }
+        player.voice_ready.store(false, std::sync::atomic::Ordering::Release);
         // Bounded so a stalled WebSocket consumer cannot grow this queue without bound.
         let (event_tx, mut event_rx) = tokio::sync::mpsc::channel(256);
         let session_clone = session.clone();
@@ -264,9 +270,7 @@ async fn handle_voice(
         .await;
 
         session.register_task(handle.abort_handle());
-        if let Some(old_task) = player.gateway_task.replace(handle) {
-            old_task.abort();
-        }
+        player.gateway_task = Some(handle);
     } else {
         // Without a user id we cannot run DAVE key exchange or build a voice
         // session, so this update would otherwise be dropped in total silence

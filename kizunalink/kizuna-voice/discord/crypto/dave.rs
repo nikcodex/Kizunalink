@@ -14,7 +14,6 @@ use crate::{
     discord::gateway::{
         constants::{
             DAVE_INITIAL_VERSION, MAX_DAVE_CONTROL_PAYLOAD_BYTES, MAX_PENDING_PROPOSALS,
-            SILENCE_FRAME,
         },
         session::types::map_boxed_err,
     },
@@ -45,6 +44,8 @@ pub struct DaveHandler {
     user_id: UserId,
     channel_id: ChannelId,
     protocol_version: u16,
+    /// A negotiated nonzero version cannot silently become plaintext after reset.
+    encryption_required: bool,
     prepared_protocol_version: u16,
     pending_transitions: HashMap<u16, u16>,
     external_sender_set: bool,
@@ -65,6 +66,7 @@ impl DaveHandler {
             user_id,
             channel_id,
             protocol_version: 0,
+            encryption_required: false,
             prepared_protocol_version: 0,
             pending_transitions: HashMap::new(),
             external_sender_set: false,
@@ -103,11 +105,18 @@ impl DaveHandler {
         self.protocol_version
     }
 
+    pub fn requires_encryption(&self) -> bool {
+        self.encryption_required
+    }
+
     pub fn setup_session(&mut self, version: u16) -> AnyResult<Vec<u8>> {
         if version == 0 {
             self.reset();
+            self.encryption_required = false; // explicit negotiation of plaintext
             return Ok(Vec::new());
         }
+        // Record the requirement before any potentially failing MLS operation.
+        self.encryption_required = true;
         if version != DAVE_INITIAL_VERSION {
             return Err(map_boxed_err(format!(
                 "Unsupported DAVE protocol version: {version}"
@@ -161,7 +170,7 @@ impl DaveHandler {
         self.pending_handshake.clear();
         self.was_ready = false;
         self.session = None;
-        debug!("DAVE session reset to plaintext");
+        debug!("DAVE session reset; encryption requirement retained");
     }
 
     pub fn prepare_transition(&mut self, transition_id: u16, protocol_version: u16) -> bool {
@@ -190,6 +199,12 @@ impl DaveHandler {
                 }
             }
             self.protocol_version = next_version;
+            if next_version == 0 {
+                // A gateway-executed transition to v0 is an explicit downgrade.
+                self.encryption_required = false;
+            } else {
+                self.encryption_required = true;
+            }
             trace!(
                 "DAVE transition {} executed (v{})",
                 transition_id, next_version
@@ -420,32 +435,25 @@ impl DaveHandler {
         Ok(None)
     }
 
+    /// Silence is exempted by davey's implementation *after* readiness is checked.
+    pub fn can_send_media(&self) -> bool {
+        !self.encryption_required
+            || (self.protocol_version != 0 && self.session.as_ref().is_some_and(DaveSession::is_ready))
+    }
+
     pub fn encrypt_opus(&mut self, packet: &[u8]) -> AnyResult<Vec<u8>> {
-        if packet == SILENCE_FRAME || self.protocol_version == 0 {
+        if !self.encryption_required {
             return Ok(packet.to_vec());
         }
-
-        if let Some(session) = &mut self.session {
-            let is_ready = session.is_ready();
-
-            if is_ready != self.was_ready {
-                if is_ready {
-                    debug!("DAVE session (v{}) is READY", self.protocol_version);
-                } else {
-                    warn!("DAVE session (v{}) LOST readiness", self.protocol_version);
-                }
-                self.was_ready = is_ready;
-            }
-
-            if is_ready {
-                return session
-                    .encrypt_opus(packet)
-                    .map(|c| c.into_owned())
-                    .map_err(map_boxed_err);
-            }
+        if !self.can_send_media() {
+            return Err(map_boxed_err("DAVE required but session is not ready"));
         }
-
-        Ok(packet.to_vec())
+        let session = self.session.as_mut().ok_or_else(|| map_boxed_err("DAVE session missing"))?;
+        if !self.was_ready {
+            debug!("DAVE session (v{}) is READY", self.protocol_version);
+            self.was_ready = true;
+        }
+        session.encrypt_opus(packet).map(|c| c.into_owned()).map_err(map_boxed_err)
     }
 
     pub fn voice_privacy_code(&self) -> Option<String> {
@@ -555,6 +563,46 @@ mod tests {
         handler.setup_session(1).unwrap();
         assert_eq!(handler.protocol_version(), 1);
         assert_eq!(handler.prepared_protocol_version, 1);
+    }
+
+    #[test]
+    fn negotiated_dave_cannot_emit_plaintext_before_keys_or_after_reset() {
+        let mut handler = DaveHandler::new(UserId(1), ChannelId(1));
+        let media = b"non-silence opus frame";
+        assert_eq!(handler.encrypt_opus(media).unwrap().as_slice(), media);
+        handler.setup_session(DAVE_INITIAL_VERSION).unwrap();
+        assert!(!handler.can_send_media());
+        assert!(handler.encrypt_opus(media).is_err());
+        // The davey library permits a silence packet in a *ready* session;
+        // it must not bypass the readiness gate during a failed negotiation.
+        assert!(handler.encrypt_opus(&crate::discord::gateway::constants::SILENCE_FRAME).is_err());
+
+        assert!(handler.prepare_transition(42, DAVE_INITIAL_VERSION));
+        handler.execute_transition(42);
+        assert!(!handler.can_send_media());
+        assert!(handler.encrypt_opus(media).is_err());
+        handler.reset();
+        assert_eq!(handler.protocol_version(), 0);
+        assert!(!handler.can_send_media());
+        assert!(handler.encrypt_opus(media).is_err());
+        assert!(handler.setup_session(DAVE_INITIAL_VERSION + 1).is_err());
+        assert!(handler.encrypt_opus(media).is_err());
+
+        // Only an explicit gateway negotiation of version zero can downgrade.
+        handler.setup_session(0).unwrap();
+        assert!(handler.can_send_media());
+        assert_eq!(handler.encrypt_opus(media).unwrap().as_slice(), media);
+    }
+
+    #[test]
+    fn only_an_executed_zero_transition_allows_plaintext() {
+        let mut handler = DaveHandler::new(UserId(1), ChannelId(1));
+        handler.setup_session(DAVE_INITIAL_VERSION).unwrap();
+        assert!(handler.prepare_transition(43, 0));
+        assert!(handler.encrypt_opus(b"audio").is_err());
+        handler.execute_transition(43);
+        assert!(handler.can_send_media());
+        assert_eq!(handler.encrypt_opus(b"audio").unwrap().as_slice(), b"audio");
     }
 
     #[test]

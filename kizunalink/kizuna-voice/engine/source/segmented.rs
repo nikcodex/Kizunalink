@@ -42,6 +42,7 @@ pub struct SegmentedSource {
     len: u64,
     content_type: Option<Arc<str>>,
     shared: Arc<(Mutex<ReaderState>, Condvar)>,
+    workers: Vec<tokio::task::JoinHandle<()>>,
 }
 
 impl SegmentedSource {
@@ -93,13 +94,14 @@ impl SegmentedSource {
             Condvar::new(),
         ));
 
+        let mut workers = Vec::with_capacity(MAX_CONCURRENT_FETCHES);
         for worker_id in 0..MAX_CONCURRENT_FETCHES {
             let shared_clone = shared.clone();
             let client_clone = client.clone();
             let url_str = url.to_string();
-            tokio::spawn(async move {
+            workers.push(tokio::spawn(async move {
                 fetch_worker(worker_id, shared_clone, client_clone, url_str).await;
-            });
+            }));
         }
 
         Ok(Self {
@@ -107,6 +109,7 @@ impl SegmentedSource {
             len,
             content_type,
             shared,
+            workers,
         })
     }
 }
@@ -209,6 +212,11 @@ impl Drop for SegmentedSource {
         let mut state = lock.lock();
         state.is_terminated = true;
         cvar.notify_all();
+        // Tokio abort cancels in-flight HTTP requests and idle timers. A
+        // detached worker used to retain the client/URL after the source died.
+        for worker in &self.workers {
+            worker.abort();
+        }
     }
 }
 
@@ -406,4 +414,65 @@ fn requeue_or_fatal(
             .insert(idx, ChunkState::Empty(prior_retries + 1));
     }
     cvar.notify_all();
+}
+
+#[cfg(test)]
+mod lifecycle_tests {
+    use super::*;
+    use tokio::sync::oneshot;
+
+    struct ExitSignal(Option<oneshot::Sender<()>>);
+    impl Drop for ExitSignal {
+        fn drop(&mut self) {
+            if let Some(tx) = self.0.take() {
+                let _ = tx.send(());
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn dropping_source_cancels_owned_workers_on_repeated_cycles() {
+        // A parked task models a fetch stalled inside reqwest; no external
+        // provider or network timeout is needed to test ownership/cancellation.
+        for _ in 0..3 {
+            let shared = Arc::new((
+                Mutex::new(ReaderState {
+                    chunks: HashMap::new(),
+                    current_pos: 0,
+                    total_len: 1,
+                    is_terminated: false,
+                    fatal_error: None,
+                }),
+                Condvar::new(),
+            ));
+            let mut workers = Vec::new();
+            let mut stopped = Vec::new();
+            for _ in 0..MAX_CONCURRENT_FETCHES {
+                let (started_tx, started_rx) = oneshot::channel();
+                let (stopped_tx, stopped_rx) = oneshot::channel();
+                workers.push(tokio::spawn(async move {
+                    let _exit = ExitSignal(Some(stopped_tx));
+                    let _ = started_tx.send(());
+                    std::future::pending::<()>().await;
+                }));
+                started_rx.await.expect("worker started");
+                stopped.push(stopped_rx);
+            }
+            let source = SegmentedSource {
+                pos: 0,
+                len: 1,
+                content_type: None,
+                shared: Arc::clone(&shared),
+                workers,
+            };
+            drop(source);
+            assert!(shared.0.lock().is_terminated);
+            for stopped_rx in stopped {
+                tokio::time::timeout(Duration::from_secs(2), stopped_rx)
+                    .await
+                    .expect("worker stopped promptly")
+                    .expect("worker exit signal delivered");
+            }
+        }
+    }
 }

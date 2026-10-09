@@ -1443,3 +1443,71 @@ commit requires its own exact-head CI confirmation. PR #4 remains **OPEN,
 UNMERGED** and the production verdict is **NOT READY**. Docker startup, real
 audio playback, SSRF redirect/DNS-rebinding integration, Discord voice, and
 DAVE packet-flow testing all remain outstanding.
+
+## 2026-10-09 — DAVE, lifecycle and runtime-evidence follow-up (PR #4)
+
+### Live state and scope
+
+Fetched `main`, PR #4 head and session branch. Starting branch/PR head was
+`a8ad6ac29436371c956401e513b3bcc1008d162e`, exactly the reported SHA;
+main was `28c0282499908a33b935a88d708a9e7a6996195b`. No additional
+commits followed the reported head at inspection. `git diff origin/main...HEAD`
+contained 18 files and the 20 existing commits were inspected, together with
+the CI/fix/release workflows, historical audit and PR review history. All
+three inline review threads were resolved; general PR comments still flag the
+DAVE fail-open risk. The original audit sections above are historical; their
+claims of earlier local playback do **not** validate the code in this section.
+
+### Confirmed findings and code changes
+
+| Severity | Finding and reproduction | Change and deterministic regression | Remaining limit |
+|---|---|---|---|
+| **CRITICAL** | `discord/crypto/dave.rs::encrypt_opus`: after a nonzero DAVE negotiation, a missing/unready MLS session returned raw Opus; the special silence packet also bypassed the readiness check. `gateway/session/handler.rs::on_session_description` reset on setup error but still called `start_voice`. `send_raw` then wrapped plaintext Opus with *transport* AEAD, not DAVE E2EE. | Preserve a nonzero encryption requirement across `DaveHandler::reset`; only explicit v0 negotiation or an executed v0 transition permits plaintext. `encrypt_opus` rejects missing/unready state (including silence) before calling davey, whose own *ready-session* silence exemption remains intact. On setup error, re-identify instead of starting voice. Gate the voice loop before mixing/packet emission until the MLS session is ready and the gateway transition is active; report connection ready only after this gate. Bound a stalled negotiation at 60 s, then reconnect. Tests cover unready negotiation, reset, unsupported version, transition-before-execute and explicit v0. | No real Discord or two-party MLS exchange was performed. Receive-side DAVE decryption is not implemented in this outgoing-only voice client; no incoming media is consumed. Unexpected missing `dave_protocol_version` is still interpreted as v0 for legacy compatibility and must be checked against the actual gateway before release. |
+| **HIGH** | `engine/source/segmented.rs::new` detached up to `MAX_CONCURRENT_FETCHES` Tokio workers. `Drop` signalled termination but a worker awaiting a stalled HTTP response could retain resources until timeout. | Own the JoinHandles and abort on drop, as well as notifying idle workers. Deterministic repeated-cycle test parks mock workers, drops the source, checks prompt worker exit; this is **not** a live HTTP soak test. | The blocking HTTP prefetch thread in `engine/source/http/mod.rs` still has no owned join handle and can persist through a blocked network operation. Many provider decoder/spawn-blocking tasks likewise need explicit lifecycle budgets and stress tests. |
+| **MEDIUM** | `hls/fetcher.rs` has bounded retries but cancellation of an in-flight partial body had no explicit regression. | Local socket fixture sends one byte of a declared four-byte range and stalls; cancelling the fetch must leave its destination unchanged. Existing range/implicit-byte-range/cycle/truncation/exhaustion/oversize/terminal-demux tests are retained. | Does not exercise an authorized remote HLS provider. |
+| **MEDIUM** | SSRF validation and pinning had pure unit tests but no assertion that a blocked local listener sees zero connections. | Loopback listener fixture checks `HttpSource::can_handle` and `HttpReader::new` reject loopback, RFC1918, link-local, CGNAT and mapped-v6 sources without connecting. Previous redirect/pin/proxy tests remain. | Real redirect chains from a public endpoint, rebinding between validation and connection, and proxy traversal require isolated network fixtures; no unrelated public/internal host was probed. |
+| **Coverage** | No checked-in test stitched local source probing through codec and transport. | Generated 200 ms 48 kHz stereo WAV fixture uses `LocalSource::load/get_track`, real Symphonia decoder, app mixer, app Opus encoder and UDP loopback RTP+AEAD transport. Checks nonzero PCM/Opus, sequential RTP sequence/timestamps, packet tag and cleanup. Test is **local-source integration**, not Discord playback or DAVE media verification. | Remote HTTP fetch, real Discord negotiation, live speakers, and end-to-end DAVE encrypted packets remain unverified. |
+
+### Reproducible verification matrix and release gates
+
+| Tier | Procedure | Evidence / boundary |
+|---|---|---|
+| Unit / deterministic local socket | `cargo test --workspace --all-targets`; focus `negotiated_dave_cannot_emit_plaintext_before_keys_or_after_reset`, `only_an_executed_zero_transition_allows_plaintext`, `dropping_source_cancels_owned_workers_on_repeated_cycles`, `cancelling_mid_body_fetch_keeps_output_unchanged`, `rejected_private_source_never_contacts_a_local_http_listener`, `local_wav_resolves_decodes_mixes_encodes_and_sends_rtp_to_loopback`; keep existing HLS/range/proxy tests. | Runs in CI without provider credentials. Mock worker test is only a cancellation-ownership check. UDP loopback proves packet construction, not external voice. |
+| Local system / container | Install official Rust toolchain + native libopus/CMake/pkg-config, then format/check/Clippy `-D warnings`/test/release build/deny; start image from Dockerfile with nondefault auth, check readiness, REST/WS auth, terminate during playback and repeat start/stop/reconnect while measuring task count, RSS, FDs and ports. Use generated/local WAV and an **explicitly permitted** HTTP test server; assert 10-ish packet periods for 200 ms, decoded energy, queue drain and resources restored. | Docker and native Rust unavailable in this sandbox. Keep sanitized logs; never publish voice keys or tokens. The checked-in loopback test does not prove audible output. |
+| Isolated SSRF network lab | In a disposable network namespace or private CI lab, give test-only DNS names public TEST-NET addresses pinned to controlled servers. Respond with public→public→private redirect and HTTPS→HTTP; configure a DNS server to answer public on first query and private on second; observe that no private connection occurs. Repeat with forwarding proxy configured and with mapped-v6, CGNAT, link-local and invalid DNS answers. Record request counts on every hop and redact signed URLs. | Cannot safely exercise DNS rebinding/public redirect from this sandbox. Static URL policy, public-only DNS resolver and private-pin rejection are covered; no claim of end-to-end rebinding proof. |
+| Authorized Discord test guild | A maintainer provisions a disposable bot/guild/voice channel and *privately* injects credentials (never commit/log them). Connect via Lavalink voice update, assert selected RTP mode and max DAVE version, verify MLS key-package/proposal/welcome/commit/epoch/transition ordering with a second authorized participant, privacy code and encrypted audio reception, rotate keys, reconnect/resume/leave/rejoin, malformed/unsupported versions, failed setup and 60 s timeout. Assert no UDP Opus while nonzero DAVE is unready and no plaintext after errors; compare sent/received sequence and audibility, capture only redacted metadata. Disconnect/stop then verify zero stale voice tasks and bounded resources. | Credentials and Discord access are absent; **NOT RUN and a release blocker**. Do not use production bot credentials or log secrets. |
+
+### Environment and pending result
+
+Debian 12 x86_64; `cargo`, `rustc`, `rustup`, `rustfmt`, `cmake`,
+`pkg-config`, `docker` and `ffmpeg` are absent. Prior official rustup endpoints
+failed TLS `SSL_ERROR_SYSCALL`, Debian mirrors failed; this turn did not repeat
+those blocked installation attempts. Local Cargo commands are attempted below
+and exact results must be recorded. CI on a **new exact final SHA** must be
+checked separately; historical green run 37884653993 validated only the
+starting SHA. Real audio playback, Discord voice and DAVE packet exchange are
+**NOT VERIFIED**. Production verdict **NOT READY**; never merge PR #4 on
+unit/CI success alone. Further high-severity lifecycle gaps and the possible
+legacy-v0 negotiation ambiguity require owner review and authorized runtime
+verification.
+
+Additional voice lifecycle fix: `gateway/session/{handler,mod}.rs` now aborts and
+awaits connection-owned voice/heartbeat tasks on teardown, and replaces a
+voice loop only after the previous task exits (otherwise cancels the connection).
+`discord/player/context.rs::destroy`, REST `handle_voice` and WS
+`handle_voice_update` likewise await aborted gateway tasks before destroying or
+replacing them. This closes an observed stale-readiness ordering window, but
+there is **no authorized repeated-reconnect soak test** yet; concurrent REST/WS
+replacement still deserves a generation-guard review. Malformed nonnumeric
+DAVE versions now error; a missing field after prior nonzero negotiation
+causes re-identification rather than an implicit downgrade. A missing version
+on a brand-new legacy connection remains v0 for compatibility.
+
+Local attempts this turn: `cargo fmt --all -- --check`, `cargo check
+--workspace --all-targets`, `cargo clippy --workspace --all-targets -- -D
+warnings`, `cargo test --workspace --all-targets`, `cargo build --release
+--workspace`, and `cargo deny check advisories` each exited **127** (`cargo:
+command not found`). No official Rust installation succeeded; earlier rustup
+and Debian mirror failures were not repeated. No Docker startup, local build,
+Discord voice, real audio playback, DAVE packet-flow, public redirect or DNS
+rebinding run is claimed.

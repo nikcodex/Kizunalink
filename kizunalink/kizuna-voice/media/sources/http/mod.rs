@@ -332,3 +332,22 @@ mod tests {
         assert!(!addrs.is_empty());
     }
 }
+
+#[cfg(test)]
+mod loopback_integration_tests {
+    use super::*;
+
+    #[test]
+    fn rejected_private_source_never_contacts_a_local_http_listener() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind local fixture");
+        listener.set_nonblocking(true).expect("nonblocking listener");
+        let port = listener.local_addr().expect("fixture address").port();
+        let source = HttpSource::new();
+        for host in ["127.0.0.1", "10.0.0.1", "169.254.169.254", "100.64.0.1", "[::ffff:127.0.0.1]"] {
+            let url = format!("http://{host}:{port}/fixture");
+            assert!(!source.can_handle(&url), "unexpectedly allowed {host}");
+            assert!(reader::HttpReader::new(&url, None, None).is_err());
+        }
+        assert!(matches!(listener.accept(), Err(e) if e.kind() == std::io::ErrorKind::WouldBlock));
+    }
+}
