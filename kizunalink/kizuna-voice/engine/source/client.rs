@@ -14,7 +14,7 @@ use crate::{common::types::AnyResult, config::sources::HttpProxyConfig};
 
 /// Check whether an IP address is in a blocked range (loopback, private,
 /// link-local, multicast, unspecified, IPv4-mapped IPv6 loopback, ULA, metadata).
-fn is_blocked_ip(ip: &IpAddr) -> bool {
+pub(crate) fn is_blocked_ip(ip: &IpAddr) -> bool {
     match ip {
         IpAddr::V4(ip) => {
             let octets = ip.octets();
@@ -110,10 +110,8 @@ fn make_redirect_policy() -> reqwest::redirect::Policy {
             return attempt.stop();
         };
         if attempt.previous().len() > 10 || !validate_redirect_url(from, attempt.url()) {
-            warn!(
-                "SSRF: rejecting unsafe or excessive redirect to '{}'",
-                attempt.url()
-            );
+            // Redirect URLs may contain signed tokens in their query strings.
+            warn!("SSRF: rejecting unsafe or excessive redirect");
             attempt.stop()
         } else {
             attempt.follow()
@@ -138,6 +136,16 @@ pub fn create_client_with_pinning(
     pinned_host: Option<String>,
     pinned_ips: Option<Vec<SocketAddr>>,
 ) -> AnyResult<Client> {
+    // A forwarding proxy resolves the destination itself: reqwest's DNS
+    // validator and address pins cannot constrain that connection. Refuse
+    // this combination for user-supplied HTTP sources rather than silently
+    // bypassing the SSRF boundary. Trusted provider clients may still proxy.
+    if pinned_host.is_some() && proxy.as_ref().and_then(|p| p.url.as_ref()).is_some() {
+        return Err("pinned HTTP source cannot use a forwarding proxy".into());
+    }
+    if let Some(ips) = &pinned_ips {
+        validate_resolved_addresses(ips)?;
+    }
     let mut builder = Client::builder()
         .user_agent(user_agent)
         .connect_timeout(Duration::from_secs(5))
@@ -256,5 +264,29 @@ mod tests {
             &https_from,
             &url("https://cdn.example/audio")
         ));
+    }
+}
+
+#[cfg(test)]
+mod pinned_client_tests {
+    use super::create_client_with_pinning;
+    use crate::config::sources::HttpProxyConfig;
+    use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+
+    #[test]
+    fn refuses_forwarding_proxy_for_pinned_user_supplied_source() {
+        let proxy = HttpProxyConfig { url: Some("http://proxy.example:8080".into()), ..Default::default() };
+        let result = create_client_with_pinning("test".into(), None, Some(proxy), None,
+            Some("media.example".into()), Some(vec![SocketAddr::from((Ipv4Addr::new(93, 184, 216, 34), 80))]));
+        assert!(result.is_err(), "a forwarding proxy bypasses the pinned destination");
+    }
+
+    #[test]
+    fn refuses_private_pinned_address_even_when_caller_supplies_it() {
+        let result = create_client_with_pinning("test".into(), None, None, None,
+            Some("media.example".into()), Some(vec![SocketAddr::from((Ipv4Addr::new(10, 0, 0, 1), 80))]));
+        assert!(result.is_err());
+        let public = IpAddr::V4(Ipv4Addr::new(93, 184, 216, 34));
+        assert!(!super::is_blocked_ip(&public));
     }
 }
