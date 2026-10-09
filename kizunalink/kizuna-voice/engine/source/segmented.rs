@@ -57,19 +57,16 @@ impl SegmentedSource {
                 .send(),
         )?;
 
+        // This source requires real byte-range support. A 200 probe or a
+        // mismatched 206 must never be used to infer the file length.
+        super::range::validate_content_range(&probe, 0, Some(1))?;
         let len = probe
             .headers()
             .get(reqwest::header::CONTENT_RANGE)
             .and_then(|v| v.to_str().ok())
-            .and_then(|v| v.split('/').next_back())
-            .and_then(|v| v.parse::<u64>().ok())
-            .or_else(|| probe.content_length())
-            .ok_or_else(|| {
-                std::io::Error::new(
-                    std::io::ErrorKind::InvalidData,
-                    "SegmentedSource: could not determine content length",
-                )
-            })?;
+            .and_then(|v| v.split_once('/'))
+            .and_then(|(_, total)| total.parse::<u64>().ok())
+            .ok_or_else(|| std::io::Error::other("SegmentedSource: missing total length"))?;
 
         let content_type: Option<Arc<str>> = probe
             .headers()
@@ -215,7 +212,7 @@ impl Drop for SegmentedSource {
     }
 }
 
-async fn fetch_chunk(
+pub(crate) async fn fetch_chunk(
     client: &reqwest::Client,
     url: &str,
     offset: u64,
@@ -241,6 +238,7 @@ async fn fetch_chunk(
     if status != reqwest::StatusCode::PARTIAL_CONTENT {
         return Err(format!("fetch_chunk: HTTP {status}").into());
     }
+    super::range::validate_content_range(&res, offset, Some(size))?;
 
     // Never materialize more than the requested chunk, even if the response
     // claims/streams a larger body.
@@ -257,6 +255,9 @@ async fn fetch_chunk(
             return Err(format!("fetch_chunk: body exceeded requested {size} bytes").into());
         }
         out.extend_from_slice(&chunk);
+    }
+    if out.len() as u64 != size {
+        return Err(format!("fetch_chunk: truncated body ({} of {size} bytes)", out.len()).into());
     }
     Ok(Bytes::from(out))
 }

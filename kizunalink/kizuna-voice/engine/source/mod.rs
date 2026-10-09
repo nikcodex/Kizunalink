@@ -3,6 +3,7 @@
 
 pub mod client;
 pub mod http;
+pub(crate) mod range;
 pub mod segmented;
 pub mod traits;
 

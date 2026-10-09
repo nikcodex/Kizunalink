@@ -102,7 +102,7 @@ pub fn parse_m3u8(text: &str, base_url: &str) -> M3u8Playlist {
             }
         } else if let Some(stripped) = line.strip_prefix("#EXT-X-BYTERANGE:") {
             let r = parse_byte_range(stripped, next_offset);
-            next_offset = r.offset + r.length;
+            next_offset = r.offset.saturating_add(r.length);
             pending_range = Some(r);
         } else if line.starts_with("#EXTINF:") {
             let seg_duration = line
@@ -114,7 +114,7 @@ pub fn parse_m3u8(text: &str, base_url: &str) -> M3u8Playlist {
             while j < lines.len() && lines[j].starts_with('#') {
                 if let Some(stripped) = lines[j].strip_prefix("#EXT-X-BYTERANGE:") {
                     let r = parse_byte_range(stripped, next_offset);
-                    next_offset = r.offset + r.length;
+                    next_offset = r.offset.saturating_add(r.length);
                     pending_range = Some(r);
                 }
                 j += 1;
