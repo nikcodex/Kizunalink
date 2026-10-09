@@ -1316,7 +1316,7 @@ errors fail the segment, never become successful EOS or committed partial data.
 New follow-up changes: `engine/source/{client.rs,range.rs}`,
 `media/sources/{http/mod.rs,soundcloud/token.rs,youtube/hls/parser.rs,youtube/hls/tests.rs}`,
 `server/api/rest/routes/stats/info.rs`, plus this audit. The seven scripted
-HTTP tests from PR #4 are retained; six follow-up test functions cover chained
+HTTP tests from PR #4 are retained; seven follow-up test functions cover chained
 ranges, unknown totals, bounded retries, proxy/pins, pre-release validation,
 and uppercase SoundCloud script tags. Existing tests for auth, `/players`,
 `/v4/info`, CIDRs, redirects and ranges remain intact. Test results for these
