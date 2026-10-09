@@ -129,9 +129,9 @@ async fn valid_and_ignored_ranges_return_only_requested_bytes() {
     let server = TestServer::new(|path, range| {
         assert_eq!(range.trim().to_ascii_lowercase(), "range: bytes=2-3");
         if path == "/partial" {
-            Reply::range(2, 3, 6, b"cd".to_vec())
+            Reply::range(2, 3, 6, b"cd")
         } else {
-            Reply::ok(b"abcdef".to_vec())
+            Reply::ok(b"abcdef")
         }
     });
     for path in ["/partial", "/ignored"] {
@@ -150,16 +150,16 @@ async fn valid_and_ignored_ranges_return_only_requested_bytes() {
 #[tokio::test]
 async fn rejects_bad_ranges_truncation_oversize_and_server_errors_without_committing_bytes() {
     let server = TestServer::new(|path, _| match path {
-        "/wrong" => Reply::range(0, 1, 6, b"ab".to_vec()),
+        "/wrong" => Reply::range(0, 1, 6, b"ab"),
         "/malformed" => {
-            let mut r = Reply::ok(b"cd".to_vec());
+            let mut r = Reply::ok(b"cd");
             r.status = 206;
             r.headers.push(("Content-Range", "not-a-range".into()));
             r
         }
-        "/truncated" => Reply::range(2, 3, 6, b"c".to_vec()),
-        "/oversize" => Reply::range(2, 3, 6, b"cde".to_vec()),
-        "/short-full" => Reply::ok(b"abc".to_vec()),
+        "/truncated" => Reply::range(2, 3, 6, b"c"),
+        "/oversize" => Reply::range(2, 3, 6, b"cde"),
+        "/short-full" => Reply::ok(b"abc"),
         "/huge-full" => {
             let mut r = Reply::ok(Vec::<u8>::new());
             r.declared_len = Some(super::fetcher::MAX_HLS_SEGMENT_BYTES + 1);
@@ -223,8 +223,7 @@ async fn playlist_cycles_depth_and_malformed_urls_are_typed() {
     for (path, is_depth) in [("/self", false), ("/a", false), ("/level0", true)] {
         let err = resolve_playlist(&client, &server.url(path))
             .await
-            .err()
-            .expect("must reject cycle or depth");
+            .expect_err("must reject cycle or depth");
         if is_depth {
             assert!(
                 err.downcast_ref::<PlaylistResolutionError>()
@@ -240,8 +239,7 @@ async fn playlist_cycles_depth_and_malformed_urls_are_typed() {
     for url in ["not a URL".to_string(), server.url("/bad")] {
         let err = resolve_playlist(&client, &url)
             .await
-            .err()
-            .expect("malformed URL");
+            .expect_err("malformed URL");
         assert!(
             err.downcast_ref::<PlaylistResolutionError>()
                 .is_some_and(|e| matches!(e, PlaylistResolutionError::InvalidUrl))
@@ -262,15 +260,15 @@ async fn failed_second_segment_is_sticky_and_third_segment_is_not_fetched() {
         "/playlist" => {
             Reply::ok("#EXTM3U\n#EXTINF:1,\n/one\n#EXTINF:1,\n/two\n#EXTINF:1,\n/three\n")
         }
-        "/one" => Reply::ok(b"first".to_vec()),
+        "/one" => Reply::ok(b"first"),
         "/two" => {
-            let mut r = Reply::ok(b"failure".to_vec());
+            let mut r = Reply::ok(b"failure");
             r.status = 500;
             r
         }
         _ => {
             count.fetch_add(1, Ordering::SeqCst);
-            Reply::ok(b"third".to_vec())
+            Reply::ok(b"third")
         }
     });
     let url = server.url("/playlist");
@@ -314,10 +312,10 @@ async fn failed_ts_demux_does_not_forward_raw_bytes() {
 async fn segmented_and_http_sources_reject_mismatched_ranges() {
     use crate::engine::source::{http::HttpSource, segmented::fetch_chunk};
     let server = TestServer::new(|path, _| match path {
-        "/good" => Reply::range(2, 3, 6, b"cd".to_vec()),
-        "/wrong" => Reply::range(0, 1, 6, b"ab".to_vec()),
-        "/short" => Reply::range(2, 3, 6, b"c".to_vec()),
-        _ => Reply::ok(b"abcdef".to_vec()),
+        "/good" => Reply::range(2, 3, 6, b"cd"),
+        "/wrong" => Reply::range(0, 1, 6, b"ab"),
+        "/short" => Reply::range(2, 3, 6, b"c"),
+        _ => Reply::ok(b"abcdef"),
     });
     let client = reqwest::Client::new();
     let bytes = fetch_chunk(&client, &server.url("/good"), 2, 2)
@@ -346,8 +344,8 @@ async fn segmented_and_http_sources_reject_mismatched_ranges() {
 async fn segmented_probe_requires_valid_one_byte_range() {
     use crate::engine::source::SegmentedSource;
     let server = TestServer::new(|path, _| match path {
-        "/wrong" => Reply::range(1, 1, 6, b"b".to_vec()),
-        _ => Reply::ok(b"abcdef".to_vec()),
+        "/wrong" => Reply::range(1, 1, 6, b"b"),
+        _ => Reply::ok(b"abcdef"),
     });
     for path in ["/wrong", "/ignored"] {
         let url = server.url(path);
