@@ -33,7 +33,7 @@ impl Reply {
             declared_len: None,
         }
     }
-    fn range(start: u64, end: u64, total: u64, body: impl Into<Vec<u8>>) -> Self {
+    fn range(start: u64, end: u64, total: u64, body: impl AsRef<[u8]>) -> Self {
         let mut reply = Self::ok(body);
         reply.status = 206;
         reply

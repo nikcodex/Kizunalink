@@ -917,3 +917,89 @@ If `kizunalink-test` contains nothing beyond the above (i.e. no `/players` fix a
 5. **How:** each P0/P1 block above gives file + function + root cause + minimal safe fix.
 6. **Proof:** each block names its regression test; all are additive, none weaken existing assertions.
 7. **Delete `kizunalink-test`?** Yes — after confirming/porting the `/players` array fix, or immediately if it has none.
+
+---
+
+## 2026-10-09 — Milestone A verification addendum (original audit retained above)
+
+**Scope and evidence boundary.** This checkout started from `main` at
+`28c0282499908a33b935a88d708a9e7a6996195b` on
+`arena/9058f455-kizunalink`, clean working tree. `git fetch origin` reported
+`main` still at that SHA. The specifically named uploaded “KizunaLink v2
+Relevant Issues and Architecture-Gap Report.md” was not found in the workspace;
+the user's 23-item list and this repository's historical audit were the available
+baselines. Open PRs at start: #1 (audit) and #3 (build/SSRF repair, mergeable).
+The baseline CI run 37748708409 for 28c0282 failed Formatting, Check, Clippy,
+Tests, and Linux/macOS/Windows Build; Cargo Deny passed. PR #3 run 37826163602
+was green **on its own SHA**, not on main. Local baseline attempts for `cargo
+fmt --all -- --check`, `cargo check --workspace --all-targets`, `cargo clippy
+--workspace --all-targets -- -D warnings`, `cargo test --workspace --all-targets`
+and `cargo build --release --workspace` each exited **127**, with
+`/bin/bash: cargo: command not found`. `sudo apt-get update` could not reach
+Debian's host under the sandbox network restrictions; no local Rust toolchain
+was installed. These are NOT successful local runs.
+
+The known compilation-blocker repair was cherry-picked from the already-green
+open PR #3 (`f2fcf53`, now `6335046` on this branch); it restores the missing
+HLS constructor brace, fixes the reqwest redirect policy API and other build
+errors while retaining SSRF checks. This overlaps PR #3 and must be reconciled
+before merging either PR. The subsequent media change is `66f52f7`. Neither
+commit is a claim that audio/DAVE is production-ready.
+
+### Findings tracking (source review, not live-service claims)
+
+`Pending` below means the new tests had not yet produced a result when this
+addendum was drafted. For unimplemented findings, “not run” refers to the
+specified regression, not to pre-existing unrelated tests. Paths are relative
+to `kizunalink/kizuna-voice/` unless prefixed `server/` (meaning `kizuna-server/src/`).
+
+| ID | Reported defect; current file/function | Disposition and reproduction evidence | Planned change / regression | Actual regression result |
+|---|---|---|---|---|
+| A01 | Range validation: `media/sources/youtube/hls/fetcher.rs::fetch_segment_into`, `engine/source/{segmented,http}` | **Partially confirmed**: old 200 guard and size cap existed; 206 Content-Range/start/length were unchecked, segmented probe trusted unvalidated total. | Added strict shared validator, capped full-body HLS fallback only with declared complete length, exact body checks; scripted 206/200/malformed/truncated/oversize/403/probe tests. | Pending CI; local Cargo unavailable. |
+| A02 | HLS failure lost: `media/sources/youtube/hls/mod.rs::{prefetch_loop,read}` | **Partially confirmed**: prefetcher already stored error/woke reader and stopped on error; `read` consumed the error with `.take()`, subsequent read could report EOS; seek after fatal could hang. | Keep error sticky, reject seek after terminal error, bounded retry only for 429/500/502/503/504 and timeout/connect; segment 2 HTTP 500 test asserts no segment 3. | Pending CI. |
+| A03 | Playlist recursion: `media/sources/youtube/hls/resolver.rs::resolve_playlist_inner` | **Partially confirmed**: raw URL cycle set AND depth 8 already existed; no canonical URL or typed cycle/depth error; invalid URL not checked before fetch. | Canonicalize URL (including fragment removal), typed errors and self/A-B-A/depth/invalid/nested tests. | Pending CI. |
+| A04 | Stale voice readiness: `server/api/ws/opcodes.rs::handle_voice_update` and `discord/gateway/session/handler.rs::start_voice` | **Partially confirmed**: null channel disconnect already handled, but replacement aborts old task without clearing readiness first or a generation guard; old speak task can write shared flag. | Milestone C generation and bounded join; race regression. | Not run. |
+| A05 | DAVE setup/readiness: `discord/crypto/dave.rs::encrypt_opus`, `discord/gateway/session/handler.rs::on_session_description` | **Confirmed**: if protocol version >0 and session not ready, `encrypt_opus` returns input unchanged; setup failure resets and start_voice still runs, then readiness set true. Transport encryption remains separate, but this is not DAVE encryption. | Milestone C fail-closed gated send and negotiated readiness; test no media before DAVE ready/failed setup. | Not run; real Discord UNTESTED. |
+| A06 | Worker ownership: `engine/source/{http,segmented}.rs`, `discord/player/context.rs::stop_track` | **Partially confirmed**: stop/abort paths exist but HTTP worker handle discarded, segmented tasks spawned without owned handles and stop aborts without awaiting. | Milestone B cancellation + bounded joins, blocked-response stress and worker-count test. | Not run. |
+| A07 | Untyped provider fallback: `media/sources/manager/mod.rs::{load,resolve_track}` | **Partially confirmed**: `resolve_track` returns `Result<_, String>` and load takes first matching provider; external overlapping-source fallback behavior not reproduced. | Milestone D typed failure categories, explicit fallback matrix; scripted providers. | Not run. |
+| A08 | Opus reset/frame format: `engine/codec/opus_decoder.rs::reset`, `engine/frame.rs::AudioFrame`, `engine/processor.rs::run` | **Partially confirmed**: decoder already recreates at stream rate but silently ignores recreation error; frame enum lacks format, processor changes source rate on frame without rebuilding resampler. | Milestone B deterministic format/reset tests with 8/12/16/24 kHz fixtures if obtainable. | Not run. |
+| A09 | Control backpressure: `engine/playback/handle.rs::seek`, decoder command sender creation | **Partially confirmed**: seeks send without overflow contract; channel ownership/maximum must be traced further; other channels are bounded. | Milestone B bound decoder commands with seek coalescing policy; repeated-seek stress. | Not run. |
+| A10 | Unknown WS commands: `server/api/ws/handler.rs` text dispatch | **Confirmed**: parse failure is only logged; no protocol error/close is returned. | Milestone D deterministic compatible handling; malformed/unknown WS tests. | Not run. |
+| A11 | Direct context mutations: `server/api/ws/opcodes.rs::{handle_op,handle_play}`, REST player routes | **Confirmed design gap**: WS play/stop obtain PlayerContext write lock directly; REST routes also use context. | Evaluate incremental supervisor in milestone E after foundations; concurrent REST/WS tests. | Not run. |
+| A12 | Configuration parsing: `config/mod.rs::apply_env_overrides,validate` | **Partially fixed**: cherry-picked PR #3 parses env with errors; other timing/queue/size validation requires follow-up, not assumed sound. | Milestone E adversarial config table. | PR #3 CI passed for its SHA; no current-branch config regression yet. |
+| A13 | Shutdown graph: `server/main.rs`, `server/session.rs::shutdown` | **Partially confirmed**: sessions are visited/cleared and Axum shuts down, but abort handles are not awaited; cleanly-shut-down log is unconditional. | Milestone E phased drain/deadlines, SIGTERM/resumable-session test. | Not run. |
+| A14 | TLS handshake: `server/tls.rs::TlsListener::accept` | **Confirmed**: `acceptor.accept(tcp).await` has no timeout; one idle client can stall accept loop. | Milestone E bounded handshake; idle-TCP test. | Not run. |
+| A15 | Readiness gate: `server/health.rs::health_check` | **Confirmed**: `/health` always returns 200 when callable; no draining/readiness distinction. | Milestone F separate readiness; draining test. | Not run. |
+| A16 | Event queue visibility: `server/session.rs::send_message`, `discord/gateway/session/mod.rs` | **Partially confirmed**: bounded try_send and some warnings exist; overflow outcomes not consistently observable. | Milestone F counters and overflow tests. | Not run. |
+| A17 | SoundCloud terminal error: `media/sources/soundcloud/reader.rs::read,prefetch_loop` | **Partially confirmed**: error is stored and surfaced once, then consumed with `.take()`; repeated read can look like EOS. | Milestone B sticky failure + segment 2 error test. | Not run. |
+| A18 | RTP underruns: `discord/gateway/session/voice.rs::speak_loop` | **Unable to verify live effect**: `MissedTickBehavior::Skip` is present, but frame-clock drift/underrun impact needs timing measurement; no live voice. | Milestone C deterministic clock/load test and authorized live check. | Not run. |
+| A19 | TS fallback: `media/sources/youtube/hls/mod.rs::fetch_and_demux_into` | **Confirmed**: on empty ADTS extraction it appended raw TS bytes. | Replaced with terminal error; invalid 188-byte TS bootstrap regression. SoundCloud/Twitch need independent review. | Pending CI. |
+| A20 | Session registry/identity: `server/app_state.rs::AppState`, `server/api/rest` | **Partially confirmed**: public session maps exist; shared-token/session-ID cross-user exploitability not established by an authorization integration test. | Milestone E explicit ownership decision + two-user REST/WS test. | Not run. |
+| A21 | Lifecycle metrics: `server/monitoring`, `server/health.rs` | **Partially confirmed**: existing Prometheus/stat counters exist; no verified coverage of all requested worker/voice/retry/shutdown metrics. | Milestone F bounded-cardinality metric tests. | Not run. |
+| A22 | Container policy: `Dockerfile`, `docker-compose.yml` | **Partially confirmed**: non-root/read-only/cap-drop exist; no healthcheck, PID/memory limits or explicit grace period. | Milestone F health/limits after readiness works; Docker test. | Docker unavailable locally; not run. |
+| A23 | Release provenance: `.github/workflows/release.yml` | **Partially confirmed**: release builds/artifact uploads exist; no verified SBOM/provenance/promotion gate for this SHA. | Milestone F checksums/SBOM/provenance plus staging/CI gate. | Not run; no release performed. |
+
+### Changes, validation, and continuation
+
+Changed source files: `engine/source/{range.rs,mod.rs,http/mod.rs,segmented.rs}`,
+`media/sources/youtube/hls/{fetcher.rs,mod.rs,parser.rs,resolver.rs,tests.rs}`;
+baseline repair (cherry-pick) additionally changed config, source client, HTTP
+provider, SoundCloud token, routeplanner, and REST info/tests. The new test
+module has seven deterministic local HTTP tests (range success/failure,
+playlist recursion, terminal segment error, TS demux failure, HTTP/segmented
+range handling and segmented probe). They are not substitutes for live audio.
+
+**Milestone A is not complete until the latest SHA has passing format/check/
+Clippy/tests/release build and the test outcomes above are recorded.** CI was
+requested via PR #4; update the run ID, each job result, exact test counts,
+and final SHA below once finished. `git diff --check` passed before the media
+commit; that does not replace rustfmt or the compiler. `cargo deny check
+advisories` was unavailable locally (no cargo-deny executable). No Docker
+executable, local audio run, real Discord voice, or live DAVE negotiation was
+performed in this addendum. No stop/replacement stress or SIGTERM shutdown test
+was performed. Production decision: **NOT READY**. Next: close remaining
+Milestone A gaps (in-flight cancellation and other HLS consumers), then B
+(audio reset/demux/worker ownership), C (DAVE fail-closed voice generations),
+D (typed fallback/protocol), E (supervision/config/TLS/sessions/shutdown), F
+(operations/release/staging). Do not merge PR #4 until overlap with #3 and
+security-sensitive DAVE behavior are reviewed.
