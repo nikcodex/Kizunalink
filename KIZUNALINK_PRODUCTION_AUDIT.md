@@ -917,3 +917,661 @@ If `kizunalink-test` contains nothing beyond the above (i.e. no `/players` fix a
 5. **How:** each P0/P1 block above gives file + function + root cause + minimal safe fix.
 6. **Proof:** each block names its regression test; all are additive, none weaken existing assertions.
 7. **Delete `kizunalink-test`?** Yes — after confirming/porting the `/players` array fix, or immediately if it has none.
+
+
+# Final validation of current `main` — 2026-10-08
+
+## Scope and exact revision
+
+- Repository: `nikcodex/Kizunalink`, branch `main`.
+- Exact HEAD tested: `28c0282499908a33b935a88d708a9e7a6996195b` (merge commit `Merge pull request #2 from nikcodex/kilo/bitter-star-83g`).
+- `git fetch origin main` showed `HEAD == origin/main` at the time of validation.
+- Initial working tree: clean. Final working tree: only this audit document was modified; Rust source/configuration was not edited. `git diff --check` passed.
+- This validation section supersedes earlier audit conclusions wherever they conflict; earlier sections remain historical analysis.
+
+## Commands and local results
+
+Rust 1.86.0 was installed to match `rust-toolchain.toml`, along with `rustfmt` and `clippy`. CMake and pkg-config were also installed after the first attempt showed CMake missing. Final rerun results:
+
+| Command | Result | Evidence |
+|---|---|---|
+| `git fetch origin main` | PASS | `main` resolves to exact HEAD above. |
+| `git status --short --branch` / `git rev-parse HEAD` | PASS | `## main...origin/main`; clean before audit edit; SHA recorded above. |
+| `cargo fmt --all -- --check` | FAIL | Exit 1. Unclosed delimiter in `kizunalink/kizuna-voice/media/sources/youtube/hls/mod.rs:610`, referencing `impl HlsReader` at 116 and `new` at 123. Formatter also reports diffs in REST tests; parse failure prevents completion. No formatter write was requested. |
+| `cargo check --workspace --all-targets` | FAIL | Exit 101; same parse error. |
+| `cargo clippy --workspace --all-targets -- -D warnings` | FAIL | Exit 101; same parse error, so lints did not run. |
+| `cargo test --workspace --all-targets` | FAIL | Exit 101; same parse error, so no Rust tests ran. |
+| `cargo build --release --workspace` | FAIL | Exit 101; same parse error; no release artifact. |
+| `cargo deny check advisories` | SKIPPED locally | `cargo-deny` was not installed. The configured GitHub Actions advisories job passed (below). |
+| `git diff --check` | PASS | No whitespace errors. |
+
+The initial command attempt failed earlier while building vendored Opus because CMake was not installed. CMake was installed and all Rust commands rerun. The final results above are from the rerun and fail on the repository parse error, not CMake.
+
+## API and regression coverage
+
+No integration/regression test could execute locally because the Rust workspace fails to parse. Source inspection found:
+
+- `kizuna-server/src/api/rest/tests.rs::players_list_returns_bare_array` asserts that `GET /v4/sessions/{sessionId}/players` returns a bare JSON array, including the empty-session case. The handler `kizuna-server/src/api/rest/routes/player/get.rs` serializes a `Vec` directly. This is source-level evidence of intended Lavalink v4 wire format; runtime behavior was not validated.
+- `info_endpoint_returns_lavalink_v4_schema` checks `/v4/info` `version.semver`, `lavaplayer`, `jvm`, `plugins`, `sourceManagers`, and `filters`. `version.build` is optional in `kizunalink/kizuna-voice/lavalink/protocol/info.rs`, but the test does not assert it is present or inspect its value. Runtime schema/build value remain unverified.
+- Existing authorization tests include empty/invalid authorization config rejection and REST wrong-password behavior. Not executable in this run.
+- A routeplanner status test expects disabled state `204 No Content`; mixer unit tests cover disabled/empty/max-layer/remove-layer/volume behavior. Not executable in this run.
+- HTTP-source tests directly cover rejecting `127.0.0.1` and `::1`, non-HTTP schemes and empty URL, plus accepting `example.com`. No test was found for IPv4-mapped IPv6, public hostname resolving private, public-to-private redirect, multi-hop redirect to private, HTTPS-to-HTTP downgrade, or legitimate public-to-public redirect.
+- SSRF scenario status: direct loopback/private IP is only partly tested (`127.0.0.1`, `::1`); IPv4-mapped loopback has implementation logic but no test; public hostname resolving to private is untested; public→private and multi-hop→private redirects are untested; HTTPS downgrade has policy code but no test; public→public redirect is untested. None of the existing tests ran.
+- Decoder/prefetch thread creation failures have error-reporting paths in source, but were not executed. Comprehensive regression coverage for those failures was not established.
+
+## Static source review
+
+Searches across server and voice source found 306 textual `panic!`, `.unwrap()`, or `.expect()` matches and 29 `unsafe` matches; matches include tests, startup invariants and production code. These counts are review leads, not a claim every occurrence is unsafe. Numerous Tokio/OS-thread spawns and several unbounded decoder-command channels are present; bounded audio/event channels also exist. This was static scanning, not proof that every task/queue has bounded lifetime or capacity.
+
+Synchronous `ToSocketAddrs` calls occur in HTTP source/reader validation and the custom redirect policy. Initial probing/reader construction is placed on `spawn_blocking`/decoder-worker paths. Redirect-policy DNS runs from the redirect callback and deserves focused validation for Tokio-worker blocking and DNS rebinding/pinning. Static review does not certify SSRF safety.
+
+## GitHub Actions
+
+The run for the exact HEAD is [CI run 37748708409](https://github.com/nikcodex/Kizunalink/actions/runs/37748708409). Overall conclusion: **failure**.
+
+| Check | Conclusion |
+|---|---|
+| Formatting | failure |
+| Cargo Deny (advisories) | success |
+| Build (ubuntu-latest) | failure |
+| Check | failure |
+| Build (macos-latest) | failure |
+| Tests | failure |
+| Clippy | failure |
+| Build (windows-latest) | failure |
+
+Failed logs report the same unclosed delimiter in `kizunalink/kizuna-voice/media/sources/youtube/hls/mod.rs:610`; tests/check/clippy did not pass. The advisories result does not make the overall CI green.
+
+## Docker, audio, Discord/DAVE
+
+- **Docker:** SKIPPED / unavailable. `docker --version` reported command not found and no Docker daemon was available. No image build or production-container startup was performed.
+- **Audio pipeline:** NOT RUN. `ffmpeg` is installed; `yt-dlp` and an Opus development pkg-config installation were absent on initial inspection. The source itself does not parse, so source resolution → decode → PCM → Opus → mixer/player could not be exercised. No local end-to-end pass is claimed.
+- **Discord/DAVE:** NOT RUN. Neither `DISCORD_TOKEN` nor `DISCORD_BOT_TOKEN` was available. No voice connection, DAVE handshake/key exchange, audio packets, playback, pause/resume, seek, stop, or reconnect/resume was tested. Discord/DAVE is unverified.
+
+## Remaining issues and untested areas
+
+1. **Release-blocking:** resolve the unclosed delimiter in `kizunalink/kizuna-voice/media/sources/youtube/hls/mod.rs` (compiler points to line 610; opening delimiters at lines 116/123). No source fix was made, per instruction not to make speculative changes.
+2. Current main’s GitHub Actions run is red; formatting and all build/check/test/clippy jobs fail.
+3. Most adversarial SSRF/DNS/redirect scenarios lack tests; redirect-time synchronous DNS and rebinding/pinning need focused review and tests.
+4. `/v4/info` test does not assert `version.build`.
+5. Runtime `/players` and `/v4/info` requests, authorization integration, routeplanner errors, mixer lifecycle and decoder/prefetch failure regressions were not executed.
+6. Docker image/startup, complete audio pipeline and Discord voice/DAVE remain untested.
+7. Static panic/unwrap/expect, unsafe, queue/task and DNS scans do not prove all runtime paths safe or bounded.
+
+## Final production-readiness rating
+
+**NOT PRODUCTION READY / NO-GO** for `28c0282499908a33b935a88d708a9e7a6996195b`. The source does not parse; every local Rust validation command fails; and the exact-commit GitHub Actions run is red. Docker and runtime audio/Discord testing were unavailable or not run. The passing advisories check and source-level assertions do not offset these blockers. Rerun the complete suite on a corrected commit before making any production-readiness claim.
+
+
+# Final validation after fixes and CI rerun
+
+This section supersedes the earlier interim validation conclusions above. Those earlier entries document the original broken main commit and first failed attempts; the final results below are for the corrected code commit.
+
+## Commit and repository state
+
+- **Implementation commit tested:** `f2fcf53ba31bc4443fe6a8173ceecd22217cde28`
+- **Branch pushed:** `fix/final-validation-current-main`
+- **Pull request:** [#3 — Fix workspace build and harden SSRF redirect handling](https://github.com/nikcodex/Kizunalink/pull/3)
+- **Base at push time:** `main` at `28c0282499908a33b935a88d708a9e7a6996195b`; implementation commit was one commit ahead.
+- The implementation commit contains source and regression-test changes. This audit-only update follows it; no Rust source changes were made after implementation SHA was tested.
+
+## Final local commands and results
+
+| Command | Result | Evidence / notes |
+|---|---|---|
+| `cargo fmt --all` | PASS | Applied formatting to Rust source/tests. Stable rustfmt warned that nightly-only import grouping settings are ignored. |
+| `cargo fmt --all -- --check` | PASS | Final run exit 0. |
+| `cargo check --workspace --all-targets` | PASS | Final run exit 0, no warnings. |
+| `cargo clippy --workspace --all-targets -- -D warnings` | PASS | Final run exit 0. |
+| `cargo test --workspace --all-targets` | PASS | Final run exit 0: `kizuna-server` 24 passed, 0 failed, 1 ignored; `kizunalink` 193 passed, 0 failed; binary target 0 tests. **217 passed; 1 ignored; 0 failed.** Ignored test is the explicitly long-running soak harness. |
+| `cargo build --release --workspace` | PASS | Final run exit 0. |
+| `cargo install cargo-deny --locked` | PASS | Installed cargo-deny v0.20.2 locally; no repository files changed by installation. |
+| `cargo deny check advisories` | PASS | Local run printed `advisories ok`; GitHub advisories job also passed. |
+| `cargo test -p kizuna-server api::rest::tests::players_list_returns_bare_array -- --exact` | PASS | Exact targeted regression: 1 passed. |
+| `git diff --check` | PASS | No whitespace errors before implementation commit. |
+| `docker --version` / `docker info` | SKIPPED / unavailable | `docker` executable is not installed; no daemon available. No image build/container start was possible. |
+
+During the first post-parse check, compilation exposed the HLS constructor delimiter and additional type/API errors (including reqwest redirect API usage, client call signatures, routeplanner `Result` construction, and IPv4-mapped IPv6 handling). Those were corrected before the final passing check. The first full test attempt also exposed a flaw in the newly added test setup: it queried a fresh router without the registered session and then tried to treat the intended array as an object. The test now uses its session-backed router, registers its empty-session case, and asserts the array shape directly; targeted and complete reruns passed.
+
+## Regression and wire-format results
+
+- `/v4/sessions/{sessionId}/players`: **PASS**. Integration test creates two players, calls the session-scoped route, checks a bare JSON array with two entries and expected guild IDs, then checks a registered empty session returns `[]`. It rejects the `{ "players": [...] }` wrapper by asserting the top-level JSON value is an array.
+- `/v4/info`: **PASS**. Test checks Lavalink v4 protocol-major `version.semver`, `version.major`, presence of `version.build` (which may be JSON `null` when not configured), `lavaplayer`, `jvm`, `plugins`, `sourceManagers`, and `filters`.
+- Authorization: **PASS**. Existing REST auth-required/wrong-password tests and config tests for empty/whitespace authorization and unsafe default credentials ran in the full passing suite.
+- Mixer lifecycle: **PASS for existing unit coverage**. Mixer/layer lifecycle tests ran as part of the full suite; no Discord voice output was involved.
+- Routeplanner errors: **PASS**. Added tests verify invalid CIDR returns an error and valid raw IPv4 initializes and returns the single address. Both passed.
+- Decoder/prefetch thread failures: error-reporting branches compile and existing related source tests pass; HLS prefetch thread spawn now checks its result. Actual OS thread-creation failure was not induced.
+
+### SSRF/DNS/redirect test matrix
+
+All entries passed as unit-level policy/validation tests in the final suite. The hostname-to-private case supplies representative resolved socket addresses to the filtering helper used by the async resolver; it does not simulate live hostile DNS infrastructure.
+
+| Scenario | Result |
+|---|---|
+| `localhost` redirect | PASS — rejected |
+| Direct `127.0.0.1` | PASS — rejected |
+| Direct RFC1918 IPv4 (`10.0.0.4`) | PASS — rejected |
+| Direct `::1` | PASS — rejected |
+| IPv4-mapped IPv6 loopback (`::ffff:127.0.0.1`) | PASS — rejected |
+| Public-looking hostname resolving to a private IP | PASS — private address set rejected by resolver filter |
+| Public to private redirect | PASS — rejected |
+| Multi-hop public redirect chain ending at a private address | PASS — final hop rejected |
+| HTTPS to HTTP downgrade | PASS — rejected |
+| HTTPS public host to HTTPS public host | PASS — allowed by URL policy |
+
+Redirect checks are performed at each hop. DNS resolution for reqwest connections is asynchronous and filters addresses before handing them to the connector; the HTTP reader also validates and pins initial host addresses while running on its blocking-worker path.
+
+## Static source review
+
+Broad scans over `kizuna-server/src` and `kizunalink/kizuna-voice` Rust files produced these textual counts, including tests, expected-invariant handling and benign matches; they are audit leads, not a count of defects:
+
+| Pattern | Matches |
+|---|---:|
+| `panic!` | 11 |
+| `.unwrap()` | 173 |
+| `.expect(` | 123 |
+| `unsafe` | 31 |
+| `unbounded()` / `unbounded_channel` | 11 |
+| `tokio::spawn`, `spawn_blocking`, or OS-thread spawn patterns | 79 |
+
+There is one `to_socket_addrs` call in the voice source tree, in `media/sources/http/mod.rs::validate_public_url`; its production HTTP-reader call paths use `spawn_blocking`/decoder-worker contexts. The new redirect/client DNS resolver uses Tokio's asynchronous `lookup_host`. No broad claim is made that every task lifetime or unbounded command channel has a global capacity bound: command/event channels and detached worker lifetimes remain review areas. Unsafe blocks remain in native Opus/architecture code and were not removed by this patch. No blanket rewrite of every panic/unwrap/expect match was attempted; counts include test code and configuration/proven-invariant paths.
+
+## Local audio pipeline
+
+**PASS (local source only).** A temporary 0.5-second, 48 kHz stereo WAV was generated with FFmpeg. A temporary example invoked application `LocalSource` resolution/probe, started its decoder, passed PCM frames through the application mixer, and encoded them with the application Opus encoder. Observed output: **10 mixed PCM frames and 10 non-empty Opus packets**. Temporary example and WAV fixture were removed after the run. This does not validate remote HTTP/YouTube providers, Discord transport, or DAVE.
+
+## Discord voice / DAVE
+
+**NOT RUN / UNVERIFIED.** `DISCORD_TOKEN`, `DISCORD_BOT_TOKEN`, and `DISCORD_CLIENT_ID` were absent. No voice connection, DAVE handshake/key exchange, RTP/audio packets, playback, pause/resume, seek, stop, or reconnect/resume was tested. This audit makes no claim Discord or DAVE works.
+
+## Docker
+
+**SKIPPED / unavailable.** The sandbox returned `docker: command not found`, and no Docker daemon was available. No production image build or startup check was performed.
+
+## GitHub Actions and pull request status
+
+- Workflow run: [CI run 37806969749](https://github.com/nikcodex/Kizunalink/actions/runs/37806969749), for implementation SHA `f2fcf53ba31bc4443fe6a8173ceecd22217cde28`.
+- The initial run's macOS job failed before compilation because the hosted runner timed out downloading `channel-rust-stable.toml` from `static.rust-lang.org`; this was an infrastructure/network failure, not a compiler diagnostic. The failed job was explicitly rerun, and the workflow then completed with **success**.
+
+| Workflow check | Final result |
+|---|---|
+| Check | PASS |
+| Clippy | PASS |
+| Cargo Deny (advisories) | PASS |
+| Formatting | PASS |
+| Tests | PASS |
+| Build (ubuntu-latest) | PASS |
+| Build (windows-latest) | PASS |
+| Build (macos-latest) | PASS on retry |
+
+The separate CodeRabbit check reported success with review skipped; it is not one of the eight CI jobs above. The pull request remains open; this branch was pushed but not merged to `main`.
+
+## Remaining risks and untested areas
+
+1. **Discord/DAVE production voice remains unverified** without Discord credentials. This is the principal release gate for a voice product.
+2. **Docker image/container startup remains unverified** because Docker is unavailable in this environment.
+3. Remote HTTP and YouTube source resolution/playback were not exercised end-to-end. SSRF cases validate policy helpers and resolver address filtering, but no live attacker-controlled DNS/rebinding infrastructure was used.
+4. Thread-spawn failure paths were reviewed and error-propagation code compiled, but thread-creation failure was not forced at runtime. The ignored soak harness was not run.
+5. Source scans still find panic/unwrap/expect sites, unsafe code, unbounded channels and asynchronous tasks as counted above. A match-by-match audit and runtime capacity/lifetime verification were not performed as part of this repair.
+6. Explicit operator-configured proxy behavior is a trust boundary: a forwarding proxy may perform its own DNS resolution. Deployments using proxies should ensure the proxy enforces equivalent egress controls.
+
+## Final production-readiness rating
+
+**NOT PRODUCTION READY — HOLD for a production voice release.** The corrected code commit passes local formatting, all-target check, clippy, 217 active tests, release build and advisories; the pushed PR's eight CI jobs are green after retry. Nevertheless, production-container startup and actual Discord/DAVE voice were not tested, and remote provider playback plus broader task/queue bounds remain unverified. Merge/release and any claim of production readiness should wait for those environment-dependent validations.
+
+---
+
+---
+
+## 2026-10-09 — Milestone A verification addendum (original audit retained above)
+
+**Scope and evidence boundary.** This checkout started from `main` at
+`28c0282499908a33b935a88d708a9e7a6996195b` on
+`arena/9058f455-kizunalink`, clean working tree. `git fetch origin` reported
+`main` still at that SHA. The specifically named uploaded “KizunaLink v2
+Relevant Issues and Architecture-Gap Report.md” was not found in the workspace;
+the user's 23-item list and this repository's historical audit were the available
+baselines. Open PRs at start: #1 (audit) and #3 (build/SSRF repair, mergeable).
+The baseline CI run 37748708409 for 28c0282 failed Formatting, Check, Clippy,
+Tests, and Linux/macOS/Windows Build; Cargo Deny passed. PR #3 run 37826163602
+was green **on its own SHA**, not on main. Local baseline attempts for `cargo
+fmt --all -- --check`, `cargo check --workspace --all-targets`, `cargo clippy
+--workspace --all-targets -- -D warnings`, `cargo test --workspace --all-targets`
+and `cargo build --release --workspace` each exited **127**, with
+`/bin/bash: cargo: command not found`. `sudo apt-get update` could not reach
+Debian's host under the sandbox network restrictions; no local Rust toolchain
+was installed. These are NOT successful local runs.
+
+The known compilation-blocker repair was cherry-picked from the already-green
+open PR #3 (`f2fcf53`, now `6335046` on this branch); it restores the missing
+HLS constructor brace, fixes the reqwest redirect policy API and other build
+errors while retaining SSRF checks. This overlaps PR #3 and must be reconciled
+before merging either PR. The subsequent media change is `66f52f7`; `985107d` adds this matrix and repairs a test signature; workflow auto-format/fix commits `3afe861` and `bebd53e` correct formatting and mechanical test lints. Neither
+commit is a claim that audio/DAVE is production-ready.
+
+### Findings tracking (source review, not live-service claims)
+
+`Pending` below means the new tests had not yet produced a result when this
+addendum was drafted. For unimplemented findings, “not run” refers to the
+specified regression, not to pre-existing unrelated tests. Paths are relative
+to `kizunalink/kizuna-voice/` unless prefixed `server/` (meaning `kizuna-server/src/`).
+
+| ID | Reported defect; current file/function | Disposition and reproduction evidence | Planned change / regression | Actual regression result |
+|---|---|---|---|---|
+| A01 | Range validation: `media/sources/youtube/hls/fetcher.rs::fetch_segment_into`, `engine/source/{segmented,http}` | **Partially confirmed**: old 200 guard and size cap existed; 206 Content-Range/start/length were unchecked, segmented probe trusted unvalidated total. | Added strict shared validator, capped full-body HLS fallback only with declared complete length, exact body checks; scripted 206/200/malformed/truncated/oversize/403/probe tests. | PASS: seven new tests within Tests job, CI 37876259144 at dbb266a; local Cargo unavailable. |
+| A02 | HLS failure lost: `media/sources/youtube/hls/mod.rs::{prefetch_loop,read}` | **Partially confirmed**: prefetcher already stored error/woke reader and stopped on error; `read` consumed the error with `.take()`, subsequent read could report EOS; seek after fatal could hang. | Keep error sticky, reject seek after terminal error, bounded retry only for 429/500/502/503/504 and timeout/connect; segment 2 HTTP 500 test asserts no segment 3. | PASS: scripted regression in CI 37876259144 at dbb266a. |
+| A03 | Playlist recursion: `media/sources/youtube/hls/resolver.rs::resolve_playlist_inner` | **Partially confirmed**: raw URL cycle set AND depth 8 already existed; no canonical URL or typed cycle/depth error; invalid URL not checked before fetch. | Canonicalize URL (including fragment removal), typed errors and self/A-B-A/depth/invalid/nested tests. | PASS: scripted regression in CI 37876259144 at dbb266a. |
+| A04 | Stale voice readiness: `server/api/ws/opcodes.rs::handle_voice_update` and `discord/gateway/session/handler.rs::start_voice` | **Partially confirmed**: null channel disconnect already handled, but replacement aborts old task without clearing readiness first or a generation guard; old speak task can write shared flag. | Milestone C generation and bounded join; race regression. | Not run. |
+| A05 | DAVE setup/readiness: `discord/crypto/dave.rs::encrypt_opus`, `discord/gateway/session/handler.rs::on_session_description` | **Confirmed**: if protocol version >0 and session not ready, `encrypt_opus` returns input unchanged; setup failure resets and start_voice still runs, then readiness set true. Transport encryption remains separate, but this is not DAVE encryption. | Milestone C fail-closed gated send and negotiated readiness; test no media before DAVE ready/failed setup. | Not run; real Discord UNTESTED. |
+| A06 | Worker ownership: `engine/source/{http,segmented}.rs`, `discord/player/context.rs::stop_track` | **Partially confirmed**: stop/abort paths exist but HTTP worker handle discarded, segmented tasks spawned without owned handles and stop aborts without awaiting. | Milestone B cancellation + bounded joins, blocked-response stress and worker-count test. | Not run. |
+| A07 | Untyped provider fallback: `media/sources/manager/mod.rs::{load,resolve_track}` | **Partially confirmed**: `resolve_track` returns `Result<_, String>` and load takes first matching provider; external overlapping-source fallback behavior not reproduced. | Milestone D typed failure categories, explicit fallback matrix; scripted providers. | Not run. |
+| A08 | Opus reset/frame format: `engine/codec/opus_decoder.rs::reset`, `engine/frame.rs::AudioFrame`, `engine/processor.rs::run` | **Partially confirmed**: decoder already recreates at stream rate but silently ignores recreation error; frame enum lacks format, processor changes source rate on frame without rebuilding resampler. | Milestone B deterministic format/reset tests with 8/12/16/24 kHz fixtures if obtainable. | Not run. |
+| A09 | Control backpressure: `engine/playback/handle.rs::seek`, decoder command sender creation | **Partially confirmed**: seeks send without overflow contract; channel ownership/maximum must be traced further; other channels are bounded. | Milestone B bound decoder commands with seek coalescing policy; repeated-seek stress. | Not run. |
+| A10 | Unknown WS commands: `server/api/ws/handler.rs` text dispatch | **Confirmed**: parse failure is only logged; no protocol error/close is returned. | Milestone D deterministic compatible handling; malformed/unknown WS tests. | Not run. |
+| A11 | Direct context mutations: `server/api/ws/opcodes.rs::{handle_op,handle_play}`, REST player routes | **Confirmed design gap**: WS play/stop obtain PlayerContext write lock directly; REST routes also use context. | Evaluate incremental supervisor in milestone E after foundations; concurrent REST/WS tests. | Not run. |
+| A12 | Configuration parsing: `config/mod.rs::apply_env_overrides,validate` | **Partially fixed**: cherry-picked PR #3 parses env with errors; other timing/queue/size validation requires follow-up, not assumed sound. | Milestone E adversarial config table. | PR #3 CI passed for its SHA; no current-branch config regression yet. |
+| A13 | Shutdown graph: `server/main.rs`, `server/session.rs::shutdown` | **Partially confirmed**: sessions are visited/cleared and Axum shuts down, but abort handles are not awaited; cleanly-shut-down log is unconditional. | Milestone E phased drain/deadlines, SIGTERM/resumable-session test. | Not run. |
+| A14 | TLS handshake: `server/tls.rs::TlsListener::accept` | **Confirmed**: `acceptor.accept(tcp).await` has no timeout; one idle client can stall accept loop. | Milestone E bounded handshake; idle-TCP test. | Not run. |
+| A15 | Readiness gate: `server/health.rs::health_check` | **Confirmed**: `/health` always returns 200 when callable; no draining/readiness distinction. | Milestone F separate readiness; draining test. | Not run. |
+| A16 | Event queue visibility: `server/session.rs::send_message`, `discord/gateway/session/mod.rs` | **Partially confirmed**: bounded try_send and some warnings exist; overflow outcomes not consistently observable. | Milestone F counters and overflow tests. | Not run. |
+| A17 | SoundCloud terminal error: `media/sources/soundcloud/reader.rs::read,prefetch_loop` | **Partially confirmed**: error is stored and surfaced once, then consumed with `.take()`; repeated read can look like EOS. | Milestone B sticky failure + segment 2 error test. | Not run. |
+| A18 | RTP underruns: `discord/gateway/session/voice.rs::speak_loop` | **Unable to verify live effect**: `MissedTickBehavior::Skip` is present, but frame-clock drift/underrun impact needs timing measurement; no live voice. | Milestone C deterministic clock/load test and authorized live check. | Not run. |
+| A19 | TS fallback: `media/sources/youtube/hls/mod.rs::fetch_and_demux_into` | **Confirmed**: on empty ADTS extraction it appended raw TS bytes. | Replaced with terminal error; invalid 188-byte TS bootstrap regression. SoundCloud/Twitch need independent review. | PASS: invalid-TS regression in CI 37876259144 at dbb266a. |
+| A20 | Session registry/identity: `server/app_state.rs::AppState`, `server/api/rest` | **Partially confirmed**: public session maps exist; shared-token/session-ID cross-user exploitability not established by an authorization integration test. | Milestone E explicit ownership decision + two-user REST/WS test. | Not run. |
+| A21 | Lifecycle metrics: `server/monitoring`, `server/health.rs` | **Partially confirmed**: existing Prometheus/stat counters exist; no verified coverage of all requested worker/voice/retry/shutdown metrics. | Milestone F bounded-cardinality metric tests. | Not run. |
+| A22 | Container policy: `Dockerfile`, `docker-compose.yml` | **Partially confirmed**: non-root/read-only/cap-drop exist; no healthcheck, PID/memory limits or explicit grace period. | Milestone F health/limits after readiness works; Docker test. | Docker unavailable locally; not run. |
+| A23 | Release provenance: `.github/workflows/release.yml` | **Partially confirmed**: release builds/artifact uploads exist; no verified SBOM/provenance/promotion gate for this SHA. | Milestone F checksums/SBOM/provenance plus staging/CI gate. | Not run; no release performed. |
+
+### Changes, validation, and continuation
+
+Changed source files: `engine/source/{range.rs,mod.rs,http/mod.rs,segmented.rs}`,
+`media/sources/youtube/hls/{fetcher.rs,mod.rs,parser.rs,resolver.rs,tests.rs}`;
+baseline repair (cherry-pick) additionally changed config, source client, HTTP
+provider, SoundCloud token, routeplanner, and REST info/tests. The new test
+module has seven deterministic local HTTP tests (range success/failure,
+playlist recursion, terminal segment error, TS demux failure, HTTP/segmented
+range handling and segmented probe). They are not substitutes for live audio.
+
+**Milestone A is not complete until the latest SHA has passing format/check/
+Clippy/tests/release build and the test outcomes above are recorded.** CI run
+`37875356459` at `985107d6ac8d674706fa3b365e15efa50751546d`:
+Formatting PASS, Check PASS, Tests PASS, Ubuntu release Build PASS, macOS
+release Build PASS, Windows release Build PASS, Cargo Deny advisories PASS,
+Clippy FAIL (18 test-only lints: needless `.to_vec()` and `.err().expect()`).
+These lints were corrected by `bebd53e`; its bot-triggered CI is
+`action_required` and did not run any jobs. The CI test log download endpoint
+was unreachable from this sandbox, so the **exact count of all tests is
+unavailable** even though the Tests job passed; seven new scripted test
+functions are present. PR #4 remains open. A subsequent human push is required
+to rerun CI on the final code; record its results below. `git diff --check` passed before the media
+commit; that does not replace rustfmt or the compiler. `cargo deny check
+advisories` was unavailable locally (no cargo-deny executable). No Docker
+executable, local audio run, real Discord voice, or live DAVE negotiation was
+performed in this addendum. No stop/replacement stress or SIGTERM shutdown test
+was performed. Production decision: **NOT READY**. Next: close remaining
+Milestone A gaps (in-flight cancellation and other HLS consumers), then B
+(audio reset/demux/worker ownership), C (DAVE fail-closed voice generations),
+D (typed fallback/protocol), E (supervision/config/TLS/sessions/shutdown), F
+(operations/release/staging). Do not merge PR #4 until overlap with #3 and
+security-sensitive DAVE behavior are reviewed.
+
+### Final CI and release evidence (fill from actual runs, not assumptions)
+
+- Final candidate at time of this entry: `bebd53e42d0690adb431509ecb70f0c5f354bf85`; **not fully validated** (its CI run 37875733643 is `action_required` because auto-fix pushed with GitHub Actions token). This documentation-only update will trigger a fresh human-authored PR CI run.
+- A latest-SHA green run and test counts are required before saying Milestone A is validated; when jobs finish, append their exact results here. Runtime checks remain UNTESTED as above.
+
+### Milestone A implementation validation — 2026-10-09
+
+Validated implementation SHA: `dbb266ab02637c455156b8ef0ccc683e4159fa18`.
+PR #4 GitHub Actions CI run **37876259144** completed **success** at that
+exact SHA. Individual required jobs: Formatting **success** (`cargo fmt
+--all -- --check`), Check **success** (`cargo check --workspace
+--all-targets`), Clippy **success** (`cargo clippy --workspace --all-targets
+-- -D warnings`), Tests **success** (`cargo test --workspace --all-targets`),
+Build (ubuntu-latest) **success**, Build (macos-latest) **success**, Build
+(windows-latest) **success** (each `cargo build --release --workspace`),
+Cargo Deny (advisories) **success** (`cargo deny check advisories`).
+Auto-fix run 37876256184 was also successful and did not advance the SHA;
+GitHub CodeRabbit status was successful. The full CI logs could not be fetched
+from this sandbox (`results-receiver.actions.githubusercontent.com` returned
+EOF); **the exact total test count is unavailable**, and must not be inferred
+from earlier runs. The seven new scripted tests are in
+`media/sources/youtube/hls/tests.rs`, and their job passed. Docker, audio
+playback, voice, and DAVE live runtime checks were not run here.
+
+This is validation of the *implementation*, not production readiness:
+HLS in-flight fetch cancellation and worker ownership are outstanding, and
+A05's potential plaintext-DAVE fallback is confirmed by source review.
+An audit-document-only commit after the above SHA needs its own latest-commit
+CI run to satisfy branch protection; do not treat this entry as a result for
+that future commit. The verdict remains **NOT READY**.
+
+---
+
+## 2026-10-09 — PR #3 / PR #4 reconciliation (follow-up; earlier sections historical)
+
+### Baselines, divergence, and environment
+
+`git fetch origin main pull/3/head pull/4/head` on the fixed session branch
+`arena/9058f455-kizunalink` gave: main
+`28c0282499908a33b935a88d708a9e7a6996195b`, PR #3
+`759705a1a8885cad28ebeaf89ae1f6a4219004b9`, PR #4
+`993363c632dc5c68145cb80e8d8ff188bafdb498`. All three pairwise
+merge-bases are `28c0282`. PR #3 consists of implementation `f2fcf53` and
+historical validation addendum `759705a`; PR #4 already cherry-picked the
+implementation as `6335046` (verified `git diff --exit-code f2fcf53 6335046
+-- kizuna-server kizunalink`: exit 0) and adds independent media changes.
+PR #3's separate audit commit was cherry-picked with an append/append conflict
+resolved chronologically: the **entire** October 8 historical section is now
+above PR #4's October 9 addendum. No historical findings or tests were deleted.
+No source-level three-way conflict existed; overlapping HLS/source/client edits
+were inspected semantically, not resolved by choosing one PR wholesale. Both
+PRs had green CI *on their pre-reconciliation SHAs*; those are not results for
+the new commits. Review comments on both PRs were inspected; findings and
+decisions appear below.
+
+This sandbox is Debian 12 x86_64, uid 1001 with passwordless sudo and 20 GB
+free. At inspection, `cargo`, `rustc`, `rustup`, `rustfmt`, `cmake`, and
+`pkg-config` were absent; `apt-cache policy` had no package index. The
+**official** `rustup.rs` and `static.rust-lang.org` both returned TLS
+`SSL_ERROR_SYSCALL` (HTTP code 000), while `sudo apt-get update` failed to
+connect to Debian mirrors (apt itself misleadingly exited 0 with warnings).
+The repository is behind a sandbox network allowlist, so no official toolchain
+or native dependencies could be installed. None is claimed installed. Attempts
+after the source changes to run all six Cargo commands below each returned
+**127** (`bash: cargo: command not found`). GitHub Actions must provide remote
+compiler/test evidence; it does not substitute for a local run.
+
+### Reconciliation matrix (reviewed source and regression evidence)
+
+| Feature | PR #3 | PR #4 | Decision / safer implementation | Relevant tests; evidence gate |
+|---|---|---|---|---|
+| HLS constructor/spawn errors | Repairs unmatched brace and returns thread-spawn error | Contains exact cherry-pick | Retain #3 unchanged; no duplicate patch | Workspace compilation; forced spawn failure not tested |
+| SSRF initial URL/DNS/pinning | Async public DNS resolver + checked and pinned initial IP | Same cherry-pick | Retain, reuse one IP predicate; validate even caller-supplied pins | Direct/private/CGNAT/mapped-IP and pin tests; public-to-private DNS rebinding not live-tested |
+| Redirect policy | Reqwest Attempt policy blocks downgrade and private literals; filtered resolver handles names | Same cherry-pick | Retain; redact target URL in warning; fail closed if a pinned user-supplied URL is paired with a forwarding proxy (proxy resolves independently) | Policy and proxy tests; real public-to-public redirect not tested end-to-end |
+| Auth | Existing main already checks trimmed empty/default public-bind token | Same | Preserve original; do not duplicate | `empty_authorization_is_rejected` and public bind tests |
+| `/players` response | Already fixed on main before both PRs | Same | Retain main's bare-array handler | REST players-list test |
+| `/v4/info` | Uses protocol 4.x.y and optional build metadata | Cherry-pick | Retain; reject malformed/empty build-time pre-release labels | REST schema and valid/invalid label tests |
+| Route-planner CIDR | Invalid CIDR returned as error | Cherry-pick | Retain unchanged | Invalid CIDR and single-address tests |
+| HTTP 206/Content-Range | Only rejects ignored 200 in limited paths | Adds shared offset, length, body validation | Retain #4; accept RFC 9110 unknown total `*` for bounded 206; segmented probe still needs numeric total | Scripted 206/200/malformed/oversize/star tests |
+| HLS ignored range | Rejects ignored 200 | Bounded full-body fallback with declared complete length and exact slice | Retain #4; no byte-zero-as-nonzero | Scripted fallback, oversized and short response tests |
+| Transient segment errors | Existing sticky first error and wakeup (but one-shot `.take()` in reader) | Two retries only for transient send/status; sticky reader error | Retain #4; do not retry malformed ranges; mid-body connection errors still fail visibly | Segment-2 500 and two-503-then-200 scripted tests |
+| Playlist recursion | Raw URL visited and max depth 8 already exist | Canonical URL and typed cycle/depth errors | Retain #4 enhancement | Self, A→B→A, depth, invalid, nested tests |
+| Byte-range playlist parser | Historical `EXTINF` lookahead parsed following BYTERANGE twice | Same historical issue | Parse each tag once; preserve implicit offsets | New chained implicit-range parser test |
+| TS demux failure | Raw TS fallback existed | Rejects empty demux | Retain #4 | Invalid TS bootstrap test; SoundCloud/Twitch still require separate audit |
+| SoundCloud assets | Relative script-source discovery | Same cherry-pick | Retain; HTML tag/attribute match now case-insensitive | Uppercase SCRIPT regression; live SoundCloud untested |
+| Audit history | Adds October 8 failed-main and PR #3 final verification | Adds October 9 23-finding matrix and CI results | Combine both in chronological order, no deletion | Compare source/commit history and latest CI |
+
+PR review comments on `Content-Range: */unknown`, CGNAT, malformed pre-release,
+uppercase HTML tags, proxied SSRF and double-parsed implicit byte ranges were
+checked against source and addressed above. The internal/private forwarding
+proxy compatibility comment is real: **user-supplied pinned HTTP source URLs
+now reject an explicit forwarding proxy** because pinning cannot constrain its
+DNS; other trusted-provider proxy settings were left unchanged. The review
+comment about transient *mid-body* errors remains a known limitation: such
+errors fail the segment, never become successful EOS or committed partial data.
+
+### Changed files and results pending for the reconciled code
+
+New follow-up changes: `engine/source/{client.rs,range.rs}`,
+`media/sources/{http/mod.rs,soundcloud/token.rs,youtube/hls/parser.rs,youtube/hls/tests.rs}`,
+`server/api/rest/routes/stats/info.rs`, plus this audit. The seven scripted
+HTTP tests from PR #4 are retained; seven follow-up test functions cover chained
+ranges, unknown totals, bounded retries, proxy/pins, pre-release validation,
+and uppercase SoundCloud script tags. Existing tests for auth, `/players`,
+`/v4/info`, CIDRs, redirects and ranges remain intact. Test results for these
+follow-up changes must be filled from the **new** CI run, not the historical
+runs above. Local commands (format, check, Clippy, test, release build, deny)
+all exited 127 for missing Cargo. Local Docker, audio playback, Discord voice,
+DAVE negotiation/encrypted packets, real DNS rebinding, and forced thread-spawn
+failure were NOT RUN. Production verdict remains **NOT READY** due to the
+confirmed DAVE fail-open behavior and outstanding lifecycle issues in the
+23-finding matrix. Do not merge either PR on the strength of this addendum.
+
+### Verified reconciled implementation — CI closure
+
+Reconciled implementation SHA `61f8a4b9812d9979a1bfd4f744ddccaa311f564d`
+contains the source fixes and formatting. Audit-only head
+`4a79d384c6b2352f99a23b90d3eaa9001c91790d` was validated by **GitHub
+Actions CI run [37880543138](https://github.com/nikcodex/Kizunalink/actions/runs/37880543138)**
+with the exact same source. Run status **completed, success**. Every configured
+required job succeeded on that exact head: Formatting (`cargo fmt --all --
+--check`), Check (`cargo check --workspace --all-targets`), Clippy (`cargo
+clippy --workspace --all-targets -- -D warnings`), Tests (`cargo test
+--workspace --all-targets`), release Build on Ubuntu, macOS, and Windows
+(each `cargo build --release --workspace`), and Cargo Deny advisories (`cargo
+deny check advisories`). Auto-fix run 37880539615 succeeded without advancing
+that head. `git diff origin/main...HEAD --check` passed; PR #4 remained open
+and mergeable. The full CI test logs endpoint was inaccessible from this
+sandbox (EOF from the redirected log server), so the exact total test count
+cannot be obtained here. The checked-in regression functions ran in a
+successful Tests job; **do not** invent a count from earlier runs.
+
+The present audit-document-only commit, made *after* that CI run, must itself
+be checked by a new run before claiming the latest branch is green. Prior
+interim "pending" or failed runs remain historical and are superseded for the
+validated implementation. No local Rust toolchain, native build packages,
+Docker daemon, authorized Discord test bot, or live DAVE/audio run was
+available. Despite green CI for these source changes, the separate DAVE
+fail-open and cancellation/ownership items above still prevent any claim of
+production readiness. PR #3 has no unique source fixes left; its historical
+audit is preserved. It can be closed as superseded only after the latest PR #4
+run is verified green; neither PR is authorized for automatic merge.
+
+### Reconciliation CI and PR disposition (verified after the preceding entry)
+
+PR #4 head `3a23fc308559ec5aeba7dccf62d331bfd5ea9d07`
+completed GitHub Actions run
+[37881295645](https://github.com/nikcodex/Kizunalink/actions/runs/37881295645)
+with **success** for each job: Formatting, Check, Clippy, Tests, Build
+(ubuntu-latest), Build (macos-latest), Build (windows-latest), and Cargo Deny
+(advisories). Auto-fix run 37881291063 also succeeded without advancing the
+head. The branch and remote matched, the working tree was clean, and
+`git diff origin/main...HEAD --check` passed. The actual CI command definitions
+are in `.github/workflows/ci.yml`; all six requested Cargo commands still
+exited 127 locally because Cargo could not be installed. The CI log download
+host was unreachable from this sandbox; exact total test count is **unknown**,
+not guessed. No Docker/audio/Discord/DAVE runtime verification took place.
+
+Because the source and PR #3 historical audit are now included in PR #4 and
+that exact head had a green CI run, PR #3 was **closed as superseded**, with a
+comment identifying the cherry-picks and CI evidence. PR #4 remains **OPEN
+AND UNMERGED**. This further audit-only commit will need its own current-head
+CI run; the SHA and run immediately above validate the implementation, not a
+future audit commit. Merge readiness is separate from production readiness:
+the historical DAVE fail-open and runtime lifecycle findings remain unresolved.
+
+### 2026-10-09 — Follow-up on remaining PR #4 HLS response-body review
+
+The inline review finding at `media/sources/youtube/hls/fetcher.rs` (comment
+4226100528) is **confirmed**: previously the two-retry budget covered request
+submission and selected transient HTTP statuses, but `read_body_capped(...).await?`
+returned immediately after a streaming body failure. The new implementation
+uses that same budget for a fresh whole request on a transient body transport
+error or a short declared/ranged response. Each attempt uses an isolated staging
+buffer, validates status/range/declared length and the 32 MiB cap, and only
+appends after a complete successful response. Oversized bodies, malformed
+ranges, non-I/O decode failures and permanent statuses remain terminal. A
+cancelled future drops the response/sleep instead of starting another request.
+The first CI attempt found that reqwest classifies truncated Content-Length as
+`Decode` wrapping an `io::Error(UnexpectedEof)`, not `Body`; the initial
+classification left both new interrupted-body tests failing (run 37883139234,
+207 passed, 2 failed; formatting also failed). The follow-up inspects the
+error source chain and retries only known I/O interruption kinds or timeout /
+connect failures, not all decode errors. Those interim failures are **not**
+claimed as validation of this updated implementation. Scripted HTTP tests cover a dropped connection partway through a 206 body
+followed by a successful fresh response, retry exhaustion after three incomplete
+responses, and single-request handling for 403 and oversized bodies. Previously
+recorded parser and unknown-total range comments have explicit resolved
+confirmations (4226389216 and 4226389372); no other unresolved inline finding
+was identified in the PR #4 comments inspected. The HLS mid-body comment is
+addressed in code here, pending exact-head CI confirmation.
+
+Local formatting, check, Clippy `-D warnings`, all-target tests, release build,
+and Cargo Deny cannot be executed until Rust/Cargo are installed. The official
+rustup endpoints and Debian apt mirrors remained unreachable from this
+sandbox, so no local Cargo result is claimed. New exact-HEAD CI results must
+be recorded below when they are actually complete. Docker startup, real audio
+playback, SSRF redirect/DNS-rebinding integration, Discord voice, and DAVE
+packet-flow testing **remain outstanding**. The verdict remains **NOT READY**:
+passing static checks/tests does not resolve the historical DAVE fail-open and
+runtime lifecycle issues. PR #4 must not be merged on this evidence alone.
+
+### Exact-head validation of the HLS body retry follow-up
+
+PR #4 head `96da831a99f39fd443af073fa2b8b1ddd0cce93f` passed
+[GitHub Actions run 37884031393](https://github.com/nikcodex/Kizunalink/actions/runs/37884031393):
+**all eight configured CI jobs succeeded** — Formatting (`cargo fmt --all --
+--check`), Check (`cargo check --workspace --all-targets`), Clippy (`cargo
+clippy --workspace --all-targets -- -D warnings`), Tests (`cargo test
+--workspace --all-targets`), release Build on Ubuntu, macOS and Windows
+(`cargo build --release --workspace`), and Cargo Deny advisories (`cargo deny
+check advisories`). Auto-fix run 37884027553 passed on the same SHA without
+changing the tree. The two newly added mid-body regression tests were included
+in the successful Tests job; no exact total test count is asserted because CI
+log download from this sandbox remains unavailable. Prior runs 37883139234
+(early body classification failure and formatting failure) and 37883053895
+(cancelled) do not validate the final implementation.
+
+The mid-body review thread 4226100528 was answered with this exact-head CI
+evidence and marked resolved; the other two review threads were already
+resolved. The historical audit sections above are not retroactively rewritten.
+The six equivalent Cargo commands were attempted locally and each exited 127
+(`cargo: command not found`); passing CI is remote evidence, **not** a local
+Rust toolchain installation or a local test run. This audit-only documentation
+commit requires its own exact-head CI confirmation. PR #4 remains **OPEN,
+UNMERGED** and the production verdict is **NOT READY**. Docker startup, real
+audio playback, SSRF redirect/DNS-rebinding integration, Discord voice, and
+DAVE packet-flow testing all remain outstanding.
+
+## 2026-10-09 — DAVE, lifecycle and runtime-evidence follow-up (PR #4)
+
+### Live state and scope
+
+Fetched `main`, PR #4 head and session branch. Starting branch/PR head was
+`a8ad6ac29436371c956401e513b3bcc1008d162e`, exactly the reported SHA;
+main was `28c0282499908a33b935a88d708a9e7a6996195b`. No additional
+commits followed the reported head at inspection. `git diff origin/main...HEAD`
+contained 18 files and the 20 existing commits were inspected, together with
+the CI/fix/release workflows, historical audit and PR review history. All
+three inline review threads were resolved; general PR comments still flag the
+DAVE fail-open risk. The original audit sections above are historical; their
+claims of earlier local playback do **not** validate the code in this section.
+
+### Confirmed findings and code changes
+
+| Severity | Finding and reproduction | Change and deterministic regression | Remaining limit |
+|---|---|---|---|
+| **CRITICAL** | `discord/crypto/dave.rs::encrypt_opus`: after a nonzero DAVE negotiation, a missing/unready MLS session returned raw Opus; the special silence packet also bypassed the readiness check. `gateway/session/handler.rs::on_session_description` reset on setup error but still called `start_voice`. `send_raw` then wrapped plaintext Opus with *transport* AEAD, not DAVE E2EE. | Preserve a nonzero encryption requirement across `DaveHandler::reset`; only explicit v0 negotiation or an executed v0 transition permits plaintext. `encrypt_opus` rejects missing/unready state (including silence) before calling davey, whose own *ready-session* silence exemption remains intact. On setup error, re-identify instead of starting voice. Gate the voice loop before mixing/packet emission until the MLS session is ready and the gateway transition is active; report connection ready only after this gate. Bound a stalled negotiation at 60 s, then reconnect. Tests cover unready negotiation, reset, unsupported version, transition-before-execute and explicit v0. | No real Discord or two-party MLS exchange was performed. Receive-side DAVE decryption is not implemented in this outgoing-only voice client; no incoming media is consumed. Unexpected missing `dave_protocol_version` is still interpreted as v0 for legacy compatibility and must be checked against the actual gateway before release. |
+| **HIGH** | `engine/source/segmented.rs::new` detached up to `MAX_CONCURRENT_FETCHES` Tokio workers. `Drop` signalled termination but a worker awaiting a stalled HTTP response could retain resources until timeout. | Own the JoinHandles and abort on drop, as well as notifying idle workers. Deterministic repeated-cycle test parks mock workers, drops the source, checks prompt worker exit; this is **not** a live HTTP soak test. | The blocking HTTP prefetch thread in `engine/source/http/mod.rs` still has no owned join handle and can persist through a blocked network operation. Many provider decoder/spawn-blocking tasks likewise need explicit lifecycle budgets and stress tests. |
+| **MEDIUM** | `hls/fetcher.rs` has bounded retries but cancellation of an in-flight partial body had no explicit regression. | Local socket fixture sends one byte of a declared four-byte range and stalls; cancelling the fetch must leave its destination unchanged. Existing range/implicit-byte-range/cycle/truncation/exhaustion/oversize/terminal-demux tests are retained. | Does not exercise an authorized remote HLS provider. |
+| **MEDIUM** | SSRF validation and pinning had pure unit tests but no assertion that a blocked local listener sees zero connections. | Loopback listener fixture checks `HttpSource::can_handle` remains syntax-only (no blocking DNS) while `HttpReader::new` rejects loopback, RFC1918, link-local, CGNAT and mapped-v6 sources before connecting. Previous redirect/pin/proxy tests remain. | Real redirect chains from a public endpoint, rebinding between validation and connection, and proxy traversal require isolated network fixtures; no unrelated public/internal host was probed. |
+| **Coverage** | No checked-in test stitched local source probing through codec and transport. | Generated 200 ms 48 kHz stereo WAV fixture uses `LocalSource::load/get_track`, real Symphonia decoder, app mixer, app Opus encoder and UDP loopback RTP+AEAD transport. Checks nonzero PCM/Opus, sequential RTP sequence/timestamps, packet tag and cleanup. Test is **local-source integration**, not Discord playback or DAVE media verification. | Remote HTTP fetch, real Discord negotiation, live speakers, and end-to-end DAVE encrypted packets remain unverified. |
+
+### Reproducible verification matrix and release gates
+
+| Tier | Procedure | Evidence / boundary |
+|---|---|---|
+| Unit / deterministic local socket | `cargo test --workspace --all-targets`; focus `negotiated_dave_cannot_emit_plaintext_before_keys_or_after_reset`, `only_an_executed_zero_transition_allows_plaintext`, `dropping_source_cancels_owned_workers_on_repeated_cycles`, `cancelling_mid_body_fetch_keeps_output_unchanged`, `rejected_private_source_never_contacts_a_local_http_listener`, `local_wav_resolves_decodes_mixes_encodes_and_sends_rtp_to_loopback`; keep existing HLS/range/proxy tests. | Runs in CI without provider credentials. Mock worker test is only a cancellation-ownership check. UDP loopback proves packet construction, not external voice. |
+| Local system / container | Install official Rust toolchain + native libopus/CMake/pkg-config, then format/check/Clippy `-D warnings`/test/release build/deny; start image from Dockerfile with nondefault auth, check readiness, REST/WS auth, terminate during playback and repeat start/stop/reconnect while measuring task count, RSS, FDs and ports. Use generated/local WAV and an **explicitly permitted** HTTP test server; assert 10-ish packet periods for 200 ms, decoded energy, queue drain and resources restored. | Docker and native Rust unavailable in this sandbox. Keep sanitized logs; never publish voice keys or tokens. The checked-in loopback test does not prove audible output. |
+| Isolated SSRF network lab | In a disposable network namespace or private CI lab, give test-only DNS names public TEST-NET addresses pinned to controlled servers. Respond with public→public→private redirect and HTTPS→HTTP; configure a DNS server to answer public on first query and private on second; observe that no private connection occurs. Repeat with forwarding proxy configured and with mapped-v6, CGNAT, link-local and invalid DNS answers. Record request counts on every hop and redact signed URLs. | Cannot safely exercise DNS rebinding/public redirect from this sandbox. Static URL policy, public-only DNS resolver and private-pin rejection are covered; no claim of end-to-end rebinding proof. |
+| Authorized Discord test guild | A maintainer provisions a disposable bot/guild/voice channel and *privately* injects credentials (never commit/log them). Connect via Lavalink voice update, assert selected RTP mode and max DAVE version, verify MLS key-package/proposal/welcome/commit/epoch/transition ordering with a second authorized participant, privacy code and encrypted audio reception, rotate keys, reconnect/resume/leave/rejoin, malformed/unsupported versions, failed setup and 60 s timeout. Assert no UDP Opus while nonzero DAVE is unready and no plaintext after errors; compare sent/received sequence and audibility, capture only redacted metadata. Disconnect/stop then verify zero stale voice tasks and bounded resources. | Credentials and Discord access are absent; **NOT RUN and a release blocker**. Do not use production bot credentials or log secrets. |
+
+### Environment and pending result
+
+Debian 12 x86_64; `cargo`, `rustc`, `rustup`, `rustfmt`, `cmake`,
+`pkg-config`, `docker` and `ffmpeg` are absent. Prior official rustup endpoints
+failed TLS `SSL_ERROR_SYSCALL`, Debian mirrors failed; this turn did not repeat
+those blocked installation attempts. Local Cargo commands are attempted below
+and exact results must be recorded. CI on a **new exact final SHA** must be
+checked separately; historical green run 37884653993 validated only the
+starting SHA. Real audio playback, Discord voice and DAVE packet exchange are
+**NOT VERIFIED**. Production verdict **NOT READY**; never merge PR #4 on
+unit/CI success alone. Further high-severity lifecycle gaps and the possible
+legacy-v0 negotiation ambiguity require owner review and authorized runtime
+verification.
+
+Additional voice lifecycle fix: `gateway/session/{handler,mod}.rs` now aborts and
+awaits connection-owned voice/heartbeat tasks on teardown, and replaces a
+voice loop only after the previous task exits (otherwise cancels the connection).
+`discord/player/context.rs::destroy`, REST `handle_voice` and WS
+`handle_voice_update` likewise await aborted gateway tasks before destroying or
+replacing them. This closes an observed stale-readiness ordering window, but
+there is **no authorized repeated-reconnect soak test** yet; concurrent REST/WS
+replacement still deserves a generation-guard review. Malformed nonnumeric
+DAVE versions now error; a missing field after prior nonzero negotiation
+causes re-identification rather than an implicit downgrade. A missing version
+on a brand-new legacy connection remains v0 for compatibility.
+
+Local attempts this turn: `cargo fmt --all -- --check`, `cargo check
+--workspace --all-targets`, `cargo clippy --workspace --all-targets -- -D
+warnings`, `cargo test --workspace --all-targets`, `cargo build --release
+--workspace`, and `cargo deny check advisories` each exited **127** (`cargo:
+command not found`). No official Rust installation succeeded; earlier rustup
+and Debian mirror failures were not repeated. No Docker startup, local build,
+Discord voice, real audio playback, DAVE packet-flow, public redirect or DNS
+rebinding run is claimed.
+
+Interim run [37885862092](https://github.com/nikcodex/Kizunalink/actions/runs/37885862092)
+on `2c79463c368cf90efaa5629ac7b20e4439951deb` passed Check,
+Clippy, Cargo Deny and all three release builds, but Formatting failed (fixed
+by auto-fix `ede5bc7`) and Tests reported **214 passed, 1 failed**. The failed
+SSRF regression incorrectly asserted that `HttpSource::can_handle` performs
+address filtering. It is intentionally syntax-only to avoid blocking DNS in
+async source selection; `HttpReader::new` is the security boundary and performs
+IP validation before connecting. The assertion and table above have been
+corrected. This interim run is NOT final validation. The local-source PCM to
+UDP-loopback integration and DAVE/lifecycle regressions did pass within this
+interim Tests job, but must pass again on the corrected exact head.
+
+Corrected source/test/audit SHA `c3f9e093ebd6a807c6953344fc38b7e998f119fb`
+passed [CI run 37886714493](https://github.com/nikcodex/Kizunalink/actions/runs/37886714493):
+Formatting, Check, Clippy with `-D warnings`, Tests, release builds on
+Ubuntu/macOS/Windows and Cargo Deny advisories all succeeded. Auto-fix
+37886710426 succeeded without modifying that head. This validates the
+loopback UDP local-WAV integration, DAVE and worker regressions in that SHA,
+not subsequent changes. Exact aggregate test count is unavailable because
+CI log download is blocked; do not infer it from the earlier 214/1 run.
+
+Additional deterministic handler test exercises a nonzero *unsupported*
+negotiation: `on_session_description` returns Identify without starting voice
+or allowing plaintext. A supported nonzero negotiation before MLS readiness
+starts a gated loop and produces no UDP traffic or connected signal to the
+local fixture. The first test is not a real Discord connection and does not
+produce valid MLS keys. The handshake-send error branch also now drains
+connection-owned tasks. This later code needs a new exact-head CI run.
+
+`bb40dac921b1bbeddd8572916b92b2faad21c37a` passed Check, Clippy,
+Tests, all three release Builds and Cargo Deny in run 37887576194, but
+**Formatting failed** for the newly added gateway fixture. Auto-fix `e1887e6`
+changed formatting only; bot-authored CI at that SHA was action_required.
+Neither run validates this later logic change. A voice-loop failure now marks
+the connection as failed before cancelling it; `VoiceGateway::connect` chooses
+Identify (not a resume with the old transport key/MLS state) after that error.
+The new handler regression is a local mock-gateway/UDP fixture, not authorized
+Discord E2EE validation. New exact-head CI is required.
+
+### Verified follow-up implementation and remaining blockers
+
+The final **implementation** SHA
+`f33896247cd3afbc1d78db1d0358684a84549f65` passed
+[CI 37888471473](https://github.com/nikcodex/Kizunalink/actions/runs/37888471473):
+Formatting, Check, Clippy (`-D warnings`), Tests, release Build (Ubuntu),
+release Build (macOS), release Build (Windows), Cargo Deny (advisories) —
+**eight of eight successful**. Auto-fix run 37888467244 succeeded without
+advancing that SHA. `git diff --check` succeeded. All new tests above ran in
+the successful Tests job, including the handler's no-plaintext UDP fixture and
+the generated-WAV local pipeline. The exact aggregate test count is unknown
+(the Actions log download endpoint is inaccessible here), not inferred.
+
+The current audit-only commit following that tested source SHA needs its own
+exact-head CI confirmation. The code fixes do **not** eliminate the following
+release gates: real Discord connection and two-party DAVE/MLS key exchange,
+packet decrypt/receive verification by an authorized participant, audible
+playback, real public redirect/DNS-rebinding/proxy integration, Docker
+startup/shutdown, HTTP prefetch worker lifetime under adversarial slow
+responses, unbounded decoder seek queues, repeated play/stop/reconnect soak,
+HTTP URL/error redaction review, TLS idle-handshake timeout, and explicit
+maintainer acceptance of remaining HIGH risks. The loopback and scripted
+fixtures are valuable regression evidence, not production runtime proof.
+**Verdict: NOT READY. PR #4 remains OPEN and UNMERGED.**

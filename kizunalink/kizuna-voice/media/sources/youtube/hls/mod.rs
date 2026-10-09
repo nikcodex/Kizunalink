@@ -9,6 +9,9 @@ pub mod ts_demux;
 pub mod types;
 pub mod utils;
 
+#[cfg(test)]
+mod tests;
+
 use std::{
     io::{self, Read, Seek, SeekFrom},
     sync::{
@@ -217,7 +220,7 @@ impl HlsReader {
         let abort_flag = Arc::new(AtomicBool::new(false));
         let abort_flag_bg = Arc::clone(&abort_flag);
 
-        let bg_thread = std::thread::Builder::new()
+        let bg_thread = match std::thread::Builder::new()
             .name("hls-prefetch".into())
             .spawn(move || {
                 prefetch_loop(
@@ -230,11 +233,13 @@ impl HlsReader {
                     bg_all_segments,
                     handle,
                 );
-            });
-        if let Err(e) = bg_thread {
-            error!("Failed to spawn HLS prefetch thread: {e}");
-            return Err(format!("failed to spawn HLS prefetch thread: {e}").into());
-        }
+            }) {
+            Ok(handle) => handle,
+            Err(e) => {
+                tracing::error!("Failed to spawn HLS prefetch thread: {e}");
+                return Err(format!("failed to spawn HLS prefetch thread: {e}").into());
+            }
+        };
 
         Ok(Self {
             buf: initial_buf,
@@ -246,9 +251,13 @@ impl HlsReader {
             segment_durations,
             has_durations,
         })
+    }
 
     /// Seek to a position in milliseconds by skipping segments.
     fn seek_to_ms(&mut self, position_ms: u64) -> io::Result<u64> {
+        if let Some(err) = self.shared.0.lock().error.as_ref() {
+            return Err(io::Error::other(err.clone()));
+        }
         if !self.has_durations {
             return Err(io::Error::new(
                 io::ErrorKind::Unsupported,
@@ -316,6 +325,9 @@ impl HlsReader {
 
 impl Read for HlsReader {
     fn read(&mut self, out: &mut [u8]) -> io::Result<usize> {
+        if out.is_empty() {
+            return Ok(0);
+        }
         // If we have data in the active buffer, serve it immediately.
         if self.pos < self.buf.len() {
             // If we're running low, wake the background thread early.
@@ -346,8 +358,8 @@ impl Read for HlsReader {
                 break;
             }
             // Surface a background fetch failure before any premature EOS.
-            if let Some(err) = state.error.take() {
-                return Err(io::Error::other(err));
+            if let Some(err) = state.error.as_ref() {
+                return Err(io::Error::other(err.clone()));
             }
             if state.eos {
                 return Ok(0); // End of stream
@@ -600,8 +612,7 @@ async fn fetch_and_demux_into(
             // tracing::debug!("HLS: demuxed {} TS bytes → {} ADTS bytes", raw.len(), adts.len());
             out.extend_from_slice(&adts);
         } else {
-            tracing::warn!("HLS: TS demux produced no output, using raw segment");
-            out.extend_from_slice(&raw);
+            return Err("HLS: MPEG-TS demux produced no audio".into());
         }
     } else {
         out.extend_from_slice(&raw);

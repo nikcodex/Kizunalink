@@ -14,6 +14,21 @@ use crate::{common::types::AnyResult, media::sources::youtube::cipher::YouTubeCi
 /// malformed rather than recursed into without bound.
 const MAX_PLAYLIST_DEPTH: usize = 8;
 
+#[derive(Debug, thiserror::Error)]
+pub enum PlaylistResolutionError {
+    #[error("invalid HLS playlist URL")]
+    InvalidUrl,
+    #[error("HLS playlist cycle detected")]
+    Cycle,
+    #[error("HLS playlist nesting exceeded 8 levels")]
+    Depth,
+}
+
+struct ResolutionContext {
+    visited: HashSet<String>,
+    depth: usize,
+}
+
 /// Boxed future returned by [`resolve_playlist_inner`]; the recursion has to be
 /// boxed so the compiler can name its type.
 type PlaylistFuture<'a> = std::pin::Pin<
@@ -24,8 +39,11 @@ pub async fn resolve_playlist(
     client: &reqwest::Client,
     url: &str,
 ) -> AnyResult<(Vec<Resource>, Option<Resource>)> {
-    let mut visited = HashSet::new();
-    resolve_playlist_inner(client, url, 0, &mut visited).await
+    let mut context = ResolutionContext {
+        visited: HashSet::new(),
+        depth: 0,
+    };
+    resolve_playlist_inner(client, url, &mut context).await
 }
 
 /// Recursive implementation of [`resolve_playlist`]. `depth` bounds nesting and
@@ -34,22 +52,26 @@ pub async fn resolve_playlist(
 fn resolve_playlist_inner<'a>(
     client: &'a reqwest::Client,
     url: &'a str,
-    depth: usize,
-    visited: &'a mut HashSet<String>,
+    context: &'a mut ResolutionContext,
 ) -> PlaylistFuture<'a> {
     Box::pin(async move {
-        if depth > MAX_PLAYLIST_DEPTH {
-            return Err(format!(
-                "HLS playlist nesting exceeded {MAX_PLAYLIST_DEPTH} levels at {url}"
-            )
-            .into());
+        let mut canonical =
+            reqwest::Url::parse(url).map_err(|_| PlaylistResolutionError::InvalidUrl)?;
+        if !matches!(canonical.scheme(), "http" | "https") || canonical.host().is_none() {
+            return Err(PlaylistResolutionError::InvalidUrl.into());
         }
-        if !visited.insert(url.to_string()) {
-            return Err(format!("HLS playlist cycle detected at {url}").into());
+        canonical.set_fragment(None);
+        let canonical = canonical.to_string();
+        if context.depth > MAX_PLAYLIST_DEPTH {
+            return Err(PlaylistResolutionError::Depth.into());
+        }
+        if !context.visited.insert(canonical.clone()) {
+            return Err(PlaylistResolutionError::Cycle.into());
         }
 
-        let text = fetch_text(client, url).await?;
-        let playlist = parse_m3u8(&text, url);
+        let text = fetch_text(client, &canonical).await?;
+        let playlist = parse_m3u8(&text, &canonical);
+        context.depth += 1;
 
         match playlist {
             M3u8Playlist::Master {
@@ -86,8 +108,7 @@ fn resolve_playlist_inner<'a>(
                                     group_id,
                                     uri
                                 );
-                                return resolve_playlist_inner(client, uri, depth + 1, visited)
-                                    .await;
+                                return resolve_playlist_inner(client, uri, context).await;
                             }
                         }
 
@@ -99,7 +120,7 @@ fn resolve_playlist_inner<'a>(
                             v.audio_group,
                             v.url
                         );
-                        resolve_playlist_inner(client, &v.url, depth + 1, visited).await
+                        resolve_playlist_inner(client, &v.url, context).await
                     }
                     None => Err("HLS master playlist has no variants".into()),
                 }

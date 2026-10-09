@@ -28,7 +28,7 @@ fn asset_re() -> &'static Regex {
 fn script_src_re() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     RE.get_or_init(|| {
-        Regex::new(r#"<script[^>]+src\s*=\s*["']([^"']+)["']"#).expect("valid regex")
+        Regex::new(r#"(?i)<script[^>]+src\s*=\s*["']([^"']+)["']"#).expect("valid regex")
     })
 }
 
@@ -219,5 +219,21 @@ impl SoundCloudTokenTracker {
         tokio::spawn(async move {
             this.get_client_id().await;
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::script_src_re;
+
+    #[test]
+    fn script_sources_are_case_insensitive() {
+        let html =
+            r#"<SCRIPT SRC="/assets/app.js"></SCRIPT><script src='/assets/other.js'></script>"#;
+        let sources: Vec<_> = script_src_re()
+            .captures_iter(html)
+            .filter_map(|caps| caps.get(1).map(|m| m.as_str()))
+            .collect();
+        assert_eq!(sources, ["/assets/app.js", "/assets/other.js"]);
     }
 }

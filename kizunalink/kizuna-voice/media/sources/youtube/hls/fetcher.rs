@@ -2,74 +2,183 @@
 // Licensed under the MIT License
 
 use super::types::Resource;
-use crate::common::types::AnyResult;
+use crate::{common::types::AnyResult, engine::source::range::validate_content_range};
 
-/// Hard upper bound on a single HLS segment/init body. Segments are small
-/// (typically tens of KiB); this only guards against a provider or compromised
-/// endpoint streaming an unbounded body into memory.
-pub const MAX_HLS_SEGMENT_BYTES: usize = 32 * 1024 * 1024; // 32 MiB
+/// Hard upper bound on a single HLS segment/init body, including full-body fallbacks.
+pub const MAX_HLS_SEGMENT_BYTES: usize = 32 * 1024 * 1024;
+const MAX_TRANSIENT_RETRIES: usize = 2;
+
+#[derive(Debug, thiserror::Error)]
+enum BodyReadError {
+    #[error("HLS fetch: body exceeds {0} bytes")]
+    TooLarge(usize),
+    #[error("HLS fetch: body read failed: {0}")]
+    Transport(#[from] reqwest::Error),
+}
+
+impl BodyReadError {
+    fn is_transient(&self) -> bool {
+        match self {
+            // reqwest may label an incomplete HTTP body as Decode rather than
+            // Body. Inspect its error chain for an actual I/O interruption;
+            // malformed compression/data errors are not retryable.
+            Self::Transport(e) => {
+                if e.is_timeout() || e.is_connect() {
+                    return true;
+                }
+                let mut cause: &(dyn std::error::Error + 'static) = e;
+                loop {
+                    if let Some(io) = cause.downcast_ref::<std::io::Error>() {
+                        return matches!(
+                            io.kind(),
+                            std::io::ErrorKind::UnexpectedEof
+                                | std::io::ErrorKind::TimedOut
+                                | std::io::ErrorKind::ConnectionReset
+                                | std::io::ErrorKind::ConnectionAborted
+                                | std::io::ErrorKind::BrokenPipe
+                        );
+                    }
+                    match cause.source() {
+                        Some(source) => cause = source,
+                        None => return false,
+                    }
+                }
+            }
+            Self::TooLarge(_) => false,
+        }
+    }
+}
+
+async fn retry_pause(attempt: usize) {
+    // Dropping the fetch future cancels this wait as well as any in-flight
+    // reqwest request. The retry budget covers the whole request, not each phase.
+    tokio::time::sleep(std::time::Duration::from_millis(100 << attempt)).await;
+}
 
 pub async fn fetch_segment_into(
     client: &reqwest::Client,
     resource: &Resource,
     out: &mut Vec<u8>,
 ) -> AnyResult<()> {
-    let mut req = client.get(&resource.url).header("Accept", "*/*");
-
-    let wanted: Option<u64> = resource.range.as_ref().map(|r| r.length);
-    if let Some(range) = &resource.range {
-        let end = range.offset + range.length - 1;
-        req = req.header("Range", format!("bytes={}-{}", range.offset, end));
+    let range = resource.range.as_ref();
+    let end = if let Some(r) = range {
+        Some(
+            r.offset
+                .checked_add(r.length.checked_sub(1).ok_or("empty HLS range")?)
+                .ok_or("HLS range overflow")?,
+        )
+    } else {
+        None
+    };
+    if range.is_some_and(|r| r.length > MAX_HLS_SEGMENT_BYTES as u64) {
+        return Err("HLS fetch: requested range exceeds segment limit".into());
     }
 
-    let res = req.send().await?;
-    let status = res.status();
+    for attempt in 0..=MAX_TRANSIENT_RETRIES {
+        // Each attempt creates a new request/response and a fresh temporary
+        // body. Never resume from, or append, a partially read response.
+        let mut req = client
+            .get(&resource.url)
+            .header("Accept", "*/*")
+            .header("Accept-Encoding", "identity");
+        if let (Some(r), Some(end)) = (range, end) {
+            req = req.header("Range", format!("bytes={}-{end}", r.offset));
+        }
+        let res = match req.send().await {
+            Ok(res) => res,
+            Err(e) if attempt < MAX_TRANSIENT_RETRIES && (e.is_timeout() || e.is_connect()) => {
+                retry_pause(attempt).await;
+                continue;
+            }
+            Err(e) => return Err(e.into()),
+        };
+        let status = res.status();
+        if matches!(status.as_u16(), 429 | 500 | 502 | 503 | 504) && attempt < MAX_TRANSIENT_RETRIES
+        {
+            retry_pause(attempt).await;
+            continue;
+        }
 
-    if wanted.is_some() {
-        // A range was requested. `206 Partial Content` is the only correct
-        // answer; a bare `200 OK` means the server ignored the Range header and
-        // sent the whole resource from byte 0, which would be appended as though
-        // it were the requested slice and corrupt the stream.
-        if status == reqwest::StatusCode::OK {
+        // Validate status and byte interval BEFORE any body is read. expected
+        // length is checked after streaming, including for chunked responses.
+        let (cap, expected_len, slice) = if let Some(r) = range {
+            if status == reqwest::StatusCode::PARTIAL_CONTENT {
+                validate_content_range(&res, r.offset, Some(r.length))?;
+                (r.length as usize, Some(r.length), None)
+            } else if status == reqwest::StatusCode::OK {
+                // An ignored Range is safe only when the complete resource is
+                // declared, fits the cap, and contains the requested interval.
+                let full_len = res
+                    .content_length()
+                    .ok_or("HLS fetch: ignored Range without Content-Length")?;
+                let requested_end = r.offset + r.length - 1; // checked above
+                if full_len > MAX_HLS_SEGMENT_BYTES as u64 || full_len <= requested_end {
+                    return Err("HLS fetch: unsafe full-body Range fallback".into());
+                }
+                (
+                    MAX_HLS_SEGMENT_BYTES,
+                    Some(full_len),
+                    Some((r.offset as usize, requested_end as usize)),
+                )
+            } else {
+                return Err(format!("HLS fetch failed {status}").into());
+            }
+        } else {
+            if status != reqwest::StatusCode::OK {
+                return Err(format!("HLS fetch failed {status}").into());
+            }
+            (MAX_HLS_SEGMENT_BYTES, res.content_length(), None)
+        };
+
+        // All body bytes remain local to this attempt until fully verified.
+        // Only a transport interruption or a short response gets a bounded
+        // whole-request retry. Too-large bodies, malformed headers and status
+        // errors are terminal, never accepted as a successful segment.
+        let bytes = match read_body_capped(res, cap).await {
+            Ok(bytes) => bytes,
+            Err(e) if attempt < MAX_TRANSIENT_RETRIES && e.is_transient() => {
+                retry_pause(attempt).await;
+                continue;
+            }
+            Err(e) => return Err(e.into()),
+        };
+        if let Some(expected_len) = expected_len
+            && bytes.len() as u64 != expected_len
+        {
+            if (bytes.len() as u64) < expected_len && attempt < MAX_TRANSIENT_RETRIES {
+                retry_pause(attempt).await;
+                continue;
+            }
             return Err(format!(
-                "HLS fetch: server ignored Range request (200 OK) for {}",
-                resource.url
+                "HLS fetch: incomplete or inconsistent body ({} of {expected_len} bytes)",
+                bytes.len()
             )
             .into());
         }
-        if status != reqwest::StatusCode::PARTIAL_CONTENT {
-            return Err(format!("HLS fetch failed {}: {}", status, resource.url).into());
+
+        if let Some((start, end)) = slice {
+            out.extend_from_slice(&bytes[start..=end]);
+        } else {
+            out.extend_from_slice(&bytes);
         }
-    } else if !status.is_success() {
-        return Err(format!("HLS fetch failed {}: {}", status, resource.url).into());
+        return Ok(());
     }
-
-    // Never materialize more than the requested range (and never more than the
-    // absolute segment cap), even if the response body claims/streams more.
-    let cap = wanted
-        .map(|w| w.min(MAX_HLS_SEGMENT_BYTES as u64))
-        .unwrap_or(MAX_HLS_SEGMENT_BYTES as u64) as usize;
-
-    let bytes = read_body_capped(res, cap).await?;
-    out.extend_from_slice(&bytes);
-
-    Ok(())
+    Err("HLS fetch: retry budget exhausted".into())
 }
 
-/// Read a response body, rejecting anything larger than `max` bytes. Enforces the
-/// cap both up front (when `Content-Length` is known) and while streaming, so a
-/// chunked/oversized body cannot grow memory without bound.
-async fn read_body_capped(mut res: reqwest::Response, max: usize) -> AnyResult<Vec<u8>> {
-    if let Some(len) = res.content_length()
-        && len > max as u64
-    {
-        return Err(format!("HLS fetch: body too large ({len} bytes, limit {max})").into());
+/// Read a response body into a temporary buffer; the caller commits it only
+/// after validating the complete response (no partial segment exposure).
+async fn read_body_capped(
+    mut res: reqwest::Response,
+    max: usize,
+) -> Result<Vec<u8>, BodyReadError> {
+    if res.content_length().is_some_and(|len| len > max as u64) {
+        return Err(BodyReadError::TooLarge(max));
     }
-
-    let mut out: Vec<u8> = Vec::new();
+    let mut out = Vec::new();
     while let Some(chunk) = res.chunk().await? {
-        if out.len() + chunk.len() > max {
-            return Err(format!("HLS fetch: body exceeded {max} bytes").into());
+        if chunk.len() > max.saturating_sub(out.len()) {
+            return Err(BodyReadError::TooLarge(max));
         }
         out.extend_from_slice(&chunk);
     }

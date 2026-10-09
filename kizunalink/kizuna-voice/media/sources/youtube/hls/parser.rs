@@ -89,7 +89,8 @@ pub fn parse_m3u8(text: &str, base_url: &str) -> M3u8Playlist {
     let mut next_offset = 0u64;
     let mut pending_range: Option<ByteRange> = None;
 
-    for i in 0..lines.len() {
+    let mut i = 0;
+    while i < lines.len() {
         let line = lines[i];
         if line.starts_with("#EXT-X-MAP") {
             if let Some(url) = extract_attr_str(line, "URI").map(|u| resolve_url(base_url, &u)) {
@@ -102,7 +103,7 @@ pub fn parse_m3u8(text: &str, base_url: &str) -> M3u8Playlist {
             }
         } else if let Some(stripped) = line.strip_prefix("#EXT-X-BYTERANGE:") {
             let r = parse_byte_range(stripped, next_offset);
-            next_offset = r.offset + r.length;
+            next_offset = r.offset.saturating_add(r.length);
             pending_range = Some(r);
         } else if line.starts_with("#EXTINF:") {
             let seg_duration = line
@@ -114,7 +115,7 @@ pub fn parse_m3u8(text: &str, base_url: &str) -> M3u8Playlist {
             while j < lines.len() && lines[j].starts_with('#') {
                 if let Some(stripped) = lines[j].strip_prefix("#EXT-X-BYTERANGE:") {
                     let r = parse_byte_range(stripped, next_offset);
-                    next_offset = r.offset + r.length;
+                    next_offset = r.offset.saturating_add(r.length);
                     pending_range = Some(r);
                 }
                 j += 1;
@@ -125,8 +126,12 @@ pub fn parse_m3u8(text: &str, base_url: &str) -> M3u8Playlist {
                     range: pending_range.take(),
                     duration: seg_duration,
                 });
+                // The lookahead already consumed any BYTERANGE tag before this
+                // segment. Parsing it again advances implicit offsets twice.
+                i = j;
             }
         }
+        i += 1;
     }
     M3u8Playlist::Media { segments, map }
 }

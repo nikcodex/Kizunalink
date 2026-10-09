@@ -17,9 +17,10 @@ use crate::{
     discord::crypto::DaveHandler,
     discord::gateway::{
         constants::{
-            DISCOVERY_PACKET_SIZE, FRAME_DURATION_MS, IP_DISCOVERY_RETRIES,
-            IP_DISCOVERY_RETRY_INTERVAL_MS, IP_DISCOVERY_TIMEOUT_SECS, MAX_OPUS_FRAME_SIZE,
-            MAX_SILENCE_FRAMES, PCM_FRAME_SAMPLES, SILENCE_FRAME, UDP_KEEPALIVE_GAP_MS,
+            DAVE_READY_TIMEOUT_SECS, DISCOVERY_PACKET_SIZE, FRAME_DURATION_MS,
+            IP_DISCOVERY_RETRIES, IP_DISCOVERY_RETRY_INTERVAL_MS, IP_DISCOVERY_TIMEOUT_SECS,
+            MAX_OPUS_FRAME_SIZE, MAX_SILENCE_FRAMES, PCM_FRAME_SAMPLES, SILENCE_FRAME,
+            UDP_KEEPALIVE_GAP_MS,
         },
         udp_link::UDPVoiceTransport,
     },
@@ -134,6 +135,7 @@ pub struct SpeakConfig {
     pub filter_chain: Shared<FilterChain>,
     pub frames_sent: Arc<std::sync::atomic::AtomicU64>,
     pub frames_nulled: Arc<std::sync::atomic::AtomicU64>,
+    pub voice_ready: Arc<std::sync::atomic::AtomicBool>,
     pub cancel_token: CancellationToken,
     pub speaking_tx: Sender<bool>,
     pub persistent_state: Arc<tokio::sync::Mutex<super::types::PersistentSessionState>>,
@@ -165,6 +167,7 @@ struct VoiceSession {
     speaking_holdoff: bool,
     last_tx_time: Instant,
     active_silence: u32,
+    dave_wait_since: Option<Instant>,
 }
 
 impl VoiceSession {
@@ -176,6 +179,7 @@ impl VoiceSession {
             speaking_holdoff: false,
             last_tx_time: Instant::now(),
             active_silence: 0,
+            dave_wait_since: None,
         }
     }
 
@@ -224,6 +228,19 @@ impl VoiceSession {
         opus: &mut [u8],
         ts_pcm: &mut [i16],
     ) -> Result<(), GatewayError> {
+        // Do not consume mixer frames, emit silence, or advance RTP until the
+        // gateway has executed the DAVE transition and MLS keys are ready.
+        if !self.config.dave.lock().await.can_send_media() {
+            self.config.voice_ready.store(false, Ordering::Release);
+            let since = self.dave_wait_since.get_or_insert_with(Instant::now);
+            if since.elapsed() >= Duration::from_secs(DAVE_READY_TIMEOUT_SECS) {
+                return Err(GatewayError::Encryption("DAVE readiness timed out".into()));
+            }
+            return Ok(());
+        }
+        self.dave_wait_since = None;
+        self.config.voice_ready.store(true, Ordering::Release);
+
         macro_rules! try_lock_yield {
             ($mutex:expr) => {{
                 let mut guard = None;

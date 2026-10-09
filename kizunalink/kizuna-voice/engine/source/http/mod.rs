@@ -79,8 +79,13 @@ impl HttpSource {
         limit: Option<u64>,
     ) -> AnyResult<reqwest::Response> {
         let range = match limit {
-            Some(l) => format!("bytes={}-{}", offset, offset + l - 1),
-            None => format!("bytes={}-", offset),
+            Some(l) => {
+                let end = offset
+                    .checked_add(l.checked_sub(1).ok_or("empty HTTP range")?)
+                    .ok_or("HTTP range overflow")?;
+                format!("bytes={offset}-{end}")
+            }
+            None => format!("bytes={offset}-"),
         };
 
         let res = client
@@ -105,6 +110,11 @@ impl HttpSource {
             return Err(
                 format!("HTTP 200 OK ignored Range request for {url} (offset {offset})").into(),
             );
+        }
+        if res.status() == reqwest::StatusCode::PARTIAL_CONTENT {
+            super::range::validate_content_range(&res, offset, limit)?;
+        } else if res.status() != reqwest::StatusCode::OK {
+            return Err(format!("unexpected HTTP status {} for {url}", res.status()).into());
         }
 
         Ok(res)

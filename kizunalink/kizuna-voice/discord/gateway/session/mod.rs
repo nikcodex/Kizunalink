@@ -239,6 +239,7 @@ impl VoiceGateway {
         };
 
         if let Some(out) = outcome {
+            state.shutdown().await;
             conn_token.cancel();
             writer_handle.abort();
             let _ = writer_handle.await;
@@ -246,6 +247,7 @@ impl VoiceGateway {
         }
 
         if !state.has_heartbeat() {
+            state.shutdown().await;
             conn_token.cancel();
             writer_handle.abort();
             let _ = writer_handle.await;
@@ -278,6 +280,7 @@ impl VoiceGateway {
             .await
             .is_err()
         {
+            state.shutdown().await;
             conn_token.cancel();
             writer_handle.abort();
             let _ = writer_handle.await;
@@ -291,7 +294,13 @@ impl VoiceGateway {
             tokio::select! {
                 biased;
                 _ = self.outer_token.cancelled() => break SessionOutcome::Shutdown,
-                _ = conn_token.cancelled() => break SessionOutcome::Reconnect,
+                _ = conn_token.cancelled() => break if state.voice_failed() {
+                    // A failed encoder/encryptor/transport must not resume with
+                    // the same persistent voice key or broken MLS state.
+                    SessionOutcome::Identify
+                } else {
+                    SessionOutcome::Reconnect
+                },
                 Some(speaking) = speaking_rx.recv() => {
                     self.notify_speaking(&ws_tx, state.ssrc(), speaking);
                 }
@@ -305,6 +314,7 @@ impl VoiceGateway {
             }
         };
 
+        state.shutdown().await;
         conn_token.cancel();
         writer_handle.abort();
         let _ = writer_handle.await;

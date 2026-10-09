@@ -3,7 +3,7 @@
 
 pub mod reader;
 use std::{
-    net::{IpAddr, ToSocketAddrs},
+    net::ToSocketAddrs,
     sync::{Arc, OnceLock},
 };
 
@@ -23,6 +23,7 @@ use crate::{
     engine::{
         AudioFrame,
         processor::{AudioProcessor, DecoderCommand},
+        source::client::is_blocked_ip,
     },
     lavalink::protocol::tracks::{LoadError, LoadResult, Track, TrackInfo},
     media::sources::{
@@ -153,37 +154,12 @@ pub(crate) fn validate_http_url(raw: &str) -> AnyResult<(String, u16)> {
     Ok((host, port))
 }
 
-/// Check whether an IP address is in a blocked range (loopback, private,
-/// link-local, multicast, unspecified, IPv4-mapped IPv6 loopback, ULA).
-fn is_blocked_ip(ip: &IpAddr) -> bool {
-    match ip {
-        IpAddr::V4(ip) => {
-            ip.is_loopback()
-                || ip.is_private()
-                || ip.is_link_local()
-                || ip.is_multicast()
-                || ip.is_unspecified()
-        }
-        IpAddr::V6(ip) => {
-            // Check for IPv4-mapped IPv6 addresses (e.g. ::ffff:127.0.0.1)
-            if let Some(mapped_v4) = ip.to_ipv4_mapped() {
-                return is_blocked_ip(&IpAddr::V4(mapped_v4));
-            }
-            let segments = ip.segments();
-            let first = segments[0];
-            ip.is_loopback()
-                || ip.is_multicast()
-                || ip.is_unspecified()
-                || (first & 0xfe00) == 0xfc00 // unique-local fc00::/7
-                || (first & 0xffc0) == 0xfe80 // link-local fe80::/10
-        }
-    }
-}
-
 /// Reject server-side requests to loopback, private, link-local, multicast, and
 /// unspecified addresses before opening the user-supplied URL.
 /// Returns (host, port, addresses) for IP pinning in the client.
-pub(crate) fn validate_public_url(raw: &str) -> AnyResult<(String, u16, Vec<std::net::SocketAddr>)> {
+pub(crate) fn validate_public_url(
+    raw: &str,
+) -> AnyResult<(String, u16, Vec<std::net::SocketAddr>)> {
     let (host, port) = validate_http_url(raw)?;
     let addresses: Vec<_> = (host.as_str(), port)
         .to_socket_addrs()
@@ -192,14 +168,7 @@ pub(crate) fn validate_public_url(raw: &str) -> AnyResult<(String, u16, Vec<std:
     if addresses.is_empty() {
         return Err(format!("HTTP host {host} resolved to no addresses").into());
     }
-    if addresses.iter().any(|address| {
-        let ip = address.ip();
-        // Check for IPv4-mapped IPv6 addresses (e.g. ::ffff:127.0.0.1)
-        if let Some(mapped_v4) = ip.to_ipv4_mapped() {
-            return is_blocked_ip(&IpAddr::V4(mapped_v4));
-        }
-        is_blocked_ip(&ip)
-    }) {
+    if addresses.iter().any(|address| is_blocked_ip(&address.ip())) {
         return Err(format!("HTTP host {host} resolves to a private or local address").into());
     }
     Ok((host, port, addresses))
@@ -338,6 +307,8 @@ mod tests {
     fn rejects_loopback_http_targets() {
         assert!(validate_public_url("http://127.0.0.1:8080/audio.mp3").is_err());
         assert!(validate_public_url("http://[::1]:8080/audio.mp3").is_err());
+        assert!(validate_public_url("http://100.64.1.2:8080/audio.mp3").is_err());
+        assert!(validate_public_url("http://[::ffff:127.0.0.1]/audio.mp3").is_err());
     }
 
     #[test]
@@ -353,11 +324,40 @@ mod tests {
 
     #[test]
     fn accepts_valid_public_url() {
-        let result = validate_public_url("http://example.com:8080/audio.mp3");
+        let result = validate_public_url("http://93.184.216.34:8080/audio.mp3");
         assert!(result.is_ok());
         let (host, port, addrs) = result.unwrap();
-        assert_eq!(host, "example.com");
+        assert_eq!(host, "93.184.216.34");
         assert_eq!(port, 8080);
         assert!(!addrs.is_empty());
+    }
+}
+
+#[cfg(test)]
+mod loopback_integration_tests {
+    use super::*;
+
+    #[test]
+    fn rejected_private_source_never_contacts_a_local_http_listener() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind local fixture");
+        listener
+            .set_nonblocking(true)
+            .expect("nonblocking listener");
+        let port = listener.local_addr().expect("fixture address").port();
+        let source = HttpSource::new();
+        for host in [
+            "127.0.0.1",
+            "10.0.0.1",
+            "169.254.169.254",
+            "100.64.0.1",
+            "[::ffff:127.0.0.1]",
+        ] {
+            let url = format!("http://{host}:{port}/fixture");
+            // can_handle is deliberately syntax-only; DNS/IP validation occurs
+            // at the actual reader before its first network request.
+            assert!(source.can_handle(&url));
+            assert!(reader::HttpReader::new(&url, None, None).is_err());
+        }
+        assert!(matches!(listener.accept(), Err(e) if e.kind() == std::io::ErrorKind::WouldBlock));
     }
 }

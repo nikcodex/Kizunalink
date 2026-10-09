@@ -75,6 +75,7 @@ async fn handle_voice_update(
             let mut player = player_arc.write().await;
             if let Some(task) = player.gateway_task.take() {
                 task.abort();
+                let _ = task.await;
             }
             player
                 .voice_ready
@@ -134,6 +135,7 @@ async fn handle_voice_update(
         if changed || player.gateway_task.is_none() {
             if let Some(task) = player.gateway_task.take() {
                 task.abort();
+                let _ = task.await;
             }
 
             Some((

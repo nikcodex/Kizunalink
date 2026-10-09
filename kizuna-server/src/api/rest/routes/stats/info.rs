@@ -14,12 +14,10 @@ pub async fn get_info(State(state): State<Arc<AppState>>) -> Json<protocol::Info
     let version_str = env!("CARGO_PKG_VERSION");
     let (crate_major, minor, patch, mut pre_release) = parse_semver(version_str);
 
-    let mut semver = version_str.to_string();
     if pre_release.is_none()
         && let Some(pre) = option_env!("KIZUNALINK_PRE_RELEASE")
     {
-        pre_release = Some(pre.to_string());
-        semver = format!("{}-{}", version_str, pre);
+        pre_release = valid_pre_release(pre).map(str::to_string);
     }
 
     // Clients compare `version.major` against the *Lavalink protocol* version
@@ -32,13 +30,15 @@ pub async fn get_info(State(state): State<Arc<AppState>>) -> Json<protocol::Info
     Json(protocol::Info {
         version: protocol::Version {
             // Report protocol-consistent semver: crate major 1.x → wire "4.x.y"
-            semver: format!("{major}.{minor}.{patch}"),
+            semver: match &pre_release {
+                Some(pre) => format!("{major}.{minor}.{patch}-{pre}"),
+                None => format!("{major}.{minor}.{patch}"),
+            },
             major,
             minor,
             patch,
             pre_release,
-            build: option_env!("BUILD_NUMBER")
-                .map(|s| s.to_string()),
+            build: option_env!("BUILD_NUMBER").map(|s| s.to_string()),
         },
         build_time: option_env!("BUILD_TIME")
             .and_then(|s| s.parse().ok())
@@ -59,6 +59,21 @@ pub async fn get_info(State(state): State<Arc<AppState>>) -> Json<protocol::Info
             .collect(),
         plugins: vec![],
     })
+}
+
+// A malformed build-time label must never make /v4/info emit invalid SemVer.
+fn valid_pre_release(label: &str) -> Option<&str> {
+    if label.split('.').all(|part| {
+        !part.is_empty()
+            && part.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
+            && !(part.len() > 1
+                && part.starts_with('0')
+                && part.bytes().all(|b| b.is_ascii_digit()))
+    }) {
+        Some(label)
+    } else {
+        None
+    }
 }
 
 fn parse_semver(v: &str) -> (u32, u32, u32, Option<String>) {
@@ -86,4 +101,21 @@ pub async fn get_stats(State(state): State<Arc<AppState>>) -> Json<protocol::Sta
 pub async fn get_version() -> String {
     tracing::info!("GET /version");
     env!("CARGO_PKG_VERSION").to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::valid_pre_release;
+
+    #[test]
+    fn pre_release_label_must_be_valid_semver() {
+        for valid in ["alpha", "alpha.1", "rc-2", "0", "1.2"] {
+            assert_eq!(valid_pre_release(valid), Some(valid));
+        }
+        for invalid in [
+            "", " ", ".alpha", "alpha.", "alpha..1", "01", "beta.02", "a_b",
+        ] {
+            assert_eq!(valid_pre_release(invalid), None);
+        }
+    }
 }
