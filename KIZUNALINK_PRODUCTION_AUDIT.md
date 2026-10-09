@@ -1380,3 +1380,33 @@ AND UNMERGED**. This further audit-only commit will need its own current-head
 CI run; the SHA and run immediately above validate the implementation, not a
 future audit commit. Merge readiness is separate from production readiness:
 the historical DAVE fail-open and runtime lifecycle findings remain unresolved.
+
+### 2026-10-09 — Follow-up on remaining PR #4 HLS response-body review
+
+The inline review finding at `media/sources/youtube/hls/fetcher.rs` (comment
+4226100528) is **confirmed**: previously the two-retry budget covered request
+submission and selected transient HTTP statuses, but `read_body_capped(...).await?`
+returned immediately after a streaming body failure. The new implementation
+uses that same budget for a fresh whole request on a transient body transport
+error or a short declared/ranged response. Each attempt uses an isolated staging
+buffer, validates status/range/declared length and the 32 MiB cap, and only
+appends after a complete successful response. Oversized bodies, malformed
+ranges, invalid/decode failures and permanent statuses remain terminal. A
+cancelled future drops the response/sleep instead of starting another request.
+Scripted local HTTP tests cover a dropped connection partway through a 206 body
+followed by a successful fresh response, retry exhaustion after three incomplete
+responses, and single-request handling for 403 and oversized bodies. Previously
+recorded parser and unknown-total range comments have explicit resolved
+confirmations (4226389216 and 4226389372); no other unresolved inline finding
+was identified in the PR #4 comments inspected. The HLS mid-body comment is
+addressed in code here, pending exact-head CI confirmation.
+
+Local formatting, check, Clippy `-D warnings`, all-target tests, release build,
+and Cargo Deny cannot be executed until Rust/Cargo are installed. The official
+rustup endpoints and Debian apt mirrors remained unreachable from this
+sandbox, so no local Cargo result is claimed. New exact-HEAD CI results must
+be recorded below when they are actually complete. Docker startup, real audio
+playback, SSRF redirect/DNS-rebinding integration, Discord voice, and DAVE
+packet-flow testing **remain outstanding**. The verdict remains **NOT READY**:
+passing static checks/tests does not resolve the historical DAVE fail-open and
+runtime lifecycle issues. PR #4 must not be merged on this evidence alone.

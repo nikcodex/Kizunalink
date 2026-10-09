@@ -432,3 +432,92 @@ async fn transient_hls_status_is_retried_twice_then_committed_once() {
     assert_eq!(count.load(Ordering::SeqCst), 3);
     assert_eq!(out, b"!segment");
 }
+
+#[tokio::test]
+async fn interrupted_body_retries_whole_range_without_leaking_partial_bytes() {
+    let count = Arc::new(AtomicUsize::new(0));
+    let requests = Arc::clone(&count);
+    let server = TestServer::new(move |_, range| {
+        assert_eq!(range.trim().to_ascii_lowercase(), "range: bytes=2-5");
+        if requests.fetch_add(1, Ordering::SeqCst) == 0 {
+            // Advertise four bytes, send one and close the socket: reqwest
+            // reports a streaming body error after the response headers.
+            let mut reply = Reply::range(2, 5, 10, b"x");
+            reply.declared_len = Some(4);
+            reply
+        } else {
+            Reply::range(2, 5, 10, b"cdef")
+        }
+    });
+    let mut out = vec![b'!'];
+    fetch_segment_into(
+        &reqwest::Client::new(),
+        &resource(server.url("/segment"), 2, 4),
+        &mut out,
+    )
+    .await
+    .expect("fresh request succeeds after interrupted body");
+    assert_eq!(out, b"!cdef");
+    assert_eq!(count.load(Ordering::SeqCst), 2);
+}
+
+#[tokio::test]
+async fn interrupted_body_exhausts_bounded_retries_without_appending() {
+    let count = Arc::new(AtomicUsize::new(0));
+    let requests = Arc::clone(&count);
+    let server = TestServer::new(move |_, _| {
+        requests.fetch_add(1, Ordering::SeqCst);
+        let mut reply = Reply::range(2, 5, 10, b"x");
+        reply.declared_len = Some(4);
+        reply
+    });
+    let mut out = vec![b'!'];
+    let failure = fetch_segment_into(
+        &reqwest::Client::new(),
+        &resource(server.url("/segment"), 2, 4),
+        &mut out,
+    )
+    .await
+    .expect_err("third incomplete response must be terminal");
+    assert!(!failure.to_string().is_empty());
+    assert_eq!(out, b"!");
+    assert_eq!(count.load(Ordering::SeqCst), 3);
+}
+
+#[tokio::test]
+async fn permanent_status_and_oversized_body_are_not_retried() {
+    let count = Arc::new(AtomicUsize::new(0));
+    let requests = Arc::clone(&count);
+    let server = TestServer::new(move |path, _| {
+        requests.fetch_add(1, Ordering::SeqCst);
+        if path == "/forbidden" {
+            let mut reply = Reply::ok(b"denied");
+            reply.status = 403;
+            reply
+        } else {
+            let mut reply = Reply::ok(Vec::<u8>::new());
+            reply.declared_len = Some(super::fetcher::MAX_HLS_SEGMENT_BYTES + 1);
+            reply
+        }
+    });
+    let client = reqwest::Client::new();
+    let mut out = vec![b'!'];
+    for path in ["/forbidden", "/oversize"] {
+        let before = count.load(Ordering::SeqCst);
+        assert!(
+            fetch_segment_into(
+                &client,
+                &Resource {
+                    url: server.url(path),
+                    range: None,
+                    duration: None,
+                },
+                &mut out,
+            )
+            .await
+            .is_err()
+        );
+        assert_eq!(count.load(Ordering::SeqCst), before + 1, "{path} retried");
+        assert_eq!(out, b"!");
+    }
+}
