@@ -1327,3 +1327,33 @@ DAVE negotiation/encrypted packets, real DNS rebinding, and forced thread-spawn
 failure were NOT RUN. Production verdict remains **NOT READY** due to the
 confirmed DAVE fail-open behavior and outstanding lifecycle issues in the
 23-finding matrix. Do not merge either PR on the strength of this addendum.
+
+### Verified reconciled implementation — CI closure
+
+Reconciled implementation SHA `61f8a4b9812d9979a1bfd4f744ddccaa311f564d`
+contains the source fixes and formatting. Audit-only head
+`4a79d384c6b2352f99a23b90d3eaa9001c91790d` was validated by **GitHub
+Actions CI run [37880543138](https://github.com/nikcodex/Kizunalink/actions/runs/37880543138)**
+with the exact same source. Run status **completed, success**. Every configured
+required job succeeded on that exact head: Formatting (`cargo fmt --all --
+--check`), Check (`cargo check --workspace --all-targets`), Clippy (`cargo
+clippy --workspace --all-targets -- -D warnings`), Tests (`cargo test
+--workspace --all-targets`), release Build on Ubuntu, macOS, and Windows
+(each `cargo build --release --workspace`), and Cargo Deny advisories (`cargo
+deny check advisories`). Auto-fix run 37880539615 succeeded without advancing
+that head. `git diff origin/main...HEAD --check` passed; PR #4 remained open
+and mergeable. The full CI test logs endpoint was inaccessible from this
+sandbox (EOF from the redirected log server), so the exact total test count
+cannot be obtained here. The checked-in regression functions ran in a
+successful Tests job; **do not** invent a count from earlier runs.
+
+The present audit-document-only commit, made *after* that CI run, must itself
+be checked by a new run before claiming the latest branch is green. Prior
+interim "pending" or failed runs remain historical and are superseded for the
+validated implementation. No local Rust toolchain, native build packages,
+Docker daemon, authorized Discord test bot, or live DAVE/audio run was
+available. Despite green CI for these source changes, the separate DAVE
+fail-open and cancellation/ownership items above still prevent any claim of
+production readiness. PR #3 has no unique source fixes left; its historical
+audit is preserved. It can be closed as superseded only after the latest PR #4
+run is verified green; neither PR is authorized for automatic merge.
