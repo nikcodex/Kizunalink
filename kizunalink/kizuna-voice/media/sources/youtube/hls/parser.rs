@@ -89,7 +89,8 @@ pub fn parse_m3u8(text: &str, base_url: &str) -> M3u8Playlist {
     let mut next_offset = 0u64;
     let mut pending_range: Option<ByteRange> = None;
 
-    for i in 0..lines.len() {
+    let mut i = 0;
+    while i < lines.len() {
         let line = lines[i];
         if line.starts_with("#EXT-X-MAP") {
             if let Some(url) = extract_attr_str(line, "URI").map(|u| resolve_url(base_url, &u)) {
@@ -125,8 +126,12 @@ pub fn parse_m3u8(text: &str, base_url: &str) -> M3u8Playlist {
                     range: pending_range.take(),
                     duration: seg_duration,
                 });
+                // The lookahead already consumed any BYTERANGE tag before this
+                // segment. Parsing it again advances implicit offsets twice.
+                i = j;
             }
         }
+        i += 1;
     }
     M3u8Playlist::Media { segments, map }
 }

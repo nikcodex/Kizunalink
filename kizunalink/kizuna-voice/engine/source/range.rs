@@ -32,12 +32,18 @@ pub(crate) fn validate_content_range(
     let (start, end) = span.split_once('-').ok_or_else(invalid)?;
     let start = start.parse::<u64>().map_err(|_| invalid())?;
     let end = end.parse::<u64>().map_err(|_| invalid())?;
-    let total = total.parse::<u64>().map_err(|_| invalid())?;
+    // RFC 9110 permits an unknown complete length (`bytes 2-3/*`).
+    // SegmentedSource separately requires a numeric total for its probe.
+    let total = if total == "*" {
+        None
+    } else {
+        Some(total.parse::<u64>().map_err(|_| invalid())?)
+    };
     let count = end
         .checked_sub(start)
         .and_then(|n| n.checked_add(1))
         .ok_or_else(invalid)?;
-    if start != offset || end >= total || length.is_some_and(|len| len != count) {
+    if start != offset || total.is_some_and(|total| end >= total) || length.is_some_and(|len| len != count) {
         return Err(invalid());
     }
     if response.content_length().is_some_and(|len| len != count) {
