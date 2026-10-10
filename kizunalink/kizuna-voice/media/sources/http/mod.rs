@@ -19,7 +19,7 @@ use symphonia::core::{
 use tracing::{debug, error, warn};
 
 use crate::{
-    common::types::AnyResult,
+    common::types::{AnyError, AnyResult},
     engine::{
         AudioFrame,
         processor::{AudioProcessor, DecoderCommand},
@@ -37,6 +37,39 @@ fn url_regex() -> &'static Regex {
     REGEX.get_or_init(|| Regex::new(r"^(?:https?|icy)://").expect("valid regex"))
 }
 
+/// Why a metadata probe failed.
+///
+/// The distinction matters on the wire: `Format` means the fetch succeeded and
+/// we received bytes that are simply not a media container/codec we support
+/// (a genuine "no match" → `empty`), while `Fetch` means the request itself
+/// failed — a refused SSRF target, DNS failure, non-2xx status, or truncated
+/// body — which must be reported as `error` so the cause is not hidden behind
+/// "no matches".
+#[derive(Debug, thiserror::Error)]
+enum ProbeError {
+    #[error("{0}")]
+    Fetch(String),
+    #[error("{0}")]
+    Format(String),
+}
+
+impl ProbeError {
+    fn is_no_match(&self) -> bool {
+        matches!(self, Self::Format(_))
+    }
+}
+
+impl From<AnyError> for ProbeError {
+    fn from(error: AnyError) -> Self {
+        Self::Fetch(error.to_string())
+    }
+}
+
+fn is_unrecognized_format_error(error: &symphonia::core::errors::Error) -> bool {
+    use symphonia::core::errors::Error;
+    matches!(error, Error::Unsupported(_) | Error::DecodeError(_))
+}
+
 pub struct HttpSource;
 
 impl Default for HttpSource {
@@ -50,7 +83,10 @@ impl HttpSource {
         Self
     }
 
-    fn probe_metadata(url: String, local_addr: Option<std::net::IpAddr>) -> AnyResult<TrackInfo> {
+    fn probe_metadata(
+        url: String,
+        local_addr: Option<std::net::IpAddr>,
+    ) -> Result<TrackInfo, ProbeError> {
         let source = reader::HttpReader::new(&url, local_addr, None)?;
         let mut hint = Hint::new();
 
@@ -67,19 +103,25 @@ impl HttpSource {
             hint.with_extension(ext);
         }
 
-        let probed = symphonia::default::get_probe().format(
+        let probed = match symphonia::default::get_probe().format(
             &hint,
             mss,
             &FormatOptions::default(),
             &MetadataOptions::default(),
-        )?;
+        ) {
+            Ok(p) => p,
+            Err(e) if is_unrecognized_format_error(&e) => {
+                return Err(ProbeError::Format(e.to_string()));
+            }
+            Err(e) => return Err(ProbeError::Fetch(e.to_string())),
+        };
 
         let mut format = probed.format;
         let track = format
             .tracks()
             .iter()
             .find(|t| t.codec_params.codec != CODEC_TYPE_NULL)
-            .ok_or("no audio track found")?;
+            .ok_or_else(|| ProbeError::Format("no audio track found".to_owned()))?;
 
         let duration = if let Some(n_frames) = track.codec_params.n_frames {
             if let Some(rate) = track.codec_params.sample_rate {
@@ -202,10 +244,24 @@ impl SourcePlugin for HttpSource {
 
         match probe_result {
             Ok(Ok(info)) => LoadResult::Track(Track::new(info)),
+            // Distinguish "the bytes are not a recognised media format" (a genuine
+            // no-match that stays `empty`) from a failed fetch. Reporting a refused
+            // SSRF target, a DNS failure, or an HTTP error as `empty` shows the user
+            // "no matches" and hides the real cause, exactly the bug fixed for
+            // SoundCloud. This mirrors `YoutubeTrack::start_decoding`, which routes
+            // every open failure to its `TrackException` path.
+            Ok(Err(e)) if e.is_no_match() => {
+                warn!("Probing produced no recognised format for {identifier}: {e}");
+                LoadResult::Empty {}
+            }
             Ok(Err(e)) => {
                 warn!("Probing failed for {identifier}: {e}");
-                // This mimics Lavaplayer's behavior where unknown formats return null.
-                LoadResult::Empty {}
+                LoadResult::Error(LoadError {
+                    message: Some(format!("Failed to load HTTP source: {e}")),
+                    severity: crate::common::Severity::Common,
+                    cause: e.to_string(),
+                    cause_stack_trace: None,
+                })
             }
             Err(e) => {
                 error!("Task join error: {e}");
@@ -301,7 +357,32 @@ impl PlayableTrack for HttpTrack {
 
 #[cfg(test)]
 mod tests {
-    use super::validate_public_url;
+    use super::{ProbeError, is_unrecognized_format_error, validate_public_url};
+
+    #[test]
+    fn format_failures_are_no_match_not_error() {
+        // Bytes that are not a supported container/codec are a genuine "no
+        // match": they must stay `empty`, not `error`.
+        assert!(ProbeError::Format("unsupported feature: codec".to_owned()).is_no_match());
+        assert!(ProbeError::Format("no audio track found".to_owned()).is_no_match());
+
+        // A failed fetch (refused SSRF target, DNS failure, HTTP error) is NOT a
+        // no-match; it must surface as `error`.
+        assert!(!ProbeError::Fetch("HTTP 403 for https://x/y".to_owned()).is_no_match());
+        assert!(!ProbeError::Fetch("host resolves to a private address".to_owned()).is_no_match());
+
+        // The symphonia classifier maps an unsupported feature to a format
+        // failure and everything else (I/O, seek, limit) to a fetch failure.
+        use symphonia::core::errors::Error;
+        assert!(is_unrecognized_format_error(&Error::Unsupported("codec")));
+        assert!(is_unrecognized_format_error(&Error::DecodeError(
+            "bad header"
+        )));
+        assert!(!is_unrecognized_format_error(&Error::IoError(
+            std::io::Error::other("connection reset")
+        )));
+        assert!(!is_unrecognized_format_error(&Error::LimitError("too big")));
+    }
 
     #[test]
     fn rejects_loopback_http_targets() {
@@ -359,5 +440,23 @@ mod loopback_integration_tests {
             assert!(reader::HttpReader::new(&url, None, None).is_err());
         }
         assert!(matches!(listener.accept(), Err(e) if e.kind() == std::io::ErrorKind::WouldBlock));
+    }
+
+    #[tokio::test]
+    async fn ssrf_blocked_source_loads_as_error_not_empty() {
+        // A refused target must be diagnosable as `error`, not silently reported
+        // as "no matches". Regression: this used to return `LoadResult::Empty`.
+        let source = HttpSource::new();
+        let result = source.load("http://127.0.0.1:9/song.mp3", None).await;
+        match result {
+            LoadResult::Error(e) => {
+                let msg = e.message.unwrap_or_default();
+                assert!(
+                    msg.contains("private or local"),
+                    "unexpected error message: {msg}"
+                );
+            }
+            other => panic!("expected LoadResult::Error, got {other:?}"),
+        }
     }
 }
