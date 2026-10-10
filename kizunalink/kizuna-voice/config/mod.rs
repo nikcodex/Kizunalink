@@ -265,11 +265,22 @@ mod tests {
 
     /// Parse a minimal config (equivalent to what `load()` does from disk) and
     /// apply the given `KIZUNA_*` env vars on top.
+    ///
+    /// Tests must be hermetic: the documented live-node workflow exports
+    /// `KIZUNA_*` vars (address, port, authorization, ...). Any that leak into
+    /// the test process would be picked up by `apply_env_overrides` below and
+    /// make results depend on the caller's shell, so snapshot and clear them
+    /// all first, then restore afterwards.
     fn cfg_with_envs(pairs: &[(&str, &str)]) -> AppConfig {
         let _guard = ENV_LOCK.lock().unwrap();
-        for (k, _) in pairs {
+
+        let ambient: Vec<(String, String)> = std::env::vars()
+            .filter(|(k, _)| k.starts_with("KIZUNA_"))
+            .collect();
+        for (k, _) in &ambient {
             unsafe { std::env::remove_var(k) };
         }
+
         for (k, v) in pairs {
             unsafe { std::env::set_var(k, v) };
         }
@@ -277,8 +288,12 @@ mod tests {
             .expect("minimal TOML parses");
         cfg.apply_env_overrides()
             .expect("env overrides apply cleanly");
+
         for (k, _) in pairs {
             unsafe { std::env::remove_var(k) };
+        }
+        for (k, v) in ambient {
+            unsafe { std::env::set_var(k, v) };
         }
         cfg
     }
