@@ -1110,6 +1110,31 @@ This section supersedes the earlier interim validation conclusions above. Those 
 | `git diff --check` | PASS | No whitespace errors before implementation commit. |
 | `docker --version` / `docker info` | SKIPPED / unavailable | `docker` executable is not installed; no daemon available. No image build/container start was possible. |
 
+### Live launch verification (2026-10-10)
+
+Built the release binary (`target/release/kizuna-server`, 3m00s, `panic = "unwind"`)
+and ran it against `config.toml` (`0.0.0.0:2333`, `KIZUNA_AUTHORIZATION` set):
+
+| Probe | Result |
+|---|---|
+| `GET /health` | `200` |
+| `GET /version` (no auth) | `401` |
+| `GET /version` (auth) | `200` → `1.1.0` |
+| `GET /v4/info` (no auth) | `401` |
+| `GET /v4/info` (auth) | `200`, `version.semver = "4.1.0"`, `major = 4`, `build = null`, `git`/`jvm`/`lavaplayer`/`sourceManagers`/`filters` present |
+| `GET /v4/sessions/{id}/players` (unknown session) | `404` `{"status":404,"message":"Session not found: …"}️` (JSON error, not a wrapper) |
+| `GET /v4/sessions/{id}/players` (no auth) | `401` |
+| `GET /v4/stats` | `200`, `players`/`memory`/`cpu` present, `frameStats` absent |
+| `GET /v4/loadtracks?identifier=ytsearch:…` | `200`, real YouTube result decoded (`Rick Astley`), valid `encoded` track |
+| `GET /v4/loadtracks?identifier=notasource:foo` | `200`, `{"loadType":"empty","data":null}` |
+| `SIGTERM` | process exited gracefully |
+
+All media sources initialized at startup (YouTube visitor + cipher cache, Spotify
+token, SoundCloud client_id, Apple Music token). No REST route creates a session
+(sessions are WebSocket-created, per Lavalink v4), so the populated-players case
+is covered by the in-process integration tests rather than a live HTTP session.
+
+
 During the first post-parse check, compilation exposed the HLS constructor delimiter and additional type/API errors (including reqwest redirect API usage, client call signatures, routeplanner `Result` construction, and IPv4-mapped IPv6 handling). Those were corrected before the final passing check. The first full test attempt also exposed a flaw in the newly added test setup: it queried a fresh router without the registered session and then tried to treat the intended array as an object. The test now uses its session-backed router, registers its empty-session case, and asserts the array shape directly; targeted and complete reruns passed.
 
 ## Regression and wire-format results
