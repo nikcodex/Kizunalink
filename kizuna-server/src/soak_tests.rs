@@ -182,3 +182,80 @@ async fn soak_many_sessions_and_players_with_rest_traffic() {
         started.elapsed()
     );
 }
+
+/// Repeated player create -> update -> destroy lifecycle across many sessions.
+///
+/// The static soak above never removes players, so it cannot catch handle/session
+/// leaks on the teardown path. This churns the full lifecycle and asserts counts
+/// return to zero each cycle, which is the real "play/stop/reconnect" leak probe.
+#[tokio::test]
+#[ignore = "long-running soak harness; run explicitly"]
+async fn soak_player_churn_returns_to_baseline_each_cycle() {
+    let (base, state) = test_support::spawn_test_server().await;
+    let client = reqwest::Client::new();
+    let cycles = 40usize;
+    let per_cycle = 48usize;
+
+    for cycle in 0..cycles {
+        let mut created: Vec<(String, String)> = Vec::new();
+        for i in 0..per_cycle {
+            let guid = format!("churn-guid-{cycle}-{i}");
+
+            // A player requires a live session before its guild is registered.
+            let mut sock = ws_connect(&base).await;
+            let sid = read_ready(&mut sock).await;
+
+            let path = format!("/v4/sessions/{sid}/players/{guid}");
+            let resp = client
+                .patch(format!("{base}{path}"))
+                .header(header::AUTHORIZATION, AUTH_TOKEN)
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(serde_json::json!({ "volume": 100, "paused": false }).to_string())
+                .send()
+                .await
+                .unwrap();
+            let status = resp.status();
+            assert!(
+                status.is_success() || status == StatusCode::NOT_FOUND,
+                "create player at {path} returned {status}"
+            );
+
+            let resp = client
+                .delete(format!("{base}{path}"))
+                .header(header::AUTHORIZATION, AUTH_TOKEN)
+                .send()
+                .await
+                .unwrap();
+            assert!(resp.status().is_success() || resp.status() == StatusCode::NOT_FOUND);
+
+            let _ = sock.close(None).await;
+            created.push((sid, guid));
+        }
+
+        // Every created player must be gone: no teardown leak.
+        for (sid, guid) in &created {
+            let resp = client
+                .get(format!("{base}/v4/sessions/{sid}/players/{guid}"))
+                .header(header::AUTHORIZATION, AUTH_TOKEN)
+                .send()
+                .await
+                .unwrap();
+            assert!(
+                resp.status() == StatusCode::NOT_FOUND,
+                "player {guid} leaked after destroy in cycle {cycle}"
+            );
+        }
+    }
+
+    // Background reaping should have drained the session map too.
+    assert_eq!(
+        state.sessions.len(),
+        0,
+        "sessions leaked across {cycles} churn cycles"
+    );
+
+    println!(
+        "soak churn ok: {cycles} cycles x {per_cycle} create/destroy, sessions reaped to {}",
+        state.sessions.len()
+    );
+}

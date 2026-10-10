@@ -330,6 +330,15 @@ KizunaLink is an alternative implementation, not the official Lavalink server.
 
 A native runtime avoids garbage collection, but does not guarantee lower jitter, lower CPU use, or better audio quality. Memory and startup comparisons require the same hardware, workload, versions, and configuration. No universal performance advantage is asserted here.
 
+### Voice scope: playback only
+
+KizunaLink is a playback (send-only) node. It joins a voice channel, negotiates
+DAVE end-to-end encryption, and sends audio; it does not read, decode, or mix
+incoming voice from other members. Incoming UDP/RTP media is discarded without
+allocation, and the DAVE send path refuses to emit plaintext while encryption is
+required but the group is not yet ready. Clients that expect a bot to transcribe
+or record other members' audio are out of scope.
+
 ## Development
 
 ```bash
