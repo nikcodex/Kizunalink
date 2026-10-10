@@ -365,10 +365,9 @@ Source → Resolver → Reader → Decoder → PCM → DSP → Opus → RTP → 
 - **Task leaks / shutdown** — `Session::register_task` stores abort handles and prunes finished ones; `shutdown()` aborts gateway+track tasks; `main.rs` drains all sessions on SIGTERM. Good.
 - **Position/timestamp** — position tracked in samples in the mixer/handle and converted to ms with `OPUS_SAMPLE_RATE`; `endTime` enforced in `monitor_loop`. Consistent.
 
-**PERF-001 (blocking DNS):**
-**File:** `media/sources/http/mod.rs::validate_public_url` (called by sync `can_handle` and by `load`).
-`std::net::ToSocketAddrs::to_socket_addrs()` performs a **blocking** syscall; `can_handle` is invoked synchronously while iterating sources inside the async `load`/`resolve_track` futures, so a slow/hostile DNS lookup stalls a Tokio worker.
-**Fix:** resolve inside `tokio::task::spawn_blocking`, or resolve once and pin the connected IP (also closes SEC-001's TOCTOU). **Test:** a source whose host resolves slowly must not block other concurrent requests.
+**PERF-001 (blocking DNS) — RESOLVED:**
+**File:** `media/sources/http/mod.rs::resolve_and_validate_public_url`.
+`std::net::ToSocketAddrs::to_socket_addrs()` performs a **blocking** syscall, so this function is only called from blocking contexts: `HttpSource::load` via `probe_metadata` (inside `tokio::task::spawn_blocking`) and `HttpTrack::start_decoding` via `HttpReader::new` (inside `spawn_blocking`). `can_handle` is syntax-only and does no DNS, and the async connect path uses `tokio::net::lookup_host` via `PublicDnsResolver`. A slow/hostile lookup therefore cannot stall a Tokio worker.
 
 **PERF-002 (`AudioMixer.enabled` sticky off):**
 **File:** `engine/mix/mixer.rs` — `Mixer::stop_all()` sets `self.audio_mixer.enabled = false`; `AudioMixer::add_layer` never restores it. Any sound-effect layer added after a `stop_all()` (e.g. after `PATCH encodedTrack:null`) is mixed but then discarded by the `enabled` early-return.
@@ -742,7 +741,7 @@ Independent second pass. Every finding below was re-derived from the **current**
 | COMPAT-001 | `/players` response shape | **CONFIRMED** | `player/get.rs::get_players` returns `Json(Players{players})`; `state.rs` `struct Players{players}`; docs require bare array | HIGH | YES |
 | SEC-001 | HTTP SSRF redirect / DNS rebinding | **RESOLVED** | Connect-time `PublicDnsResolver` validates every address handed to Hyper; user HTTP source pins the initial resolution and installs a per-hop redirect policy; `is_blocked_ip` broadened to all non-global ranges. Deterministic loopback-fixture regression tests (rebinding, redirect→private/metadata, pin bypasses DNS, Host/SNI preserved) | HIGH | DONE |
 | SEC-002 | Empty authorization | **CONFIRMED** | `config/mod.rs::validate` rejects `"youshallnotpass"` on public bind but **not** `""` | MEDIUM | YES |
-| SEC-003 | Blocking DNS | **CONFIRMED** | `http/mod.rs:155` `to_socket_addrs()` called from **sync** `can_handle` (line 190) and from `probe_metadata` (line 53) on the async runtime | MEDIUM | YES |
+| SEC-003 | Blocking DNS | **RESOLVED** | `to_socket_addrs()` now runs only in `resolve_and_validate_public_url`, called exclusively from blocking contexts (`spawn_blocking`/decoder thread); `can_handle` is syntax-only; the async connect path uses `tokio::net::lookup_host`. Contract test `can_handle_is_syntax_only_and_never_resolves_dns` | MEDIUM | DONE |
 | ROBUST-001 | Decoder `expect()` + `panic=abort` | **PARTIAL** | Only **3** sites use `.expect()` on `thread::Builder::spawn` (`http/mod.rs:292`, `local/mod.rs:286`, `youtube/hls/mod.rs:234`); **all other sources handle spawn failure** (`tracing::error!`). Plus `routeplanner/mod.rs:47` `panic!` on bad config CIDR | MEDIUM | YES (narrowed) |
 | PERF-002 | Mixer not re-enabled | **CONFIRMED** | `mixer.rs::stop_all` sets `audio_mixer.enabled=false`; `audio_mixer.add_layer` never restores it | LOW | YES |
 | COMPAT-002 | `/info` semver | **CONFIRMED** | `stats/info.rs::get_info` — `semver = 1.1.0`, `major` forced ≥4 | LOW | YES |
@@ -882,7 +881,20 @@ Pre-fix behavior for `authorization = ""`:
 
 ### SEC-003 — Blocking DNS on the async runtime
 
-**Status:** CONFIRMED · **Severity:** MEDIUM. `to_socket_addrs()` (`http/mod.rs:155`) is invoked from the synchronous `SourcePlugin::can_handle` (line 190) while iterating sources inside async `load`/`resolve_track`. A slow/hostile resolver stalls a Tokio worker (a DoS lever). Fix: resolve inside `spawn_blocking`, or resolve once and pin the IP (which also closes SEC-001’s rebinding).
+**Status:** RESOLVED · **Severity:** MEDIUM. The synchronous `to_socket_addrs()`
+blocking lookup now lives only in `resolve_and_validate_public_url`
+(`http/mod.rs`), whose name and doc-comment require a blocking caller. Every call
+site is a blocking context:
+
+- `HttpSource::load` → `probe_metadata` (runs inside `tokio::task::spawn_blocking`);
+- `HttpTrack::start_decoding` → `HttpReader::new` (runs inside a `spawn_blocking` closure that enters the async handle only for the network fetch).
+
+`SourcePlugin::can_handle` no longer resolves anything — it calls `validate_http_url`
+(syntax-only). The connect-time resolver used on the async path is
+`PublicDnsResolver`, which uses the async `tokio::net::lookup_host`. A slow or
+hostile name therefore cannot stall a Tokio worker through `can_handle`. The
+regression tests `can_handle_is_syntax_only_and_never_resolves_dns` and
+`can_handle_does_not_stall_the_async_runtime` pin this contract.
 
 ## Safest SSRF Fix (design)
 

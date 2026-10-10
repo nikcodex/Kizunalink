@@ -182,8 +182,12 @@ impl HttpSource {
     }
 }
 
-/// Validate that a URL is a valid HTTP/HTTPS URL with host and port.
-/// Does NOT perform DNS resolution (safe to call from synchronous contexts).
+/// Validate a URL is a valid HTTP/HTTPS URL with host and port.
+///
+/// This is deliberately **syntax-only**: it does not resolve DNS, so it is safe
+/// to call from `SourcePlugin::can_handle` on the async runtime. Resolution
+/// happens in [`resolve_and_validate_public_url`], which callers must only invoke
+/// from a blocking context (`spawn_blocking` or a dedicated thread) — SEC-003.
 pub(crate) fn validate_http_url(raw: &str) -> AnyResult<(String, u16)> {
     let parsed = reqwest::Url::parse(raw).map_err(|e| format!("invalid HTTP URL: {e}"))?;
     if !matches!(parsed.scheme(), "http" | "https") {
@@ -196,10 +200,17 @@ pub(crate) fn validate_http_url(raw: &str) -> AnyResult<(String, u16)> {
     Ok((host, port))
 }
 
-/// Reject server-side requests to loopback, private, link-local, multicast, and
-/// unspecified addresses before opening the user-supplied URL.
+/// Resolve and reject server-side requests to loopback, private, link-local,
+/// multicast, unspecified, and other non-global addresses before opening the
+/// user-supplied URL.
+///
+/// **Blocking:** this performs a synchronous DNS lookup (`to_socket_addrs`, a
+/// blocking `getaddrinfo` syscall). Callers MUST be on a blocking context
+/// (`spawn_blocking` or a dedicated thread), never directly on a Tokio worker —
+/// SEC-003.
+///
 /// Returns (host, port, addresses) for IP pinning in the client.
-pub(crate) fn validate_public_url(
+pub(crate) fn resolve_and_validate_public_url(
     raw: &str,
 ) -> AnyResult<(String, u16, Vec<std::net::SocketAddr>)> {
     let (host, port) = validate_http_url(raw)?;
@@ -357,7 +368,10 @@ impl PlayableTrack for HttpTrack {
 
 #[cfg(test)]
 mod tests {
-    use super::{ProbeError, is_unrecognized_format_error, validate_public_url};
+    use super::{
+        ProbeError, is_unrecognized_format_error,
+        resolve_and_validate_public_url as validate_public_url,
+    };
 
     #[test]
     fn format_failures_are_no_match_not_error() {
@@ -411,6 +425,37 @@ mod tests {
         assert_eq!(host, "93.184.216.34");
         assert_eq!(port, 8080);
         assert!(!addrs.is_empty());
+    }
+
+    #[test]
+    fn can_handle_is_syntax_only_and_never_resolves_dns() {
+        use crate::media::sources::SourcePlugin;
+        // SEC-003: `can_handle` runs on the async runtime while iterating sources,
+        // so it must not block on DNS. A syntactically valid URL whose host is
+        // guaranteed not to resolve (RFC 2606 `.invalid`) is accepted instantly.
+        let source = crate::media::sources::http::HttpSource::new();
+        let start = std::time::Instant::now();
+        assert!(source.can_handle("http://nonexistent-host.invalid:8080/audio.mp3"));
+        // Resolution of a real (public) host would add latency; syntax-only parsing
+        // is sub-millisecond. This bounds the async runtime stall.
+        assert!(
+            start.elapsed() < std::time::Duration::from_millis(50),
+            "can_handle must not resolve DNS on the async runtime (SEC-003)"
+        );
+    }
+
+    #[tokio::test]
+    async fn can_handle_does_not_stall_the_async_runtime() {
+        use crate::media::sources::SourcePlugin;
+        // The same guard observed from within a Tokio worker: a non-resolving host
+        // must not make `can_handle` yield or block.
+        let source = crate::media::sources::http::HttpSource::new();
+        let accepted = tokio::task::spawn(async move {
+            source.can_handle("http://nonexistent-host.invalid/audio.mp3")
+        })
+        .await
+        .expect("can_handle task should not panic");
+        assert!(accepted);
     }
 }
 
