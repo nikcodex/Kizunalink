@@ -176,3 +176,70 @@ async fn ws_session_resumption_preserves_session_id() {
 
     socket2.close(None).await.unwrap();
 }
+
+#[tokio::test]
+async fn ws_configure_resuming_updates_session() {
+    let (base, state) = spawn_test_server().await;
+
+    let (mut socket, _) = connect(&base, &[]).await;
+    let ready = next_json(&mut socket).await;
+    let session_id = ready["sessionId"].as_str().unwrap().to_string();
+    let sid = kizunalink::common::types::SessionId::from(session_id);
+
+    // `timeout` > 0 enables resuming and sets the timeout.
+    socket
+        .send(TungMessage::Text(
+            r#"{"op":"configureResuming","key":"ignored","timeout":45}"#.into(),
+        ))
+        .await
+        .unwrap();
+
+    let client = reqwest::Client::new();
+    let get = |sid: kizunalink::common::types::SessionId| {
+        let client = client.clone();
+        let base = base.clone();
+        async move {
+            client
+                .get(format!("{base}/v4/sessions/{sid}"))
+                .header(header::AUTHORIZATION, AUTH_TOKEN)
+                .send()
+                .await
+        }
+    };
+
+    // Poll until the op has been applied (message handling is async).
+    let mut info = serde_json::json!({});
+    for _ in 0..20 {
+        let resp = get(sid.clone()).await.unwrap();
+        info = resp.json().await.unwrap();
+        if info["resuming"] == true {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+    assert_eq!(
+        info["resuming"], true,
+        "configureResuming should enable resuming"
+    );
+    assert_eq!(info["timeout"], 45);
+
+    // `timeout` == 0 disables resuming.
+    socket
+        .send(TungMessage::Text(
+            r#"{"op":"configureResuming","timeout":0}"#.into(),
+        ))
+        .await
+        .unwrap();
+    for _ in 0..20 {
+        let resp = get(sid.clone()).await.unwrap();
+        info = resp.json().await.unwrap();
+        if info["resuming"] == false {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+    assert_eq!(info["resuming"], false, "timeout=0 should disable resuming");
+
+    assert!(state.sessions.contains_key(&sid));
+    socket.close(None).await.unwrap();
+}

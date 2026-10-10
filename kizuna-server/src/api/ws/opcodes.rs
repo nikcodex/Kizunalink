@@ -52,6 +52,29 @@ pub async fn handle_op(
             session.destroy_player(&guild_id).await;
             Ok(())
         }
+        IncomingMessage::ConfigureResuming { key, timeout } => {
+            // `timeout` of 0 disables resuming. Lavalink's optional `key` is not
+            // supported by this node (sessions resume by id); warn so operators
+            // notice clients that rely on it.
+            if key.is_some() {
+                tracing::warn!(
+                    "configureResuming: custom resume keys are not supported; \
+                     sessions resume by session id. Ignoring key for session={session_id}."
+                );
+            }
+            session
+                .resumable
+                .store(timeout > 0, std::sync::atomic::Ordering::Relaxed);
+            session
+                .resume_timeout
+                .store(timeout, std::sync::atomic::Ordering::Relaxed);
+            tracing::info!(
+                "configureResuming: resuming={}, timeout={}s for session={session_id}",
+                timeout > 0,
+                timeout
+            );
+            Ok(())
+        }
     }
 }
 

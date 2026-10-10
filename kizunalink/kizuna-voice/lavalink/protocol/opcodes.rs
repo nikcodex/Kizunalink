@@ -26,4 +26,9 @@ pub enum IncomingMessage {
     Destroy {
         guild_id: GuildId,
     },
+    ConfigureResuming {
+        #[serde(default)]
+        key: Option<String>,
+        timeout: u64,
+    },
 }
