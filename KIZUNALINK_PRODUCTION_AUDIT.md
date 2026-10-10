@@ -1687,7 +1687,10 @@ with a live Discord bot ("Yuna") joined to a dedicated test guild and voice
 channel, exercising the actual Lavalink v4 WS protocol (`/v4/websocket`),
 session creation, the `/v4/sessions/{id}/players` contract, voice handshake,
 track load/start/stop/skip, and error handling. 15/16 assertions passed on the
-fixed binary; the single BLOCK is environmental (see below).
+fixed binary in the first pass; the remaining assertion
+(`voice.media.connected_and_advancing`) was BLOCKED by the lone-member
+constraint and was subsequently **PASSED** in a second, two-party run (see
+"Two-party DAVE verification" below). Final result: **16/16 PASS**.
 
 ### ROBUST-004 — `op: stop` never emitted `TrackEndEvent`
 
@@ -1722,18 +1725,93 @@ carrying the offending encoded string) and perform **no** metadata resolution.
 Regression test: `malformed_track_emits_exception_and_load_failed`. Verified
 live: `TrackExceptionEvent` received, no bogus resolution.
 
-### Environmental BLOCK — DAVE readiness with a lone channel member
+### First-pass lone-member BLOCK (resolved in the two-party run)
 
-`voice.media.connected_and_advancing` remained false: the node established the
-UDP voice connection (`Ready: ssrc=…`, IP discovery, `speak_loop` running) but
-received **no DAVE MLS opcodes** (`external sender`/`announce`/`proposals`)
-because the bot was the only member of the voice channel. Discord does not form
-the MLS group for a lone member, so `can_send_media()` stays false and the 60 s
-`DAVE_READY_TIMEOUT_SECS` fires. This is the documented lone-member constraint,
-not a node defect — and notably the node **correctly refused to emit plaintext
-media** while unready (security-positive; confirms the earlier plaintext-leak
-fix). Reproducing audible media requires a second real member in the channel.
+In the first pass the bot was the **only** member of the voice channel: the node
+established the UDP voice connection (`Ready: ssrc=…`, IP discovery,
+`speak_loop` running) but received **no DAVE MLS opcodes** (`external
+sender`/`announce`/`proposals`), so `can_send_media()` stayed false and the 60 s
+`DAVE_READY_TIMEOUT_SECS` fired. This was correctly classified as an
+environmental lone-member constraint, not a node defect — and the node
+**correctly refused to emit plaintext media** while unready (security-positive;
+confirms the earlier plaintext-leak fix). It was resolved by a second run with a
+real human member present.
 
-**Verdict unchanged: NOT READY** pending two-party DAVE audio and maintainer
-acceptance; this run closes the "real Discord connection" gate for session
-creation, voice handshake, track lifecycle and error paths.
+## 2026-10-10 — Two-party DAVE v1 E2EE verification (PASS, human-confirmed)
+
+A second live run was performed with a real human member joining the test voice
+channel, so Discord formed the MLS group. Tested commit
+`2a4bb4124fff6c9d8493c5a1d4244ad10dd8060b` (identical to PR #5 head at capture
+time). Sanitized evidence:
+`evidence/live-dave-e2e-2026-10-10/` (`README.md`,
+`node_dave_excerpt.sanitized.log`, `player_state.sanitized.json`,
+`tested_sha.txt`, `captured_at_utc.txt`).
+
+Observed, in order:
+
+1. UDP voice ready: `[1485248400361259170] Ready: ssrc=3983, mode=aead_aes256_gcm_rtpsize`.
+2. DAVE negotiation started: `DAVE session setup (v1)`,
+   `DAVE setup context: protocol_version=1, mls_group_id=0`.
+3. Human joined → `DAVE adding users: [912362112620331029]`.
+4. `DAVE commit processed (tid 0)` → `DAVE session (v1) is READY`.
+5. Encrypted media sustained for the whole session:
+   `speak_loop: 8500 ticks, frames_sent=8214 frames_nulled=1` (with the lone
+   member absent, `frames_sent` had stayed at 0 — a clean before/after signal).
+6. Live player state: `"connected": true`, `"position"` advancing
+   (`0 → 31180 → 163680 → 177720 ms`), `"ping": 14`,
+   `"dave": {"protocolVersion": 1, "privacyCode": "719390352705397864022856999967"}`.
+
+Recorded results:
+
+| Assertion | Result |
+|---|---|
+| `voice.media.connected_and_advancing` | **PASS** (connected=true, position advancing) |
+| Audible playback (human listening) | **PASS** (human-confirmed) |
+| DAVE v1 E2EE MLS negotiation | **PASS** (READY, frames flowing) |
+
+**Note (still untested):** this verifies the **outgoing/send** E2EE path and
+audible playback. Receive-side DAVE decryption and multi-member (>2) MLS group
+churn remain unverified; see "Remaining release blockers" below.
+
+## 2026-10-10 — Final status, remaining blockers, recommendation
+
+**Tested commit:** `2a4bb4124fff6c9d8493c5a1d4244ad10dd8060b`
+(verified identical to PR #5 head at capture time).
+**CI on that SHA:** Formatting, Check, Clippy (`-D warnings`), Tests,
+Build (ubuntu / macos / windows), Cargo Deny (advisories) — **8/8 success**.
+**Evidence:** `evidence/live-dave-e2e-2026-10-10/`.
+
+### Verified (real runtime proof)
+
+- Real Discord gateway connection and READY as a live bot.
+- Lavalink v4 WS protocol: session create, `/players` contract, `play`, `stop`,
+  `skip`, `destroy`, track load.
+- Voice handshake over UDP (`Ready: ssrc=…`, IP discovery, `speak_loop`).
+- DAVE v1 E2EE MLS negotiation to READY with a real second member, sustained
+  encrypted media frames, and **human-confirmed audible playback**.
+- Two protocol bugs fixed live and covered by regression tests (ROBUST-004,
+  ROBUST-005).
+
+### Remaining release blockers (still untested / needs decision)
+
+1. **Receive-side DAVE decryption** — this outgoing-only client does not consume
+   incoming media; not implemented/verified. Acceptable only if the product
+   scope is send-only playback; document explicitly.
+2. **Multi-member (>2) MLS group churn** — join/leave/rekey with several members
+   is untested.
+3. **Adversarial network paths** — public redirect / DNS-rebinding / proxy
+   integration under hostile conditions not exercised end-to-end.
+4. **Long soak** — repeated play/stop/reconnect and memory growth over hours.
+5. **Operator/maintainer acceptance** of the residual HIGH-risk items recorded
+   earlier in this audit (URL/error redaction, TLS idle-handshake timeout,
+   unbounded decoder seek queues).
+
+### Recommendation
+
+**NOT READY to merge/deploy as a general production node**, per instruction not
+to merge yet and because blockers 1–5 above remain open. The **core playback
+path is now real-runtime verified** end to end (session, voice, DAVE v1 E2EE,
+audible audio, track lifecycle, and the two fixed protocol bugs), which is a
+material upgrade over the previous "loopback-only" evidence. Treat this commit as
+**release-candidate quality with a documented send-only voice scope**; close
+blockers 1–5 and obtain maintainer sign-off before merging PR #5.

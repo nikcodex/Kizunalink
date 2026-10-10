@@ -1,0 +1,42 @@
+[
+  {
+    "guildId": "1485248400361259170",
+    "track": {
+      "encoded": "QAAA4wMARFJpY2sgQXN0bGV5IC0gTmV2ZXIgR29ubmEgR2l2ZSBZb3UgVXAgKE9mZmljaWFsIFZpZGVvKSAoNEsgUmVtYXN0ZXIpAAtSaWNrIEFzdGxleQAAAAAAA0PwAAtkUXc0dzlXZ1hjUQABACtodHRwczovL3d3dy55b3V0dWJlLmNvbS93YXRjaD92PWRRdzR3OVdnWGNRAQA2aHR0cHM6Ly9pLnl0aW1nLmNvbS92aV93ZWJwL2RRdzR3OVdnWGNRL3NkZGVmYXVsdC53ZWJwAAAHeW91dHViZQAAAAAAAAAA",
+      "info": {
+        "identifier": "dQw4w9WgXcQ",
+        "isSeekable": true,
+        "author": "Rick Astley",
+        "length": 214000,
+        "isStream": false,
+        "position": 0,
+        "title": "Rick Astley - Never Gonna Give You Up (Official Video) (4K Remaster)",
+        "uri": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+        "artworkUrl": "https://i.ytimg.com/vi_webp/dQw4w9WgXcQ/sddefault.webp",
+        "isrc": null,
+        "sourceName": "youtube"
+      },
+      "pluginInfo": {},
+      "userData": {}
+    },
+    "volume": 100,
+    "paused": false,
+    "state": {
+      "time": 1791635138307,
+      "position": 163680,
+      "connected": true,
+      "ping": 14
+    },
+    "voice": {
+      "token": "<redacted-voice-token>",
+      "endpoint": "c-ord08-b5d19441.discord.media:2087",
+      "sessionId": "<redacted-voice-session>",
+      "channelId": "1549426184264355850"
+    },
+    "filters": {},
+    "dave": {
+      "protocolVersion": 1,
+      "privacyCode": "719390352705397864022856999967"
+    }
+  }
+]
