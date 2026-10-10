@@ -155,50 +155,46 @@ impl AppConfig {
     /// | `KIZUNA_METRICS_ENABLED` | `metrics.prometheus.enabled` (`true`/`false`) |
     ///
     /// A malformed value fails fast rather than being silently ignored.
+    ///
+    /// A variable that is *set but empty* (e.g. `KIZUNA_ADDRESS=` exported by a
+    /// shell or `environment: - KIZUNA_ADDRESS` in Compose) is treated as a
+    /// misconfiguration and reported by name, rather than being applied as an
+    /// empty string that later fails with a cryptic parse error.
     fn apply_env_overrides(&mut self) -> AnyResult<()> {
-        if let Ok(v) = std::env::var("KIZUNA_ADDRESS") {
+        if let Some(v) = non_empty_env("KIZUNA_ADDRESS")? {
             self.server.address = v;
         }
-        if let Ok(v) = std::env::var("KIZUNA_PORT") {
+        if let Some(v) = non_empty_env("KIZUNA_PORT")? {
             // Malformed values must fail startup with a configuration error, not
             // panic from a background task.
             self.server.port = v
                 .parse()
                 .map_err(|e| format!("KIZUNA_PORT must be a number, got {v:?}: {e}"))?;
         }
-        if let Ok(v) = std::env::var("KIZUNA_AUTHORIZATION") {
-            // Present-but-empty is a misconfiguration, not an override that
-            // clears the secret: fail here with a clear reason instead of
-            // letting an empty value reach validation.
-            if v.trim().is_empty() {
-                return Err(
-                    "KIZUNA_AUTHORIZATION is set but empty. Provide a strong secret or unset it."
-                        .into(),
-                );
-            }
+        if let Some(v) = non_empty_env("KIZUNA_AUTHORIZATION")? {
             self.server.authorization = v;
         }
-        if let Ok(v) = std::env::var("KIZUNA_RATE_LIMIT_PER_MINUTE") {
+        if let Some(v) = non_empty_env("KIZUNA_RATE_LIMIT_PER_MINUTE")? {
             self.server.rate_limit_per_minute = v.parse().map_err(|e| {
                 format!("KIZUNA_RATE_LIMIT_PER_MINUTE must be a number, got {v:?}: {e}")
             })?;
         }
-        if let Ok(v) = std::env::var("KIZUNA_TLS_ENABLED") {
+        if let Some(v) = non_empty_env("KIZUNA_TLS_ENABLED")? {
             self.server.tls.enabled = v
                 .parse()
                 .map_err(|e| format!("KIZUNA_TLS_ENABLED must be true or false, got {v:?}: {e}"))?;
         }
-        if let Ok(v) = std::env::var("KIZUNA_TLS_CERT") {
+        if let Some(v) = non_empty_env("KIZUNA_TLS_CERT")? {
             self.server.tls.cert_path = Some(v);
         }
-        if let Ok(v) = std::env::var("KIZUNA_TLS_KEY") {
+        if let Some(v) = non_empty_env("KIZUNA_TLS_KEY")? {
             self.server.tls.key_path = Some(v);
         }
-        if let Ok(v) = std::env::var("KIZUNA_LOG_LEVEL") {
+        if let Some(v) = non_empty_env("KIZUNA_LOG_LEVEL")? {
             let logging = self.logging.get_or_insert_with(Default::default);
             logging.level = Some(v);
         }
-        if let Ok(v) = std::env::var("KIZUNA_METRICS_ENABLED") {
+        if let Some(v) = non_empty_env("KIZUNA_METRICS_ENABLED")? {
             self.metrics.prometheus.enabled = v.parse().map_err(|e| {
                 format!("KIZUNA_METRICS_ENABLED must be true or false, got {v:?}: {e}")
             })?;
@@ -279,6 +275,27 @@ impl AppConfig {
         }
 
         Ok(())
+    }
+}
+
+/// Read an environment variable, distinguishing "unset" from "set but blank".
+///
+/// Returns `Ok(None)` when the variable is not present, `Ok(Some(value))` with
+/// the raw value when it is present and non-blank, and `Err` when it is present
+/// but blank or not valid UTF-8. A blank value is treated as a misconfiguration
+/// rather than an override that silently clears the target field.
+fn non_empty_env(name: &str) -> AnyResult<Option<String>> {
+    match std::env::var(name) {
+        Ok(value) if value.trim().is_empty() => Err(format!(
+            "{name} is set but empty. Unset it to keep the configured value, or set it to a \
+             non-empty value."
+        )
+        .into()),
+        Ok(value) => Ok(Some(value)),
+        Err(std::env::VarError::NotPresent) => Ok(None),
+        Err(std::env::VarError::NotUnicode(_)) => {
+            Err(format!("{name} is set to a non-UTF-8 value, which is not supported.").into())
+        }
     }
 }
 
@@ -476,6 +493,45 @@ mod tests {
                 "expected env-specific error, got: {err}"
             );
         }
+    }
+
+    #[test]
+    fn empty_env_value_is_a_named_misconfiguration_for_every_var() {
+        // A set-but-empty variable must be reported by name for every override,
+        // so a blank `KIZUNA_ADDRESS` cannot surface later as a cryptic
+        // `AddrParseError(Ip)` and a blank scalar cannot silently clear a field.
+        for name in [
+            "KIZUNA_ADDRESS",
+            "KIZUNA_PORT",
+            "KIZUNA_AUTHORIZATION",
+            "KIZUNA_RATE_LIMIT_PER_MINUTE",
+            "KIZUNA_TLS_ENABLED",
+            "KIZUNA_TLS_CERT",
+            "KIZUNA_TLS_KEY",
+            "KIZUNA_LOG_LEVEL",
+            "KIZUNA_METRICS_ENABLED",
+        ] {
+            for value in ["", "   "] {
+                let err = try_cfg_with_envs(&[(name, value)])
+                    .expect_err("blank env value must be rejected")
+                    .to_string();
+                assert!(
+                    err.contains(name),
+                    "expected {name}-specific error, got: {err}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn unsetting_or_setting_a_real_env_value_behaves_as_before() {
+        // Unset variables keep the TOML value; non-blank overrides still apply.
+        let cfg = cfg_with_envs(&[]);
+        assert_eq!(cfg.server.address, "127.0.0.1");
+
+        let cfg = cfg_with_envs(&[("KIZUNA_ADDRESS", "0.0.0.0"), ("KIZUNA_PORT", "1234")]);
+        assert_eq!(cfg.server.address, "0.0.0.0");
+        assert_eq!(cfg.server.port, 1234);
     }
 
     #[test]

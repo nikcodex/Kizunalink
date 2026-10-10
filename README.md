@@ -178,6 +178,10 @@ Use [config.example.toml](./config.example.toml) as the complete reference. By d
 | `KIZUNA_TLS_ENABLED` | `server.tls.enabled` |
 | `KIZUNA_METRICS_ENABLED` | `metrics.prometheus.enabled` |
 
+A variable that is set but empty (for example `KIZUNA_ADDRESS=`, or a blank
+entry in a Compose `environment:` list) is rejected at startup by name rather
+than applied as an empty value; unset it to keep the configured value.
+
 ### Authorization (required)
 
 `server.authorization` is the shared secret every REST and WebSocket client must
