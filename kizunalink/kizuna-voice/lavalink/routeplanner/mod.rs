@@ -292,4 +292,35 @@ mod tests {
             Some(IpAddr::V4(Ipv4Addr::new(192, 0, 2, 10)))
         );
     }
+
+    /// A malformed entry anywhere in the list must fail construction with a named
+    /// error rather than panicking the caller (startup) or silently dropping the
+    /// bad block.
+    #[test]
+    fn one_invalid_cidr_fails_construction_even_with_valid_siblings() {
+        let result = BalancingIpRoutePlanner::new(vec![
+            "192.0.2.0/24".to_owned(),
+            "not-a-cidr".to_owned(),
+            "2001:db8::/32".to_owned(),
+        ]);
+        let err = result.err().expect("construction must fail");
+        assert!(err.contains("Invalid CIDR"), "got: {err}");
+    }
+
+    /// IPv6 blocks parse and yield IPv6 addresses (no V4/V6 mix-up).
+    #[test]
+    fn ipv6_cidr_yields_ipv6_addresses() {
+        let planner = BalancingIpRoutePlanner::new(vec!["2001:db8::/64".to_owned()])
+            .expect("valid IPv6 CIDR should initialize");
+        assert!(matches!(planner.get_address(), Some(IpAddr::V6(_))));
+    }
+
+    /// With no blocks configured, the defensive empty-block guard returns a
+    /// placeholder instead of dividing by zero.
+    #[test]
+    fn empty_block_list_does_not_panic() {
+        let planner =
+            BalancingIpRoutePlanner::new(Vec::new()).expect("empty list is a valid configuration");
+        assert_eq!(planner.get_address(), Some(IpAddr::V4(Ipv4Addr::LOCALHOST)));
+    }
 }
