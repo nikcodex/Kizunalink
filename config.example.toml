@@ -43,7 +43,20 @@ categories = ["sponsor", "intro", "outro", "interaction", "selfpromo", "music_of
 # api_url = "https://sponsor.ajay.app"
 
 [player.mirrors]
-# List of mirror provider patterns. %ISRC% or %QUERY%
+# Fallback providers tried, in order, when a track's own source cannot stream it
+# (e.g. a Spotify/Apple URL that must be re-resolved elsewhere).
+#
+# ISRC-capable providers (patterns containing %ISRC%) are attempted first so a
+# track is matched by its exact recording id; the rest run in parallel and are
+# ranked by the best_match scorer below.
+#
+# YouTube is deliberately LAST. On datacenter/cloud IPs YouTube returns HTTP 403
+# ("Sign in to confirm you're not a bot"), and paths that mirror Spotify/Apple to
+# YouTube by ISRC will hit that 403 too. For regional/Indian catalogs prefer
+# region-native sources (jssearch: = JioSaavn, gnsearch: = Gaana) which stream
+# from their own CDNs and are unaffected by the YouTube block.
+# Note: JioSaavn/Gaana do not resolve a bare ISRC as an id, so they are listed as
+# %QUERY% providers rather than %ISRC% providers.
 providers = ["tdsearch:%ISRC%","dzsearch:%ISRC%","jssearch:%QUERY%","amksearch:%QUERY%","gnsearch:%QUERY%","dzsearch:%QUERY%","ytsearch:%ISRC%", "ytsearch:%QUERY%", "scsearch:%QUERY%"]
 
 [player.mirrors.best_match]

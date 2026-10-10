@@ -88,7 +88,25 @@ protocol tests.
 - YouTube (the most common source) supports a per-source `proxy` like every other
   source; it is what lets the node work from datacenter IPs that YouTube blocks
   (HTTP 403 from `googlevideo.com`). See `default_playback_clients()` and
-  `YouTubeConfig::proxy`.
+  `YouTubeConfig::proxy`. The proxy-aware client is threaded into every YouTube
+  client *and* into `YouTubeOAuth`; do not construct a bare
+  `reqwest::Client::new()` there or OAuth token refresh will bypass the proxy and
+  still leave from the blocked host.
+- `loadtracks` `loadType` is a closed set (`track`/`playlist`/`search`/`empty`/
+  `error`); there is NO `loadFailed` load type. Use `empty` for "no match" and
+  `error` (with a `LoadError` payload) for a provider/transport failure. Do not
+  collapse a network/HTTP/parse failure into `empty` — clients treat `empty` as a
+  normal "nothing found" and swallow the real cause. `LoadResult::Error` is for
+  load-time failures; `TrackEndReason::LoadFailed` is a separate WS event reason.
+- A `TrackEnd` after a mid-stream decoder error must be `finished`, not
+  `loadFailed`: audio already played, so clients should advance the queue. Only a
+  failure before any frame is emitted is `loadFailed`. Both still emit a preceding
+  `TrackException` carrying the cause. See `stop_reason_after_error` in `monitor.rs`.
+- Regional/Indian catalogs (and any YouTube-blocked case) are best served by
+  region-native sources: `jssearch:` (JioSaavn) and `gnsearch:` (Gaana) stream from
+  their own CDNs and are unaffected by the `googlevideo.com` 403. JioSaavn/Gaana do
+  not resolve a bare ISRC, so they belong in the mirrors list as `%QUERY%`
+  providers, not `%ISRC%` providers.
 - Release uses `panic = "unwind"` so `AudioProcessor::run_guarded` (a `catch_unwind`
   wrapper around the decoder loop) can isolate a panic on one bad stream instead of
   aborting the node. Do not set `panic = "abort"` — it silently makes the guard dead

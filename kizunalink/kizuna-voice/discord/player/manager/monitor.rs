@@ -46,6 +46,9 @@ pub async fn monitor_loop(ctx: MonitorCtx) {
     let mut last_pos_changed_at = std::time::Instant::now();
     let mut stuck_fired = false;
     let mut buffering_started_at: Option<std::time::Instant> = None;
+    // True once the decoder has produced audio, so a later failure is reported
+    // as `finished` (ended after starting) rather than `loadFailed` (never started).
+    let mut audio_started = false;
 
     loop {
         interval.tick().await;
@@ -58,7 +61,7 @@ pub async fn monitor_loop(ctx: MonitorCtx) {
         let state = ctx.handle.get_state();
 
         if state == PlaybackState::Stopped {
-            handle_playback_stopped(&ctx).await;
+            handle_playback_stopped(&ctx, audio_started).await;
             break;
         }
 
@@ -84,6 +87,7 @@ pub async fn monitor_loop(ctx: MonitorCtx) {
                 buffering_started_at = None;
                 stuck_fired = false;
             } else if cur_pos != last_pos {
+                audio_started = true;
                 last_pos_changed_at = std::time::Instant::now();
                 buffering_started_at = None;
                 stuck_fired = false;
@@ -143,7 +147,21 @@ pub async fn monitor_loop(ctx: MonitorCtx) {
     }
 }
 
-async fn handle_playback_stopped(ctx: &MonitorCtx) {
+/// Reason for a `TrackEnd` after the player stopped because of a decoder error.
+///
+/// `loadFailed` is reserved for a track that never produced audio; once frames
+/// have been emitted the track "ended" and clients should advance the queue, so
+/// report `finished` (matching upstream Lavalink). The accompanying
+/// `TrackException` still carries the actual failure.
+fn stop_reason_after_error(audio_started: bool) -> TrackEndReason {
+    if audio_started {
+        TrackEndReason::Finished
+    } else {
+        TrackEndReason::LoadFailed
+    }
+}
+
+async fn handle_playback_stopped(ctx: &MonitorCtx, audio_started: bool) {
     if ctx.stop_signal.load(Ordering::Acquire) {
         return;
     }
@@ -163,7 +181,10 @@ async fn handle_playback_stopped(ctx: &MonitorCtx) {
                     },
                 }),
             });
-            TrackEndReason::LoadFailed
+            // `loadFailed` means the track never produced audio; once frames have
+            // played, an exception ends the track as `finished` (same as upstream
+            // Lavalink). The `TrackException` above still carries the real cause.
+            stop_reason_after_error(audio_started)
         }
         Err(_) => TrackEndReason::Finished,
     };
@@ -259,5 +280,28 @@ async fn clear_player_state(ctx: &MonitorCtx) {
             p.track_info = None;
             p.track_handle = None;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::stop_reason_after_error;
+    use crate::lavalink::protocol::events::TrackEndReason;
+
+    #[test]
+    fn mid_stream_error_ends_as_finished_not_load_failed() {
+        // Audio already played -> clients must advance the queue.
+        assert!(matches!(
+            stop_reason_after_error(true),
+            TrackEndReason::Finished
+        ));
+    }
+
+    #[test]
+    fn error_before_any_audio_is_load_failed() {
+        assert!(matches!(
+            stop_reason_after_error(false),
+            TrackEndReason::LoadFailed
+        ));
     }
 }

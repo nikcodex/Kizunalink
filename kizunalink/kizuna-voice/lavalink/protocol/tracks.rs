@@ -196,6 +196,21 @@ mod tests {
     }
 
     #[test]
+    fn load_error_serializes_with_error_load_type() {
+        // Per the Lavalink v4 REST spec the error load result is
+        // `{"loadType":"error","data":{...}}` — `loadFailed` is not a load type.
+        let json = serde_json::to_value(LoadResult::Error(LoadError {
+            message: Some("HTTP 403".into()),
+            severity: crate::common::Severity::Common,
+            cause: "blocked".into(),
+            cause_stack_trace: None,
+        }))
+        .unwrap();
+        assert_eq!(json["loadType"], "error");
+        assert_eq!(json["data"]["message"], "HTTP 403");
+    }
+
+    #[test]
     fn load_error_serializes_non_null_cause_stack_trace() {
         let err = LoadError {
             message: Some("boom".into()),

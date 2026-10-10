@@ -19,6 +19,17 @@ use crate::{
 
 const BASE_URL: &str = "https://api-v2.soundcloud.com";
 
+/// Build a spec-compliant `error` load payload for transport/protocol failures.
+fn load_error(message: impl Into<String>) -> crate::lavalink::protocol::tracks::LoadError {
+    let cause = message.into();
+    crate::lavalink::protocol::tracks::LoadError {
+        message: Some(cause.clone()),
+        severity: crate::common::Severity::Common,
+        cause,
+        cause_stack_trace: None,
+    }
+}
+
 fn track_url_re() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     RE.get_or_init(|| {
@@ -405,17 +416,24 @@ impl SoundCloudSource {
             Ok(r) => r,
             Err(e) => {
                 error!("SoundCloud search error: {}", e);
-                return LoadResult::Empty {};
+                return LoadResult::Error(load_error(format!("SoundCloud request failed: {e}")));
             }
         };
 
         if !resp.status().is_success() {
-            return LoadResult::Empty {};
+            return LoadResult::Error(load_error(format!(
+                "SoundCloud returned HTTP {}",
+                resp.status()
+            )));
         }
 
         let json: Value = match resp.json().await {
             Ok(v) => v,
-            Err(_) => return LoadResult::Empty {},
+            Err(e) => {
+                return LoadResult::Error(load_error(format!(
+                    "SoundCloud returned invalid JSON: {e}"
+                )));
+            }
         };
 
         let tracks: Vec<Track> = json

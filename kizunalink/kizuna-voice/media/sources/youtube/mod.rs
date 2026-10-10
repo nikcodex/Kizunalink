@@ -63,7 +63,13 @@ pub struct YoutubeStreamContext {
 impl YouTubeSource {
     pub fn new(config: Option<YouTubeConfig>, http: Arc<reqwest::Client>) -> Self {
         let config = config.unwrap_or_default();
-        let oauth = Arc::new(YouTubeOAuth::new(config.refresh_tokens.clone()));
+        // OAuth token refresh must use the same proxy-aware client as playback:
+        // datacenter IPs are blocked by Google, and token requests would otherwise
+        // leave from the blocked host even when `sources.youtube.proxy` is set.
+        let oauth = Arc::new(YouTubeOAuth::new(
+            config.refresh_tokens.clone(),
+            http.as_ref().clone(),
+        ));
         let cipher_manager = Arc::new(YouTubeCipherManager::new(config.cipher.clone()));
 
         // Call initialization in background if no tokens provided and enabled in config
