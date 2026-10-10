@@ -43,7 +43,7 @@ No speculative “DAVE is broken” style claims are made. Where a subsystem cou
 | ID | Severity | Category | Finding | Evidence | Fix |
 |---|---|---|---|---|---|
 | COMPAT-001 | **HIGH** | Lavalink v4 | `GET /v4/sessions/{id}/players` returns `{"players":[…]}` instead of a bare JSON array | Official docs example is a bare array; KizunaLink returns `Json(Players{players})` | Serialize `Vec<Player>` directly |
-| SEC-001 | **HIGH** | SSRF | `validate_public_url` is bypassable via HTTP redirects and DNS rebinding | Client built without a redirect policy; no re-validation per hop | Custom redirect policy re-validating each hop + pin resolved IP |
+| SEC-001 | ~~**HIGH**~~ **RESOLVED** | SSRF | Resolved by connect-time resolver validation + IP pinning + per-hop redirect policy (see §SEC-001) | Re-validated on the address actually connected | Done |
 | PERF-001 | MEDIUM | Async | Blocking `to_socket_addrs()` DNS resolution on Tokio worker threads | `validate_public_url` called from sync `can_handle` inside async `load` | Move resolution to `spawn_blocking` or resolve once and pin |
 | ROBUST-001 | MEDIUM | Robustness | `panic = "abort"` + `expect()` in spawned decoder threads: one spawn failure kills the whole process | `std::thread::Builder::…spawn(…).expect(…)` in `http`/`local`/`youtube` tracks | Return an error / propagate `false` instead of `expect` |
 | COMPAT-002 | LOW | Lavalink v4 | `/v4/info` reports `version.semver = "1.1.0"` while forcing `version.major = 4` | `get_info` parse + override | Report a semver consistent with the protocol major (e.g. `4.x.y`) |
@@ -740,7 +740,7 @@ Independent second pass. Every finding below was re-derived from the **current**
 | ID | Finding | Verdict | Evidence (current source) | Severity | Fix Needed |
 |---|---|---|---|---|---|
 | COMPAT-001 | `/players` response shape | **CONFIRMED** | `player/get.rs::get_players` returns `Json(Players{players})`; `state.rs` `struct Players{players}`; docs require bare array | HIGH | YES |
-| SEC-001 | HTTP SSRF redirect / DNS rebinding | **CONFIRMED** | `engine/source/client.rs::create_client` sets no redirect policy (reqwest follows ≤10); `validate_public_url` checks only the initial URL | HIGH | YES |
+| SEC-001 | HTTP SSRF redirect / DNS rebinding | **RESOLVED** | Connect-time `PublicDnsResolver` validates every address handed to Hyper; user HTTP source pins the initial resolution and installs a per-hop redirect policy; `is_blocked_ip` broadened to all non-global ranges. Deterministic loopback-fixture regression tests (rebinding, redirect→private/metadata, pin bypasses DNS, Host/SNI preserved) | HIGH | DONE |
 | SEC-002 | Empty authorization | **CONFIRMED** | `config/mod.rs::validate` rejects `"youshallnotpass"` on public bind but **not** `""` | MEDIUM | YES |
 | SEC-003 | Blocking DNS | **CONFIRMED** | `http/mod.rs:155` `to_socket_addrs()` called from **sync** `can_handle` (line 190) and from `probe_metadata` (line 53) on the async runtime | MEDIUM | YES |
 | ROBUST-001 | Decoder `expect()` + `panic=abort` | **PARTIAL** | Only **3** sites use `.expect()` on `thread::Builder::spawn` (`http/mod.rs:292`, `local/mod.rs:286`, `youtube/hls/mod.rs:234`); **all other sources handle spawn failure** (`tracing::error!`). Plus `routeplanner/mod.rs:47` `panic!` on bad config CIDR | MEDIUM | YES (narrowed) |
@@ -779,11 +779,41 @@ With `[profile.release] panic = "abort"`, a failed `std::thread::Builder::spawn`
 
 ## Confirmed Security Issues
 
-### SEC-001 — SSRF guard is bypassable (redirects + DNS rebinding)
+### SEC-001 — SSRF guard (redirects + DNS rebinding) — RESOLVED
 
-**Status:** CONFIRMED · **Severity:** HIGH · **Files:** `media/sources/http/mod.rs` (`validate_public_url`, `can_handle`), `engine/source/client.rs` (`create_client`), `engine/source/http/{mod,prefetcher}.rs`.
+**Status:** RESOLVED · **Severity:** HIGH · **Files:** `media/sources/http/mod.rs` (`validate_public_url`, `can_handle`), `engine/source/client.rs` (`create_client`, `PublicDnsResolver`, `make_redirect_policy`).
 
-Source-level trace of the lifecycle:
+The vulnerability below was real when the source-level trace was taken (that
+revision built the client with reqwest defaults: no redirect policy and a fresh,
+unvalidated DNS lookup at connect time). It is now closed in
+`engine/source/client.rs` by three cooperating mechanisms:
+
+1. **Connect-time validation.** A reqwest `dns::Resolve` (`PublicDnsResolver`)
+   resolves asynchronously and *rejects* any non-global address *before Hyper
+   receives it*. Because Hyper connects to exactly the addresses the resolver
+   returns, the address actually used for the connection is the one that was
+   validated — validation and connection share a single lookup, so there is no
+   validate-then-reconnect TOCTOU window. This applies to the initial request and
+   to every redirect hop, because reqwest re-resolves each hop through the same
+   resolver.
+2. **IP pinning (user-supplied HTTP source).** `HttpReader::new` calls
+   `validate_public_url`, then pins the already-validated addresses with
+   `ClientBuilder::resolve`, so no second lookup can diverge. `resolve()` sets only
+   the dialed IP; the request URI keeps the original hostname, so TLS SNI and the
+   HTTP `Host` header are preserved.
+3. **Per-hop redirect policy.** `make_redirect_policy` stops redirects that are
+   non-http(s), HTTPS→HTTP downgrades, known internal hostnames
+   (`*.localhost`, `*.internal`, `*.local`, `metadata.google.internal`), literal
+   private IPs, or beyond 10 hops.
+
+`is_blocked_ip` was also broadened to refuse *all* non-global unicast: loopback,
+RFC1918, link-local, multicast, unspecified, broadcast, `0.0.0.0/8`,
+`192.0.0.0/24`, CGNAT `100.64/10`, benchmarking `198.18/15`, reserved
+`240/4`, plus IPv6 loopback/link-local/ULA/multicast/unspecified, IPv4-mapped,
+IPv4-compatible, NAT64 `64:ff9b::/96`, 6to4 `2002::/16`, Teredo `2001::/32`, and
+documentation `2001:db8::/32`. New reservations therefore default to *blocked*.
+
+The pre-fix trace, retained for history:
 
 ```
 user URL
@@ -794,18 +824,41 @@ user URL
   → final response body consumed by the prefetcher
 ```
 
-Bypasses demonstrated by code inspection (no runtime exploit attempted):
+Bypasses demonstrated by code inspection (no runtime exploit attempted) — all
+now blocked:
 
-| Vector | Reachable? | Why |
+| Vector | Pre-fix | Post-fix |
 |---|---|---|
-| `302 → http://127.0.0.1:…` | **YES** | redirects are followed without re-validation |
-| DNS rebinding (public → `127.0.0.1`/`169.254.169.254`) | **YES** | validation and connect use separate lookups |
-| multi-hop public→public→private | **YES** | only hop 0 is validated |
-| `http://[::ffff:127.0.0.1]/` (v4-mapped v6) | **PARTIAL** | `Ipv6Addr::is_loopback()` is false for `::ffff:127.0.0.1`; it is not in the checked v6 set |
-| IPv6 loopback `::1` / link-local / ULA | blocked | explicit checks exist |
-| RFC1918 / `169.254/16` on the **initial** URL | blocked | explicit checks exist |
-| internal DNS names resolving to private IPs | blocked **initially**, bypassable via the rows above | same root cause |
-| environment proxy (`HTTP(S)_PROXY`) | **INFLUENCES** | `create_client` sets a proxy only when configured; otherwise reqwest applies default env proxies, which can resolve/route differently |
+| `302 → http://127.0.0.1:…` | YES | blocked at the redirect policy *and* the resolver |
+| DNS rebinding (public → `127.0.0.1`/`169.254.169.254`) | YES | blocked: pinned/validated address is the one dialed |
+| multi-hop public→public→private | YES | blocked at each hop by the resolver |
+| `http://[::ffff:127.0.0.1]/` (v4-mapped v6) | PARTIAL | blocked (unmapped, then v4 policy) |
+| IPv6 loopback `::1` / link-local / ULA | blocked | blocked |
+| RFC1918 / `169.254/16` on the **initial** URL | blocked | blocked |
+| internal DNS names resolving to private IPs | blocked initially, bypassable | blocked at connect |
+| environment proxy (`HTTP(S)_PROXY`) | INFLUENCES | neutralised: client sets `.no_proxy()` |
+
+Remaining, documented boundaries (not SSRF-policy bypasses for user URLs):
+
+- **Forwarding proxy + pinned source is refused.** `create_client_with_pinning`
+  errors when a pinned host is combined with a forwarding proxy, because the
+  proxy resolves the destination itself; user-supplied HTTP sources therefore
+  cannot use a forwarding proxy.
+- **Provider sources use a shared, operator-configured client pool**
+  (`common/http.rs::HttpClientPool`) that may legitimately egress through an
+  operator-configured proxy or internal mirror. Those are configured by the
+  operator, not supplied by a remote caller, so they are outside the
+  user-URL SSRF policy. The user-reachable `http` source always uses the
+  pinned/validated client.
+- The redirect policy's hostname checks are name-based; per-hop DNS is enforced
+  by the connect-time resolver, which is the authoritative gate for every hop.
+
+**Regression tests (deterministic, hermetic; loopback fixtures only, no external
+targets):** `engine/source/client.rs` `ssrf_regression_tests` +
+`tests`: hostname→private refused at connect; rebinding cannot reach loopback;
+redirect→`127.0.0.1` and redirect→`169.254.169.254` not followed; pinning dials
+the pinned IP and bypasses a fresh DNS lookup while preserving the hostname for
+Host/SNI; broadened IPv4/IPv6 blocked-range matrices.
 
 ### SEC-002 — Empty `authorization` is accepted
 
