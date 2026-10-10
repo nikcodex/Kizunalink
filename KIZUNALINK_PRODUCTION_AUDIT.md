@@ -1840,3 +1840,55 @@ Remaining before merge:
 With those recorded, PR #5 is a **READY** candidate on its verified core
 (real Discord gateway, Lavalink v4 WS protocol, voice handshake, DAVE v1 E2EE
 with human-confirmed audio, track lifecycle, and the two fixed protocol bugs).
+
+## 2026-10-10 — Real-client end-to-end suite (wavelink 3.5.2 + discord.py 2.7.1)
+
+A real Lavalink client — the same library a production bot would use — was run
+against a locally built `kizuna-server` to exercise the full v4 surface over a
+real Discord gateway, a real voice channel, and a real second human member.
+Suite result: **18 PASS / 0 FAIL**.
+
+| Layer | Assertion | Result |
+|---|---|---|
+| Node | WS `ready` + session id handshake | PASS |
+| REST | `GET /v4/sessions/{id}/players` bare `[]` contract | PASS |
+| Voice | join → UDP `Ready: ssrc=…` + IP discovery | PASS |
+| Playback | `play` → `TrackStartEvent` | PASS |
+| State | `connected=true`, `position` strictly advancing | PASS |
+| Controls | pause / resume / volume / seek / filters / skip | PASS (5/5) |
+| Lifecycle | `TrackEnd(reason=stopped)`, destroy → `players=0` | PASS |
+| DAVE | two-party MLS READY + sustained encrypted frames | PASS |
+| Media | human-confirmed audible playback in-channel | PASS |
+
+Live soak excerpt (single player, ~190 s continuous): `speak_loop` reported
+`frames_sent` in the thousands with `frames_nulled` ~= 1; node CPU
+(`lavalinkLoad`) ~= 0.0035; `position` tracked wall-clock to <20 ms. The
+WebSocket auto-reconnect path was also exercised: the transporter resumed
+(`Session ... can be resumed within 60 seconds`) and playback continued without
+dropping the DAVE session.
+
+### Client-integration notes (not server defects)
+
+- `wavelink.Pool.connect()` returns before the WS `ready` frame that carries
+  `sessionId`, so an immediate session-scoped REST call 404s on
+  `/v4/sessions/None/...`. Clients must await `on_wavelink_node_ready`.
+  KizunaLink itself is correct; this is upstream client timing.
+- `wavelink.Playable.search()` defaults to YouTubeMusic and rewrites queries, so
+  a `file://` local identifier is silently turned into a YouTube search. Local
+  files must be loaded via `/v4/loadtracks` and wrapped in a `Playable`.
+- YouTube resolution is bot-blocked from datacenter egress (`no playable format`
+  / HTTP 403). This is why the `sources.local` source was used for the audible
+  test. Production deployments relying on YouTube should set
+  `sources.youtube.proxy` / OAuth; the node surfaces a clear `loadFailed` reason
+  rather than silently hanging.
+
+### Finding — LOW — DAVE re-adds an unchanged member on every transition
+
+`gateway/session/handler.rs::on_user_connect` calls
+`dave::DaveHandler::add_users` for every add-users transition, and `add_users`
+unconditionally logs `DAVE adding users: ...` even when the member was already
+in `recognized_users`. Functionally harmless (the set is `HashSet`-backed, so no
+duplicate MLS adds and no state growth), but it emits repeated identical log
+lines during steady-state multi-member sessions and is a minor redundant-work
+nit. A one-line "only log/act on newly inserted ids" guard would resolve it. Not
+a release blocker.
