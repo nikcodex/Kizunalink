@@ -106,10 +106,18 @@ port = 2333
 authorization = "replace-with-your-own-long-random-secret"
 ```
 
-Replace the placeholder with a real secret. The example configuration's default password is rejected on non-loopback binds. For Docker, use `address = "0.0.0.0"` inside the container and a strong authorization value.
+Replace the placeholder with a real secret. There is **no default**: the server
+refuses to start if `authorization` is missing, empty, or a known placeholder
+(such as `youshallnotpass`), on **every** bind address including loopback. For
+Docker, use `address = "0.0.0.0"` inside the container and a strong authorization
+value, and prefer injecting it via `KIZUNA_AUTHORIZATION` rather than the file.
 
 > [!WARNING]
-> The Compose file publishes port `2333` on the host. Restrict access with your firewall or an appropriate port binding. Do not expose an unprotected node, commit credentials, or enable HTTP/local-file sources for untrusted clients without reviewing their access boundaries.
+> The Compose file binds `2333` to loopback on the host and requires
+> `KIZUNA_AUTHORIZATION`. To expose the node, put a TLS-terminating reverse proxy
+> in front — the proxy is not a substitute for the secret. Do not expose an
+> unprotected node, commit credentials, or enable HTTP/local-file sources for
+> untrusted clients without reviewing their access boundaries.
 
 ### 3. Choose a runtime
 
@@ -169,6 +177,48 @@ Use [config.example.toml](./config.example.toml) as the complete reference. By d
 | `KIZUNA_LOG_LEVEL` | `logging.level` |
 | `KIZUNA_TLS_ENABLED` | `server.tls.enabled` |
 | `KIZUNA_METRICS_ENABLED` | `metrics.prometheus.enabled` |
+
+### Authorization (required)
+
+`server.authorization` is the shared secret every REST and WebSocket client must
+send. There is **no default**. Startup fails, with a message that never echoes the
+secret, if the value is:
+
+- missing or empty,
+- only whitespace, or
+- a known placeholder such as `youshallnotpass`, `password`, `changeme`,
+  `secret`, or the example values `replace-with-your-strong-secret` /
+  `replace-with-your-own-long-random-secret`.
+
+This applies on **every** bind address, including `127.0.0.1`: a guessable
+credential is reachable by any local process or container port-forward, so it is
+never safe.
+
+Prefer injecting the secret from the environment (a Docker/Kubernetes secret) so
+it never lands in `config.toml`:
+
+```bash
+export KIZUNA_AUTHORIZATION="$(openssl rand -hex 32)"
+```
+
+An empty `KIZUNA_AUTHORIZATION` is a hard error rather than a silent fallback:
+the secret can never be accidentally cleared by an exported-but-empty variable.
+
+### Reverse proxy and network exposure
+
+Put KizunaLink behind a TLS-terminating reverse proxy (Caddy, nginx, Traefik)
+and terminate HTTPS/WSS there, or enable `server.tls` to serve TLS directly.
+
+A reverse proxy is **not** a substitute for the authorization secret:
+
+- Bind the backend to a private address (`127.0.0.1`, a private interface, or a
+  container network) so the node's port is not directly reachable, and always set
+  a strong `server.authorization`.
+- If the proxy adds or strips authentication, it must preserve the
+  `Authorization` header end-to-end (or inject the node's secret itself), and it
+  must not forward client-supplied `Authorization` values unfiltered.
+- `/health` is unauthenticated by design (for orchestrator probes). Do not expose
+  it to the public internet; restrict it at the proxy or bind locally.
 
 ### Source access and regional routing
 

@@ -93,6 +93,29 @@ async fn wrong_password_rejected() {
 }
 
 #[tokio::test]
+async fn empty_authorization_header_rejected() {
+    // A supplied-but-empty Authorization header is *wrong credentials*, not a
+    // missing header: it must be 403 (and crucially never authenticate). This
+    // guards the fix that removed the empty-token default from config.
+    let app = test_support::test_router(test_support::test_state());
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .uri("/v4/info")
+                .header(header::AUTHORIZATION, "")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        resp.status(),
+        StatusCode::FORBIDDEN,
+        "empty credentials must not authenticate"
+    );
+}
+
+#[tokio::test]
 async fn version_endpoint_returns_headers_and_version() {
     let app = test_support::test_router(test_support::test_state());
     let resp = app

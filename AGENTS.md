@@ -24,11 +24,15 @@ vars render as `unknown`/`0`, so local builds are unaffected.
 The binary loads `config.toml` from the current working directory. Set
 `KIZUNA_CONFIG_PATH` to an absolute path to load a config from elsewhere (useful
 when the working directory is read-only or shared). Copy
-`config.example.toml` to `config.toml`. The example binds `0.0.0.0` and keeps the
-default `authorization = "youshallnotpass"`, which config validation rejects when
-binding non-loopback — set a real secret or `KIZUNA_AUTHORIZATION`, or bind
-`127.0.0.1`. Secrets are overridable via `KIZUNA_*` env vars (list in
-`kizunalink/kizuna-voice/config/mod.rs`), which is how `docker-compose.yml` injects them.
+`config.example.toml` to `config.toml`.
+
+`server.authorization` has **no default** and must be set. Startup fails if it is
+missing, empty, or a known placeholder (e.g. `youshallnotpass`), on **any** bind
+address including loopback. Set a strong, unique secret — preferably via
+`KIZUNA_AUTHORIZATION` rather than the file. Secrets are overridable via
+`KIZUNA_*` env vars (list in `kizunalink/kizuna-voice/config/mod.rs`), which is
+how `docker-compose.yml` injects them. A reverse proxy is not a substitute for
+the secret: bind to a private address and keep the secret set.
 
 ## Testing against a running node
 

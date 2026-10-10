@@ -9,7 +9,10 @@
 [server]
 address = "0.0.0.0"
 port = 2333
-authorization = "youshallnotpass"
+# REQUIRED. There is no default. The server refuses to start if this is missing,
+# empty, or a known placeholder (e.g. "youshallnotpass"). Replace it with a
+# strong, unique secret, or omit the line and set KIZUNA_AUTHORIZATION instead.
+authorization = "replace-with-your-strong-secret"
 player_update_interval = 5        # seconds
 stats_interval = 30               # seconds
 websocket_ping_interval = 20      # seconds

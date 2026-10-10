@@ -466,14 +466,17 @@ No lock held across an `await` in a way that can deadlock was found.
 
 - **REST:** `middleware.rs::check_auth` — constant-time (`subtle::ConstantTimeEq`), **401** missing / **403** wrong, matching Lavalink. ✅
 - **WebSocket:** `ws/mod.rs::websocket_handler` — constant-time, correct header handling, upgraded only after auth. ✅
-- **Default password:** `config.example.toml` ships `address="0.0.0.0"` + `authorization="youshallnotpass"`. **A startup guard exists and refuses this combination:**
-  ```rust
-  // config/mod.rs::validate()
-  if self.server.authorization == "youshallnotpass"
-      && self.server.address.parse::<IpAddr>().map(|ip| !ip.is_loopback()).unwrap_or(true)
-  { return Err("server.authorization must be changed from the default when binding publicly") }
-  ```
-  ✅ **The stronger authorization guard that reportedly existed in `kizunalink-test` is present in KizunaLink today.** (Loopback-only binding with the default merely warns.) Empty password is not separately rejected — recommend also refusing empty `authorization`.
+- **Default password:** `config.example.toml` no longer ships a usable secret — it
+  places the explicitly-rejected placeholder `replace-with-your-strong-secret`.
+  There is **no serde default** for `server.authorization`; a missing value
+  deserializes to empty and fails validation. `validate()` refuses a secret that is
+  empty/whitespace OR a known placeholder (`youshallnotpass`, `password`,
+  `changeme`, `secret`, `admin`, `test`, the example value, …) on **every** bind
+  address, loopback included — a guessable credential is reachable by any local
+  process or container port-forward. Errors name a fixed label for the matched
+  placeholder and never echo the operator's real secret. Empty
+  `KIZUNA_AUTHORIZATION` is rejected in `apply_env_overrides` (no silent fallback).
+  ✅ Covered by regression tests for missing, empty, placeholder, and valid secrets.
 - **Env overrides:** `KIZUNA_AUTHORIZATION` etc. applied after TOML, malformed values fail fast. ✅ Never logged.
 
 ### SSRF (HTTP source)
@@ -806,14 +809,19 @@ Bypasses demonstrated by code inspection (no runtime exploit attempted):
 
 ### SEC-002 — Empty `authorization` is accepted
 
-**Status:** CONFIRMED · **Severity:** MEDIUM · **File:** `kizuna-voice/config/mod.rs::validate`.
+**Status:** RESOLVED · **Severity:** MEDIUM · **File:** `kizuna-voice/config/mod.rs::validate`.
 
-Behavior matrix for `authorization = ""`:
+`authorization` now has **no serde default** and `validate()` rejects a value that
+is empty/whitespace or a known placeholder on every bind address; an empty
+`KIZUNA_AUTHORIZATION` is rejected in `apply_env_overrides`. The behavior matrix
+below describes the *pre-fix* state, retained for history.
+
+Pre-fix behavior for `authorization = ""`:
 
 | Bind address | Result |
 |---|---|
 | `127.0.0.1` (loopback) | allowed (only a warning path) |
-| `0.0.0.0` / public IPv4 / public IPv6 | **allowed** — the default-password guard only matches `"youshallnotpass"`, so an **empty** token passes and a client sending an empty `authorization` header is authenticated as `ct_eq("","")` → true |
+| `0.0.0.0` / public IPv4 / public IPv6 | **allowed** — the default-password guard only matched `"youshallnotpass"`, so an **empty** token passed and a client sending an empty `authorization` header was authenticated as `ct_eq("","")` → true |
 
 **Minimal patch:** in `validate()`, `if self.server.authorization.trim().is_empty() { return Err("server.authorization must not be empty".into()) }`.
 

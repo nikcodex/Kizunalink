@@ -19,8 +19,13 @@ use crate::{
     server::AppState,
 };
 
-/// Authorization token used across tests (mirrors the config default).
-pub const AUTH_TOKEN: &str = "youshallnotpass";
+/// Authorization token used across tests.
+///
+/// Deliberately *not* the historical default: config validation rejects known
+/// placeholders on every bind address, so the harness must use a real-looking
+/// secret. Kept in one place so a future change to the token can't silently
+/// desynchronize the middleware tests from the configured value.
+pub const AUTH_TOKEN: &str = "test-suite-secret-9f2c";
 /// Default User-Id used to create sessions in integration tests.
 pub const TEST_USER_ID: u64 = 424242;
 
@@ -29,9 +34,11 @@ pub const TEST_USER_ID: u64 = 424242;
 /// Source managers are real but inert (never queried), so tests are hermetic.
 pub fn test_state() -> Arc<AppState> {
     // `AppConfig` parses from TOML (no `Default` impl); every `ServerConfig`
-    // field carries a serde default, so an empty `[server]` is a valid config.
+    // field except `authorization` carries a serde default, so an explicit
+    // `[server]` with a real secret is required to satisfy validation.
     let config: kizunalink::config::AppConfig =
-        toml::from_str("[server]").expect("minimal config parses");
+        toml::from_str("[server]\nauthorization = \"test-suite-secret-9f2c\"\n")
+            .expect("minimal config parses");
 
     let source_manager = Arc::new(kizunalink::media::sources::SourceManager::new(&config));
     let lyrics_manager = Arc::new(kizunalink::media::lyrics::LyricsManager::new(&config));
