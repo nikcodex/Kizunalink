@@ -4,16 +4,17 @@
 use std::sync::Arc;
 
 use axum::{
-    extract::{Path, State},
+    extract::State,
     http::StatusCode,
     response::{IntoResponse, Json},
 };
 
+use crate::api::rest::json::ApiPath;
 use crate::{protocol, server::AppState};
 
 /// DELETE /v4/sessions/{sessionId}/players/{guildId}
 pub async fn destroy_player(
-    Path((session_id, guild_id)): Path<(
+    ApiPath((session_id, guild_id)): ApiPath<(
         kizunalink::common::types::SessionId,
         kizunalink::common::types::GuildId,
     )>,

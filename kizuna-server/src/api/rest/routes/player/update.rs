@@ -4,11 +4,12 @@
 use std::sync::Arc;
 
 use axum::{
-    extract::{Path, Query, State},
+    extract::State,
     http::StatusCode,
     response::{IntoResponse, Json},
 };
 
+use crate::api::rest::json::{ApiJson, ApiPath, ApiQuery};
 use crate::{
     player::{PlayerContext, PlayerUpdate, VoiceConnectionState},
     protocol::{self},
@@ -20,13 +21,13 @@ use crate::{
 /// Creates the guild player when its session exists. Returns `404 Not Found` for
 /// an unknown session and rejects invalid filter or partial voice-state updates.
 pub async fn update_player(
-    Path((session_id, guild_id)): Path<(
+    ApiPath((session_id, guild_id)): ApiPath<(
         kizunalink::common::types::SessionId,
         kizunalink::common::types::GuildId,
     )>,
-    Query(params): Query<std::collections::HashMap<String, String>>,
+    ApiQuery(params): ApiQuery<std::collections::HashMap<String, String>>,
     State(state): State<Arc<AppState>>,
-    Json(body): Json<PlayerUpdate>,
+    ApiJson(body): ApiJson<PlayerUpdate>,
 ) -> impl IntoResponse {
     tracing::debug!(
         "PATCH /v4/sessions/{}/players/{}: track={}, encoded_track={}, identifier={}, voice_update={}, filters_update={}",
@@ -430,9 +431,9 @@ async fn start_playback(
 
 /// PATCH /v4/sessions/{sessionId}
 pub async fn update_session(
-    Path(session_id): Path<kizunalink::common::types::SessionId>,
+    ApiPath(session_id): ApiPath<kizunalink::common::types::SessionId>,
     State(state): State<Arc<AppState>>,
-    Json(body): Json<protocol::SessionUpdate>,
+    ApiJson(body): ApiJson<protocol::SessionUpdate>,
 ) -> impl IntoResponse {
     tracing::debug!("PATCH /v4/sessions/{}: body={:?}", session_id, body);
 

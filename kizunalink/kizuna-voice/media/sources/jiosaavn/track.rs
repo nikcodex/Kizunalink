@@ -77,7 +77,7 @@ impl PlayableTrack for JioSaavnTrack {
                     if let Err(e) = std::thread::Builder::new()
                         .name(format!("jiosaavn-decoder-{}", url))
                         .spawn(move || {
-                            if let Err(e) = processor.run() {
+                            if let Err(e) = processor.run_guarded() {
                                 tracing::error!(
                                     "JioSaavn audio processor error for {}: {}",
                                     url,

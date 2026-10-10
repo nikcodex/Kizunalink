@@ -279,7 +279,7 @@ impl PlayableTrack for HttpTrack {
                     let spawn_result = std::thread::Builder::new()
                         .name(format!("http-decoder-{}", url))
                         .spawn(move || {
-                            if let Err(e) = processor.run() {
+                            if let Err(e) = processor.run_guarded() {
                                 error!("HTTP track audio processor error: {e}");
                             }
                         });

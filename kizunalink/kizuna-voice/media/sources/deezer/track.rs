@@ -310,7 +310,7 @@ impl PlayableTrack for DeezerTrack {
                 let spawn_res = std::thread::Builder::new()
                     .name(format!("deezer-decoder-{}", track_id_for_log))
                     .spawn(move || {
-                        if let Err(e) = processor.run() {
+                        if let Err(e) = processor.run_guarded() {
                             error!(
                                 "DeezerTrack audio processor error for {}: {}",
                                 track_id_for_thread, e

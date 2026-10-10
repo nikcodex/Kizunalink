@@ -5,6 +5,10 @@ services:
       # Mounted into WORKDIR (/app) so AppConfig::load() finds it. Override
       # secrets via KIZUNA_* env vars instead of baking them into the file.
       - ./config.toml:/app/config.toml:ro
+      # The default config writes ./logs/kizunalink.log. The image root is
+      # `read_only`, so without a writable mount that file log silently fails;
+      # a named volume keeps logs across restarts and leaves the root FS immutable.
+      - kizuna-logs:/app/logs
     ports:
       - "2333:2333"
     restart: unless-stopped
@@ -15,3 +19,6 @@ services:
     read_only: true
     tmpfs:
       - /tmp
+
+volumes:
+  kizuna-logs:

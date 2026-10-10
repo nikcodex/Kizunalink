@@ -6,12 +6,13 @@ use std::sync::Arc;
 use axum::{
     Json,
     body::Body,
-    extract::{Path, Query, State},
+    extract::State,
     http::{HeaderMap, StatusCode, header},
     response::IntoResponse,
 };
 use serde::Deserialize;
 
+use crate::api::rest::json::{ApiPath, ApiQuery};
 use crate::{
     server::AppState,
     sources::youtube::clients::common::{resolve_format_url, select_best_audio_format},
@@ -42,7 +43,7 @@ pub async fn get_youtube_info(State(state): State<Arc<AppState>>) -> impl IntoRe
 }
 
 pub async fn youtube_oauth_refresh(
-    Path(refresh_token): Path<String>,
+    ApiPath(refresh_token): ApiPath<String>,
     State(state): State<Arc<AppState>>,
 ) -> impl IntoResponse {
     tracing::info!("GET /youtube/oauth: refreshing configured token");
@@ -93,8 +94,8 @@ pub struct StreamQuery {
 }
 
 pub async fn youtube_stream(
-    Path(video_id): Path<String>,
-    Query(params): Query<StreamQuery>,
+    ApiPath(video_id): ApiPath<String>,
+    ApiQuery(params): ApiQuery<StreamQuery>,
     headers: HeaderMap,
     State(state): State<Arc<AppState>>,
 ) -> impl IntoResponse {

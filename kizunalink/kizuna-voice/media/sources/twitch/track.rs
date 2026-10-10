@@ -270,7 +270,7 @@ impl PlayableTrack for TwitchTrack {
                     if let Err(e) = std::thread::Builder::new()
                         .name(format!("twitch-decoder-{}", url_for_name))
                         .spawn(move || {
-                            if let Err(e) = processor.run() {
+                            if let Err(e) = processor.run_guarded() {
                                 tracing::error!(
                                     "Twitch HLS processor error for {}: {}",
                                     url_for_log,

@@ -413,3 +413,65 @@ async fn players_list_returns_bare_array() {
         "empty session should have 0 players"
     );
 }
+
+async fn post(uri: &str, body: &str) -> (StatusCode, serde_json::Value) {
+    let app = test_support::test_router(test_support::test_state());
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(uri)
+                .header(header::AUTHORIZATION, AUTH_TOKEN)
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(body.to_owned()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let status = resp.status();
+    let bytes = resp.into_body().collect().await.unwrap().to_bytes();
+    let body = serde_json::from_slice(&bytes).unwrap_or(serde_json::Value::Null);
+    (status, body)
+}
+
+/// A malformed JSON body must still answer with the project's JSON error shape,
+/// not axum's default `text/plain` rejection.
+#[tokio::test]
+async fn malformed_json_body_uses_json_error_shape() {
+    let (status, body) = post("/v4/decodetracks", "{ this is not json").await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(body["status"], 400);
+    assert_eq!(body["error"], "Bad Request");
+    assert!(
+        body["message"].as_str().is_some_and(|m| !m.is_empty()),
+        "message missing: {body}"
+    );
+    assert!(body["path"].as_str().is_some(), "path missing: {body}");
+    assert!(
+        body["timestamp"].as_u64().is_some(),
+        "timestamp missing: {body}"
+    );
+}
+
+/// A query string that fails to deserialize (missing required `identifier`) must
+/// also use the JSON error shape.
+#[tokio::test]
+async fn invalid_query_uses_json_error_shape() {
+    let (status, body) = get("/v4/loadtracks").await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(body["status"], 400);
+    assert_eq!(body["error"], "Bad Request");
+    assert_eq!(body["path"], "/v4/loadtracks");
+    assert!(body["message"].as_str().is_some_and(|m| !m.is_empty()));
+}
+
+/// Unknown paths must answer with the JSON error contract, not an empty 404 body.
+#[tokio::test]
+async fn unknown_route_uses_json_error_shape() {
+    let (status, body) = get("/v4/does-not-exist").await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(body["status"], 404);
+    assert_eq!(body["error"], "Not Found");
+    assert_eq!(body["path"], "/v4/does-not-exist");
+    assert!(body["timestamp"].as_u64().is_some());
+}

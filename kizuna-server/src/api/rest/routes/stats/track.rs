@@ -4,11 +4,12 @@
 use std::sync::Arc;
 
 use axum::{
-    extract::{Query, State},
+    extract::State,
     http::StatusCode,
     response::{IntoResponse, Json},
 };
 
+use crate::api::rest::json::{ApiJson, ApiQuery};
 use crate::{
     protocol,
     protocol::{models::*, tracks::Track},
@@ -17,7 +18,7 @@ use crate::{
 
 /// GET /v4/loadtracks?identifier=...
 pub async fn load_tracks(
-    Query(params): Query<LoadTracksQuery>,
+    ApiQuery(params): ApiQuery<LoadTracksQuery>,
     State(state): State<Arc<AppState>>,
 ) -> impl IntoResponse {
     let identifier = params.identifier;
@@ -50,7 +51,7 @@ pub async fn load_tracks(
 }
 
 pub async fn load_search(
-    Query(params): Query<LoadSearchQuery>,
+    ApiQuery(params): ApiQuery<LoadSearchQuery>,
     State(state): State<Arc<AppState>>,
 ) -> impl IntoResponse {
     let query = params.query;
@@ -97,7 +98,7 @@ pub async fn load_search(
     }
 }
 
-pub async fn decode_track(Query(params): Query<DecodeTrackQuery>) -> impl IntoResponse {
+pub async fn decode_track(ApiQuery(params): ApiQuery<DecodeTrackQuery>) -> impl IntoResponse {
     let encoded = params.encoded_track.clone().or(params.track);
     tracing::info!(
         "GET /v4/decodetrack: encoded_track_bytes={}",
@@ -128,7 +129,7 @@ pub async fn decode_track(Query(params): Query<DecodeTrackQuery>) -> impl IntoRe
     }
 }
 
-pub async fn decode_tracks(Json(body): Json<protocol::EncodedTracks>) -> impl IntoResponse {
+pub async fn decode_tracks(ApiJson(body): ApiJson<protocol::EncodedTracks>) -> impl IntoResponse {
     let tracks_input = body.0;
     tracing::info!("POST /v4/decodetracks: count={}", tracks_input.len());
 

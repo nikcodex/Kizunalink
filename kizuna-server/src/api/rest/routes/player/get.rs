@@ -4,16 +4,17 @@
 use std::sync::Arc;
 
 use axum::{
-    extract::{Path, State},
+    extract::State,
     http::StatusCode,
     response::{IntoResponse, Json},
 };
 
+use crate::api::rest::json::ApiPath;
 use crate::{protocol, server::AppState};
 
 /// GET /v4/sessions/{sessionId}/players
 pub async fn get_players(
-    Path(session_id): Path<kizunalink::common::types::SessionId>,
+    ApiPath(session_id): ApiPath<kizunalink::common::types::SessionId>,
     State(state): State<Arc<AppState>>,
 ) -> impl IntoResponse {
     tracing::info!("GET /v4/sessions/{}/players", session_id);
@@ -50,7 +51,7 @@ pub async fn get_players(
 
 /// GET /v4/sessions/{sessionId}
 pub async fn get_session(
-    Path(session_id): Path<kizunalink::common::types::SessionId>,
+    ApiPath(session_id): ApiPath<kizunalink::common::types::SessionId>,
     State(state): State<Arc<AppState>>,
 ) -> impl IntoResponse {
     tracing::info!("GET /v4/sessions/{}", session_id);
@@ -77,7 +78,7 @@ pub async fn get_session(
 }
 
 pub async fn get_player(
-    Path((session_id, guild_id)): Path<(
+    ApiPath((session_id, guild_id)): ApiPath<(
         kizunalink::common::types::SessionId,
         kizunalink::common::types::GuildId,
     )>,

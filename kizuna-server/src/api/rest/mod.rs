@@ -9,6 +9,7 @@ use axum::{
     routing::{get, post},
 };
 
+pub mod json;
 pub mod middleware;
 pub mod routes;
 
@@ -77,7 +78,15 @@ pub fn router(state: Arc<AppState>) -> Router {
             "/youtube/oauth/{refresh_token}",
             get(youtube::youtube_oauth_refresh),
         )
+        .fallback(rest_fallback)
         .layer(from_fn_with_state(state.clone(), check_auth))
         .layer(from_fn(add_response_headers))
         .with_state(state)
+}
+
+/// Any unmatched path returns the same JSON error contract as the other routes
+/// instead of axum's empty `404`, so clients can parse every failure uniformly.
+async fn rest_fallback(uri: axum::http::Uri) -> axum::response::Response {
+    let path = uri.path_and_query().map(|pq| pq.as_str()).unwrap_or("/");
+    json::error_response(axum::http::StatusCode::NOT_FOUND, "Not Found", path)
 }
