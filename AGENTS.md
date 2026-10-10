@@ -36,9 +36,12 @@ curl -H "Authorization: test-secret-123" http://127.0.0.1:2333/v4/info
 ```
 
 `/health` is unauthenticated; `/v4/*` and `/metrics` require the `Authorization`
-header (401 = missing, 403 = wrong). WebSocket handshake needs `Authorization`,
-`User-Id`, and optionally `Client-Name` / `Session-Id` (resumption). `python3` +
-`pip install websockets` works for protocol tests.
+header (401 = missing, 403 = wrong). The WebSocket handshake requires
+`Authorization`; `User-Id` (numeric Discord user id) and `Client-Name` are
+optional. A connection without a valid `User-Id` is accepted, but voice updates
+are dropped (`opcodes.rs` logs and ignores them), so real clients must send it.
+`Session-Id` enables resumption. `python3` + `pip install websockets` works for
+protocol tests.
 
 ## Layout
 
