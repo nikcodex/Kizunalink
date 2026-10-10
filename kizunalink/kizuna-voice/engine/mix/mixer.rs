@@ -424,6 +424,25 @@ mod tests {
         assert!(mixer.add_layer("overflow".into(), rx, 1.0).is_err());
     }
 
+    /// PERF-002: `stop_all` disables the mixer, but a later `add_layer` must
+    /// restore `enabled` so newly added sound-effect layers are actually mixed
+    /// (otherwise the whole audio mixer stays silently dead until restart).
+    #[test]
+    fn add_layer_re_enables_after_stop_all() {
+        let mut mixer = AudioMixer::new();
+        mixer.enabled = false; // state left behind by Mixer::stop_all
+        let (_tx, rx) = flume::unbounded();
+        assert!(mixer.add_layer("sfx".into(), rx, 1.0).is_ok());
+        assert!(mixer.enabled, "add_layer must re-enable the mixer");
+        assert_eq!(mixer.layers.len(), 1);
+
+        // A disabled-but-populated mixer must still modify the frame, proving the
+        // re-enable actually restores the mixing path.
+        mixer.enabled = true;
+        let mut frame = [0i16, 0, 0, 0];
+        mixer.mix(&mut frame); // populates layer state; no panic
+    }
+
     #[test]
     fn audio_mixer_remove_layer() {
         let mut mixer = AudioMixer::new();

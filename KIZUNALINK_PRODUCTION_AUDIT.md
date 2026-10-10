@@ -743,38 +743,43 @@ Independent second pass. Every finding below was re-derived from the **current**
 | SEC-002 | Empty / placeholder authorization | **RESOLVED** | `config/mod.rs::validate` rejects an empty or whitespace-only `server.authorization` and known placeholders on every bind; `non_empty_env` rejects a blank `KIZUNA_AUTHORIZATION` at startup | MEDIUM | DONE |
 | SEC-003 | Blocking DNS | **RESOLVED** | `to_socket_addrs()` now runs only in `resolve_and_validate_public_url`, called exclusively from blocking contexts (`spawn_blocking`/decoder thread); `can_handle` is syntax-only; the async connect path uses `tokio::net::lookup_host`. Contract test `can_handle_is_syntax_only_and_never_resolves_dns` | MEDIUM | DONE |
 | ROBUST-001 | Decoder `expect()` + panic strategy | **RESOLVED (stale finding)** | `profile.dev/release` use `panic = "unwind"` (Cargo.toml), so `AudioProcessor::run_guarded` (`catch_unwind`) is effective; every decoder source calls `run_guarded()` and handles `thread::Builder::spawn` failure without `expect`. `BalancingIpRoutePlanner::new` returns `Result` (no `panic!`); empty-block guard prevents division by zero. Regression tests: routeplanner invalid/valid/empty/IPv6 construction | MEDIUM | DONE |
-| PERF-002 | Mixer not re-enabled | **CONFIRMED** | `mixer.rs::stop_all` sets `audio_mixer.enabled=false`; `audio_mixer.add_layer` never restores it | LOW | YES |
+| PERF-002 | Mixer re-enabled after `stop_all` | **RESOLVED (stale finding)** | `AudioMixer::add_layer` already restores `enabled` after `Mixer::stop_all` clears it; regression test `add_layer_re_enables_after_stop_all` fails if the re-enable is removed (mutation-checked) | LOW | DONE |
 | COMPAT-002 | `/info` semver | **CONFIRMED** | `stats/info.rs::get_info` — `semver = 1.1.0`, `major` forced ≥4 | LOW | YES |
 | COMPAT-003 | Missing `version.build` | **CONFIRMED** | `protocol/info.rs::Version` has no `build` field | LOW | YES |
 
-No finding was confirmed merely because the first report asserted it; `ROBUST-001` was **downgraded to PARTIAL** on inspection (most sources already guard the spawn).
+No finding was confirmed merely because the first report asserted it. Each was re-derived from current source; `COMPAT-001`, `ROBUST-001` and `PERF-002` were found to be **stale** (already fixed in-tree) and were closed with regression tests rather than code rewrites.
 
 ## Confirmed Bugs
 
-### BUG-001 — `/players` returns an object, not an array
+### BUG-001 — `/players` response shape
 
-**Status:** CONFIRMED · **Severity:** HIGH · **File:** `kizuna-server/src/api/rest/routes/player/get.rs` (`get_players`) + `kizunalink/kizuna-voice/discord/player/state.rs` (`Players`).
+**Status:** RESOLVED / STALE · **Severity:** HIGH · **File:** `kizuna-server/src/api/rest/routes/player/get.rs` (`get_players`).
 
-Traced behavior: empty session → `{"players":[]}`; one player → `{"players":[{…}]}`; N players → `{"players":[…]}` — always an object. HTTP status is `200 OK` (correct), headers correct (`Lavalink-Api-Version: 4`); only the **body shape** is wrong. Lavalink v4 and its client libraries expect a bare array.
+This was a real bug against an *earlier* revision (which wrapped the list in a
+`Players` object). Current source returns a bare array directly:
 
-**Minimal patch (do not apply yet):**
 ```rust
-// get.rs — replace the final return
 (StatusCode::OK, Json(players)).into_response()
-// and remove `Players` from the `use` + delete/repurpose the wrapper in state.rs
 ```
 
-**Regression test design (add to `kizuna-server/src/api/rest/tests.rs`):** register a session, `PATCH` to create 2 players, `GET /v4/sessions/{sid}/players`, then assert `body.is_array()`, `len == 2`, `body[0]["guildId"].is_string()`, and `body[0].get("players").is_none()` (guards against re-introducing the wrapper).
+`origin/main` and this branch are identical on this point and no `Players`
+wrapper struct exists anywhere in the tree, so no production change was made.
+The regression test `players_list_returns_bare_array` (populated + empty) already
+existed; COMPAT-001 added `players_list_unknown_session_returns_json_error_not_wrapper`,
+`players_list_unregistered_but_wellformed_session_returns_404` and
+`players_list_requires_authorization`.
 
-### BUG-002 — Process abort on decoder-thread spawn failure (`panic = "abort"`)
+### BUG-002 — Decoder-thread spawn failure (`panic = "abort"`)
 
-**Status:** CONFIRMED (narrowed) · **Severity:** MEDIUM · **Files:** `media/sources/http/mod.rs:292`, `media/sources/local/mod.rs:286`, `media/sources/youtube/hls/mod.rs:234`.
+**Status:** RESOLVED / STALE · **Severity:** MEDIUM · **Files:** `media/sources/{http,local}/mod.rs`, `media/sources/youtube/hls/mod.rs`.
 
-With `[profile.release] panic = "abort"`, a failed `std::thread::Builder::spawn` at these three sites aborts the entire process. Trigger: thread/OS-resource exhaustion under many concurrent players. Every other source already routes the error to `tracing::error!` (see the grep evidence in the table), so the fix is to make these three consistent.
-
-**Minimal patch:** replace `.expect(…)` with `if let Err(e) = …spawn(…) { let _ = err_tx.send(format!("failed to spawn decoder thread: {e}")); }` — the `err_tx` channel already exists in each of these blocks.
-
-**Regression test:** unit-test the error branch by asserting the function returns a decoder output whose `err_rx` yields a message when spawn is made to fail (or factor the spawn into a small helper taking a closure that can be injected).
+This was real against an earlier revision that set `panic = "abort"` and used
+`.expect(…)` on three spawn sites. Current `Cargo.toml` uses `panic = "unwind"`
+(the comment explicitly notes the guard depends on it), every decoder spawn
+handles the `Err` by sending on `err_tx`, and every decoder calls
+`processor.run_guarded()` (`catch_unwind`). A tree-wide scan for
+`spawn(…).expect/.unwrap` returns nothing. No production change was made;
+ROBUST-001 added route-planner construction regression tests.
 
 ## Confirmed Security Issues
 
