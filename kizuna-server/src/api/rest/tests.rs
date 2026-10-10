@@ -93,6 +93,29 @@ async fn wrong_password_rejected() {
 }
 
 #[tokio::test]
+async fn empty_authorization_header_rejected() {
+    // A supplied-but-empty Authorization header is *wrong credentials*, not a
+    // missing header: it must be 403 (and crucially never authenticate). This
+    // guards the fix that removed the empty-token default from config.
+    let app = test_support::test_router(test_support::test_state());
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .uri("/v4/info")
+                .header(header::AUTHORIZATION, "")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        resp.status(),
+        StatusCode::FORBIDDEN,
+        "empty credentials must not authenticate"
+    );
+}
+
+#[tokio::test]
 async fn version_endpoint_returns_headers_and_version() {
     let app = test_support::test_router(test_support::test_state());
     let resp = app
@@ -128,6 +151,16 @@ async fn info_endpoint_returns_lavalink_v4_schema() {
         body["version"]["major"]
             .as_u64()
             .is_some_and(|major| major >= 4)
+    );
+    // COMPAT-002: `semver` must be derived from the same (protocol) major that is
+    // reported, not the crate's own release version.
+    assert_eq!(
+        body["version"]["semver"]
+            .as_str()
+            .and_then(|s| s.split('.').next())
+            .and_then(|s| s.parse::<u64>().ok()),
+        body["version"]["major"].as_u64(),
+        "version.semver major must match version.major"
     );
     assert!(
         body["version"].get("build").is_some(),
@@ -412,4 +445,118 @@ async fn players_list_returns_bare_array() {
         0,
         "empty session should have 0 players"
     );
+}
+
+/// COMPAT-001: the collection endpoint must match the official Lavalink v4
+/// contract (`docs/api/rest.md`, "Get Players"): a bare `Player[]` array on 200,
+/// and the project's JSON error object on an unknown session — never a
+/// `{"players":[...]}` wrapper, and never a bare 404.
+#[tokio::test]
+async fn players_list_unknown_session_returns_json_error_not_wrapper() {
+    let app = test_support::test_router(test_support::test_state());
+    let missing = kizunalink::common::types::SessionId::generate();
+    let (status, body) = request_on(
+        app,
+        "GET",
+        &format!("/v4/sessions/{}/players", missing),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert!(body.is_object(), "error body must be a JSON object");
+    assert_eq!(body["status"], 404);
+    assert_eq!(body["error"], "Not Found");
+    assert_eq!(body["path"], format!("/v4/sessions/{}/players", missing));
+    assert!(body["timestamp"].as_u64().is_some());
+    // A wrapper would surface as a `players` field on the object; an error must not.
+    assert!(body.get("players").is_none());
+}
+
+/// Auth is enforced on the players collection like every other `/v4` path.
+#[tokio::test]
+async fn players_list_requires_authorization() {
+    let app = test_support::test_router(test_support::test_state());
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .uri("/v4/sessions/abc/players")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+}
+
+/// A structurally valid session id that is not registered must 404 with the JSON
+/// error shape (path extractor succeeds; lookup fails).
+#[tokio::test]
+async fn players_list_unregistered_but_wellformed_session_returns_404() {
+    let app = test_support::test_router(test_support::test_state());
+    let (status, body) =
+        request_on(app, "GET", "/v4/sessions/zzzzzzzzzzzzzzzzzz/players", None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(body["error"], "Not Found");
+}
+
+async fn post(uri: &str, body: &str) -> (StatusCode, serde_json::Value) {
+    let app = test_support::test_router(test_support::test_state());
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(uri)
+                .header(header::AUTHORIZATION, AUTH_TOKEN)
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(body.to_owned()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let status = resp.status();
+    let bytes = resp.into_body().collect().await.unwrap().to_bytes();
+    let body = serde_json::from_slice(&bytes).unwrap_or(serde_json::Value::Null);
+    (status, body)
+}
+
+/// A malformed JSON body must still answer with the project's JSON error shape,
+/// not axum's default `text/plain` rejection.
+#[tokio::test]
+async fn malformed_json_body_uses_json_error_shape() {
+    let (status, body) = post("/v4/decodetracks", "{ this is not json").await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(body["status"], 400);
+    assert_eq!(body["error"], "Bad Request");
+    assert!(
+        body["message"].as_str().is_some_and(|m| !m.is_empty()),
+        "message missing: {body}"
+    );
+    assert!(body["path"].as_str().is_some(), "path missing: {body}");
+    assert!(
+        body["timestamp"].as_u64().is_some(),
+        "timestamp missing: {body}"
+    );
+}
+
+/// A query string that fails to deserialize (missing required `identifier`) must
+/// also use the JSON error shape.
+#[tokio::test]
+async fn invalid_query_uses_json_error_shape() {
+    let (status, body) = get("/v4/loadtracks").await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(body["status"], 400);
+    assert_eq!(body["error"], "Bad Request");
+    assert_eq!(body["path"], "/v4/loadtracks");
+    assert!(body["message"].as_str().is_some_and(|m| !m.is_empty()));
+}
+
+/// Unknown paths must answer with the JSON error contract, not an empty 404 body.
+#[tokio::test]
+async fn unknown_route_uses_json_error_shape() {
+    let (status, body) = get("/v4/does-not-exist").await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(body["status"], 404);
+    assert_eq!(body["error"], "Not Found");
+    assert_eq!(body["path"], "/v4/does-not-exist");
+    assert!(body["timestamp"].as_u64().is_some());
 }

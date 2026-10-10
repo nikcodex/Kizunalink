@@ -65,6 +65,11 @@ impl TapeEffect {
         self.tape.is_some() || (self.current_rate - 1.0).abs() > 0.001
     }
 
+    /// Current tape playback rate (1.0 = normal, 0.01 = stopped).
+    pub fn rate(&self) -> f32 {
+        self.current_rate
+    }
+
     pub fn is_ramping(&self) -> bool {
         self.tape.is_some()
     }

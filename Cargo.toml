@@ -36,7 +36,11 @@ codegen-units = 256
 [profile.release]
 lto = "fat"
 codegen-units = 1
-panic = "abort"
+# Keep unwinding: decoder threads guard their run loop with `catch_unwind`
+# (`AudioProcessor::run_guarded`) so a panic on one bad stream fails that track
+# instead of aborting the whole node and dropping every voice session. With
+# `panic = "abort"` the guard is dead code and any fault is fatal.
+panic = "unwind"
 opt-level = 3
 strip = true
 

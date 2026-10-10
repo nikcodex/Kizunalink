@@ -44,12 +44,40 @@ pub async fn handle_op(
         IncomingMessage::Stop { guild_id } => {
             if let Some(player_arc) = session.players.get(&guild_id).map(|kv| kv.value().clone()) {
                 let mut player = player_arc.write().await;
-                player.stop_track();
+                let session_ctx: &dyn kizunalink::common::server_hooks::SessionContext =
+                    session.as_ref();
+                // Emit `TrackEnd: Stopped` for an active track. The old
+                // `player.stop_track()` aborted the monitor task before it could
+                // emit anything, so clients never saw the track end.
+                kizunalink::discord::player::manager::stop_playback(&mut player, session_ctx).await;
             }
             Ok(())
         }
         IncomingMessage::Destroy { guild_id } => {
             session.destroy_player(&guild_id).await;
+            Ok(())
+        }
+        IncomingMessage::ConfigureResuming { key, timeout } => {
+            // `timeout` of 0 disables resuming. Lavalink's optional `key` is not
+            // supported by this node (sessions resume by id); warn so operators
+            // notice clients that rely on it.
+            if key.is_some() {
+                tracing::warn!(
+                    "configureResuming: custom resume keys are not supported; \
+                     sessions resume by session id. Ignoring key for session={session_id}."
+                );
+            }
+            session
+                .resumable
+                .store(timeout > 0, std::sync::atomic::Ordering::Relaxed);
+            session
+                .resume_timeout
+                .store(timeout, std::sync::atomic::Ordering::Relaxed);
+            tracing::info!(
+                "configureResuming: resuming={}, timeout={}s for session={session_id}",
+                timeout > 0,
+                timeout
+            );
             Ok(())
         }
     }

@@ -237,6 +237,9 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-deny
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit
       - name: cargo deny check advisories
         run: |
           set -o pipefail
@@ -257,4 +260,17 @@ jobs:
           if [ -f /tmp/deny.log ]; then
             grep -vE "^\s*(Fetching|Advancing|Configuration)" /tmp/deny.log | head -c 60000 | tr '\n' '~' | sed 's/~/ /g' > /tmp/tail.txt
             echo "::error file=deny.log,line=1::$(cat /tmp/tail.txt)"
+          fi
+      # cargo-deny silently skips advisories that only constrain
+      # `affected.functions` (no floor/ceiling in [versions]); cargo-audit does
+      # not, so it is the authoritative gate. Ignores mirror deny.toml and live
+      # in .cargo/audit.toml.
+      - name: cargo audit
+        run: cargo audit 2>&1 | tee /tmp/audit.log
+      - name: Surface audit failure
+        if: failure()
+        run: |
+          if [ -f /tmp/audit.log ]; then
+            grep -iE "vulnerab|RUSTSEC|Crate:|Title:" /tmp/audit.log | head -c 60000 | tr '\n' '~' > /tmp/tail.txt
+            echo "::error file=audit.log,line=1::$(cat /tmp/tail.txt)"
           fi

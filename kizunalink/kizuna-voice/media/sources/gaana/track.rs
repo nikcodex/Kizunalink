@@ -98,7 +98,7 @@ impl PlayableTrack for GaanaTrack {
                         if let Err(e) = std::thread::Builder::new()
                             .name(format!("gaana-decoder-{}", track_id_for_log))
                             .spawn(move || {
-                                if let Err(e) = processor.run() {
+                                if let Err(e) = processor.run_guarded() {
                                     tracing::error!(
                                         "GaanaTrack audio processor error for {}: {}",
                                         track_id_for_log,

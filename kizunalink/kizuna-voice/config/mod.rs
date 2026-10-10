@@ -41,22 +41,45 @@ pub struct AppConfig {
 }
 
 impl AppConfig {
-    /// The `log_println!` lines here intentionally write to the console before the
-    /// tracing subscriber exists (and mirror to the log file once it does) — hence the
-    /// local N05 `print_stdout` allow.
-    #[allow(clippy::print_stdout)]
-    pub async fn load() -> AnyResult<Self> {
-        let config_path = if Path::new("config.toml").exists() {
-            "config.toml"
+    /// Resolve the configuration file path.
+    ///
+    /// Resolution order:
+    /// 1. `KIZUNA_CONFIG_PATH` (explicit override, must exist — fails fast)
+    /// 2. `config.toml` in the current working directory
+    /// 3. `config.example.toml` in the current working directory (with a warning)
+    ///
+    /// Operators commonly launch the node from elsewhere (systemd, a process manager,
+    /// a Docker `WORKDIR` that differs from the config mount). The environment override
+    /// removes the "must `cd` into the config directory" papercut without changing the
+    /// default behaviour.
+    fn resolve_config_path() -> String {
+        if let Ok(path) = std::env::var("KIZUNA_CONFIG_PATH") {
+            if Path::new(&path).exists() {
+                return path;
+            }
+            return path; // Let the read fail fast with a clear "No such file" error.
+        }
+
+        if Path::new("config.toml").exists() {
+            "config.toml".to_string()
         } else if Path::new("config.example.toml").exists() {
             tracing::warn!(
                 "config.toml not found — falling back to config.example.toml. \
                  For production, copy config.example.toml to config.toml and customize it."
             );
-            "config.example.toml"
+            "config.example.toml".to_string()
         } else {
-            return Err("config.toml or config.example.toml not found — please create one from config.example.toml".into());
-        };
+            "config.toml".to_string() // Produces a clear read error naming the path.
+        }
+    }
+
+    /// The `log_println!` lines here intentionally write to the console before the
+    /// tracing subscriber exists (and mirror to the log file once it does) — hence the
+    /// local N05 `print_stdout` allow.
+    #[allow(clippy::print_stdout)]
+    pub async fn load() -> AnyResult<Self> {
+        let config_path = Self::resolve_config_path();
+        let config_path = config_path.as_str();
 
         crate::log_println!("Loading configuration from: {}", config_path);
 
@@ -132,41 +155,46 @@ impl AppConfig {
     /// | `KIZUNA_METRICS_ENABLED` | `metrics.prometheus.enabled` (`true`/`false`) |
     ///
     /// A malformed value fails fast rather than being silently ignored.
+    ///
+    /// A variable that is *set but empty* (e.g. `KIZUNA_ADDRESS=` exported by a
+    /// shell or `environment: - KIZUNA_ADDRESS` in Compose) is treated as a
+    /// misconfiguration and reported by name, rather than being applied as an
+    /// empty string that later fails with a cryptic parse error.
     fn apply_env_overrides(&mut self) -> AnyResult<()> {
-        if let Ok(v) = std::env::var("KIZUNA_ADDRESS") {
+        if let Some(v) = non_empty_env("KIZUNA_ADDRESS")? {
             self.server.address = v;
         }
-        if let Ok(v) = std::env::var("KIZUNA_PORT") {
+        if let Some(v) = non_empty_env("KIZUNA_PORT")? {
             // Malformed values must fail startup with a configuration error, not
             // panic from a background task.
             self.server.port = v
                 .parse()
                 .map_err(|e| format!("KIZUNA_PORT must be a number, got {v:?}: {e}"))?;
         }
-        if let Ok(v) = std::env::var("KIZUNA_AUTHORIZATION") {
+        if let Some(v) = non_empty_env("KIZUNA_AUTHORIZATION")? {
             self.server.authorization = v;
         }
-        if let Ok(v) = std::env::var("KIZUNA_RATE_LIMIT_PER_MINUTE") {
+        if let Some(v) = non_empty_env("KIZUNA_RATE_LIMIT_PER_MINUTE")? {
             self.server.rate_limit_per_minute = v.parse().map_err(|e| {
                 format!("KIZUNA_RATE_LIMIT_PER_MINUTE must be a number, got {v:?}: {e}")
             })?;
         }
-        if let Ok(v) = std::env::var("KIZUNA_TLS_ENABLED") {
+        if let Some(v) = non_empty_env("KIZUNA_TLS_ENABLED")? {
             self.server.tls.enabled = v
                 .parse()
                 .map_err(|e| format!("KIZUNA_TLS_ENABLED must be true or false, got {v:?}: {e}"))?;
         }
-        if let Ok(v) = std::env::var("KIZUNA_TLS_CERT") {
+        if let Some(v) = non_empty_env("KIZUNA_TLS_CERT")? {
             self.server.tls.cert_path = Some(v);
         }
-        if let Ok(v) = std::env::var("KIZUNA_TLS_KEY") {
+        if let Some(v) = non_empty_env("KIZUNA_TLS_KEY")? {
             self.server.tls.key_path = Some(v);
         }
-        if let Ok(v) = std::env::var("KIZUNA_LOG_LEVEL") {
+        if let Some(v) = non_empty_env("KIZUNA_LOG_LEVEL")? {
             let logging = self.logging.get_or_insert_with(Default::default);
             logging.level = Some(v);
         }
-        if let Ok(v) = std::env::var("KIZUNA_METRICS_ENABLED") {
+        if let Some(v) = non_empty_env("KIZUNA_METRICS_ENABLED")? {
             self.metrics.prometheus.enabled = v.parse().map_err(|e| {
                 format!("KIZUNA_METRICS_ENABLED must be true or false, got {v:?}: {e}")
             })?;
@@ -226,31 +254,84 @@ impl AppConfig {
         }
 
         if self.server.authorization.trim().is_empty() {
-            return Err("server.authorization must not be empty".into());
-        }
-
-        if self.server.authorization == "youshallnotpass"
-            && self
-                .server
-                .address
-                .parse::<std::net::IpAddr>()
-                .map(|ip| !ip.is_loopback())
-                .unwrap_or(true)
-        {
             return Err(
-                "server.authorization must be changed from the default when binding publicly"
+                "server.authorization is required but missing or empty. Set a strong, unique \
+                 secret in config.toml or via the KIZUNA_AUTHORIZATION environment variable."
                     .into(),
             );
         }
-        // Warn if the default is used on a loopback-only listener.
-        if self.server.authorization == "youshallnotpass" {
-            tracing::warn!(
-                "server.authorization is set to the default 'youshallnotpass'. \
-                 Change this for production deployments!"
-            );
+
+        // Reject well-known placeholders on *every* bind address. A guessable
+        // secret is no better on loopback than on a public interface: any local
+        // process, a misconfigured reverse proxy, or a container port-forward
+        // can still reach it. There is no safe bind for a known default.
+        if is_insecure_placeholder(&self.server.authorization) {
+            return Err(format!(
+                "server.authorization is set to the known insecure placeholder {}. \
+                 Choose a strong, unique secret (and rotate it if it was ever exposed).",
+                redacted_placeholder(&self.server.authorization)
+            )
+            .into());
         }
 
         Ok(())
+    }
+}
+
+/// Read an environment variable, distinguishing "unset" from "set but blank".
+///
+/// Returns `Ok(None)` when the variable is not present, `Ok(Some(value))` with
+/// the raw value when it is present and non-blank, and `Err` when it is present
+/// but blank or not valid UTF-8. A blank value is treated as a misconfiguration
+/// rather than an override that silently clears the target field.
+fn non_empty_env(name: &str) -> AnyResult<Option<String>> {
+    match std::env::var(name) {
+        Ok(value) if value.trim().is_empty() => Err(format!(
+            "{name} is set but empty. Unset it to keep the configured value, or set it to a \
+             non-empty value."
+        )
+        .into()),
+        Ok(value) => Ok(Some(value)),
+        Err(std::env::VarError::NotPresent) => Ok(None),
+        Err(std::env::VarError::NotUnicode(_)) => {
+            Err(format!("{name} is set to a non-UTF-8 value, which is not supported.").into())
+        }
+    }
+}
+
+/// Publicly documented placeholder credentials that must never be used as a real
+/// secret. Comparison is case-insensitive after trimming, so copies such as
+/// `YoushallNotPass` cannot slip through.
+const INSECURE_PLACEHOLDERS: &[&str] = &[
+    "youshallnotpass", // Lavalink's historical default
+    "password",
+    "changeme",
+    "change-me",
+    "replace-with-your-strong-secret", // shipped in this repo's README/example
+    "replace-with-your-own-long-random-secret", // shipped in this repo's README
+    "your-password",
+    "yourpassword",
+    "secret",
+    "admin",
+    "test",
+];
+
+fn is_insecure_placeholder(value: &str) -> bool {
+    let normalized = value.trim().to_ascii_lowercase();
+    INSECURE_PLACEHOLDERS.contains(&normalized.as_str())
+}
+
+/// A human-readable label for a rejected placeholder, safe to include in a
+/// startup error. Only *known, public* placeholder strings ever reach this
+/// function (validation rejects real secrets before it), so naming the matched
+/// value leaks nothing; the operator's actual secret is never formatted here.
+fn redacted_placeholder(value: &str) -> &'static str {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "youshallnotpass" => "\"youshallnotpass\" (the Lavalink default)",
+        "replace-with-your-strong-secret" => {
+            "\"replace-with-your-strong-secret\" (the example value)"
+        }
+        _ => "a known default or placeholder value",
     }
 }
 
@@ -263,24 +344,51 @@ mod tests {
     // mutate them to avoid cross-test interference.
     static ENV_LOCK: Mutex<()> = Mutex::new(());
 
-    /// Parse a minimal config (equivalent to what `load()` does from disk) and
-    /// apply the given `KIZUNA_*` env vars on top.
-    fn cfg_with_envs(pairs: &[(&str, &str)]) -> AppConfig {
+    /// A minimal, *valid* config. `authorization` is explicit because it no
+    /// longer has a default — omitting it must fail validation.
+    const BASE_TOML: &str =
+        "server.address='127.0.0.1'\nserver.port=28453\nserver.authorization='base-valid-secret'\n";
+
+    fn cfg_from_toml(raw: &str) -> AppConfig {
+        toml::from_str(raw).expect("config parses")
+    }
+
+    /// Apply the given `KIZUNA_*` env vars on top of [`BASE_TOML`], returning any
+    /// error instead of panicking so the empty-secret guard can be asserted.
+    ///
+    /// Tests must be hermetic: the documented live-node workflow exports
+    /// `KIZUNA_*` vars (address, port, authorization, ...). Any that leak into
+    /// the test process would be picked up by `apply_env_overrides` below and
+    /// make results depend on the caller's shell, so snapshot and clear them
+    /// all first, then restore afterwards.
+    fn try_cfg_with_envs(pairs: &[(&str, &str)]) -> AnyResult<AppConfig> {
         let _guard = ENV_LOCK.lock().unwrap();
-        for (k, _) in pairs {
+
+        let ambient: Vec<(String, String)> = std::env::vars()
+            .filter(|(k, _)| k.starts_with("KIZUNA_"))
+            .collect();
+        for (k, _) in &ambient {
             unsafe { std::env::remove_var(k) };
         }
+
         for (k, v) in pairs {
             unsafe { std::env::set_var(k, v) };
         }
-        let mut cfg: AppConfig = toml::from_str("server.address='127.0.0.1'\nserver.port=28453\n")
-            .expect("minimal TOML parses");
-        cfg.apply_env_overrides()
-            .expect("env overrides apply cleanly");
+        let mut cfg = cfg_from_toml(BASE_TOML);
+        let result = cfg.apply_env_overrides();
+
         for (k, _) in pairs {
             unsafe { std::env::remove_var(k) };
         }
-        cfg
+        for (k, v) in ambient {
+            unsafe { std::env::set_var(k, v) };
+        }
+        result.map(|()| cfg)
+    }
+
+    /// Like [`try_cfg_with_envs`] but panics on failure (the common case).
+    fn cfg_with_envs(pairs: &[(&str, &str)]) -> AppConfig {
+        try_cfg_with_envs(pairs).expect("env overrides apply cleanly")
     }
 
     #[test]
@@ -350,33 +458,182 @@ mod tests {
     }
 
     #[test]
-    fn empty_authorization_is_rejected() {
-        let cfg = cfg_with_envs(&[("KIZUNA_AUTHORIZATION", "")]);
-        assert!(cfg.validate().is_err());
-
-        let cfg = cfg_with_envs(&[("KIZUNA_AUTHORIZATION", "   ")]); // whitespace only
-        assert!(cfg.validate().is_err());
+    fn missing_authorization_is_rejected() {
+        // No `authorization` key at all: the field defaults to empty (there is
+        // deliberately no serde default secret) and validation must refuse it.
+        let cfg = cfg_from_toml("[server]\naddress='127.0.0.1'\n");
+        assert_eq!(cfg.server.authorization, "");
+        let err = cfg.validate().unwrap_err().to_string();
+        assert!(
+            err.contains("authorization") && err.contains("required"),
+            "missing secret must be a hard error, got: {err}"
+        );
     }
 
     #[test]
-    fn valid_authorization_passes() {
-        let cfg = cfg_with_envs(&[("KIZUNA_AUTHORIZATION", "mysecret123")]);
-        cfg.validate().expect("valid authorization should pass");
+    fn empty_authorization_is_rejected() {
+        // Empty / whitespace-only supplied through TOML.
+        for raw in ["", "   "] {
+            let cfg = cfg_from_toml(&format!("[server]\nauthorization={raw:?}\n"));
+            let err = cfg.validate().unwrap_err().to_string();
+            assert!(
+                err.contains("required") || err.contains("empty"),
+                "empty secret must be rejected, got: {err}"
+            );
+        }
 
-        // Test default password on public bind is rejected
-        let bad = cfg_with_envs(&[
-            ("KIZUNA_ADDRESS", "0.0.0.0"),
-            ("KIZUNA_AUTHORIZATION", "youshallnotpass"),
-        ]);
-        assert!(bad.validate().is_err());
+        // Empty / whitespace-only supplied through the environment fails even
+        // earlier, in `apply_env_overrides`.
+        for value in ["", "   "] {
+            let err = try_cfg_with_envs(&[("KIZUNA_AUTHORIZATION", value)])
+                .expect_err("empty KIZUNA_AUTHORIZATION must be rejected")
+                .to_string();
+            assert!(
+                err.contains("KIZUNA_AUTHORIZATION"),
+                "expected env-specific error, got: {err}"
+            );
+        }
+    }
 
-        // Test default password on loopback bind is allowed (with warning)
-        let loopback_ok = cfg_with_envs(&[
+    #[test]
+    fn empty_env_value_is_a_named_misconfiguration_for_every_var() {
+        // A set-but-empty variable must be reported by name for every override,
+        // so a blank `KIZUNA_ADDRESS` cannot surface later as a cryptic
+        // `AddrParseError(Ip)` and a blank scalar cannot silently clear a field.
+        for name in [
+            "KIZUNA_ADDRESS",
+            "KIZUNA_PORT",
+            "KIZUNA_AUTHORIZATION",
+            "KIZUNA_RATE_LIMIT_PER_MINUTE",
+            "KIZUNA_TLS_ENABLED",
+            "KIZUNA_TLS_CERT",
+            "KIZUNA_TLS_KEY",
+            "KIZUNA_LOG_LEVEL",
+            "KIZUNA_METRICS_ENABLED",
+        ] {
+            for value in ["", "   "] {
+                let err = try_cfg_with_envs(&[(name, value)])
+                    .expect_err("blank env value must be rejected")
+                    .to_string();
+                assert!(
+                    err.contains(name),
+                    "expected {name}-specific error, got: {err}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn unsetting_or_setting_a_real_env_value_behaves_as_before() {
+        // Unset variables keep the TOML value; non-blank overrides still apply.
+        let cfg = cfg_with_envs(&[]);
+        assert_eq!(cfg.server.address, "127.0.0.1");
+
+        let cfg = cfg_with_envs(&[("KIZUNA_ADDRESS", "0.0.0.0"), ("KIZUNA_PORT", "1234")]);
+        assert_eq!(cfg.server.address, "0.0.0.0");
+        assert_eq!(cfg.server.port, 1234);
+    }
+
+    #[test]
+    fn default_placeholder_authorization_rejected_on_every_bind() {
+        // The historical default must be refused on loopback *and* public binds:
+        // there is no safe interface for a known credential.
+        for address in ["127.0.0.1", "0.0.0.0", "::1"] {
+            let cfg = cfg_from_toml(&format!(
+                "[server]\naddress={address:?}\nauthorization='youshallnotpass'\n"
+            ));
+            let err = cfg.validate().unwrap_err().to_string();
+            assert!(
+                err.contains("placeholder"),
+                "default secret must be rejected on {address}, got: {err}"
+            );
+        }
+
+        // Case and surrounding whitespace must not smuggle it through.
+        let cfg = cfg_from_toml("[server]\nauthorization='  YouShallNotPass  '\n");
+        assert!(cfg.validate().is_err());
+
+        // And via the environment on a loopback bind.
+        let err = cfg_with_envs(&[
             ("KIZUNA_ADDRESS", "127.0.0.1"),
             ("KIZUNA_AUTHORIZATION", "youshallnotpass"),
-        ]);
-        loopback_ok
-            .validate()
-            .expect("default auth on loopback should pass (with warning)");
+        ])
+        .validate()
+        .unwrap_err()
+        .to_string();
+        assert!(err.contains("placeholder"), "got: {err}");
+    }
+
+    #[test]
+    fn other_placeholder_authorizations_rejected() {
+        for value in [
+            "password",
+            "changeme",
+            "replace-with-your-strong-secret",
+            "your-password",
+            "secret",
+            "admin",
+            "test",
+        ] {
+            let cfg = cfg_from_toml(&format!("[server]\nauthorization={value:?}\n"));
+            assert!(
+                cfg.validate().is_err(),
+                "placeholder {value:?} must be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn valid_authorization_passes_on_loopback_and_public() {
+        for address in ["127.0.0.1", "0.0.0.0"] {
+            let cfg = cfg_from_toml(&format!(
+                "[server]\naddress={address:?}\nauthorization='a-genuinely-strong-secret'\n"
+            ));
+            cfg.validate()
+                .unwrap_or_else(|e| panic!("valid secret on {address} must pass: {e}"));
+        }
+
+        // A short-but-not-placeholder secret is still accepted (we do not
+        // invent length policy; the contract is only "not missing, not known").
+        let cfg = cfg_with_envs(&[("KIZUNA_AUTHORIZATION", "s3cr3t!")]);
+        cfg.validate().expect("non-placeholder secret passes");
+    }
+
+    #[test]
+    fn validation_error_never_contains_the_secret() {
+        // Rejecting a placeholder must not echo an unrelated secret value. The
+        // error text for a placeholder is a fixed label; the operator's own
+        // secret is never interpolated into any validation message.
+        let cfg = cfg_from_toml("[server]\nauthorization='youshallnotpass'\n");
+        let err = cfg.validate().unwrap_err().to_string();
+        // The forbidden placeholder is named (a public constant), which is safe…
+        assert!(err.contains("youshallnotpass"));
+
+        // …but a real, rejected-for-emptiness config must not leak its trimmed
+        // content anywhere.
+        let cfg = cfg_from_toml("[server]\nauthorization='   '\n");
+        let err = cfg.validate().unwrap_err().to_string();
+        assert!(!err.contains("   "));
+    }
+
+    #[test]
+    fn config_path_override_is_honoured() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        let previous = std::env::var("KIZUNA_CONFIG_PATH").ok();
+
+        unsafe {
+            std::env::set_var("KIZUNA_CONFIG_PATH", "/tmp/kizunalink-does-not-exist.toml");
+        }
+        // The override is returned verbatim (so the subsequent read fails fast with a
+        // clear path instead of silently falling back to a different file).
+        assert_eq!(
+            AppConfig::resolve_config_path(),
+            "/tmp/kizunalink-does-not-exist.toml"
+        );
+
+        match previous {
+            Some(v) => unsafe { std::env::set_var("KIZUNA_CONFIG_PATH", v) },
+            None => unsafe { std::env::remove_var("KIZUNA_CONFIG_PATH") },
+        }
     }
 }

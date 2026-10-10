@@ -8,12 +8,20 @@
 //! cleartext across the wire. This is an alternative to terminating TLS at a
 //! reverse proxy — pick one or the other, not both.
 
-use std::{path::Path, sync::Arc};
+use std::{path::Path, sync::Arc, time::Duration};
 
 use axum::serve::Listener as AxumListener;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer, pem::PemObject};
 use tokio_rustls::TlsAcceptor;
 use tracing::warn;
+
+/// Maximum time to complete a TLS handshake before the client is dropped.
+///
+/// The accept loop drives one handshake at a time; without a bound, a client
+/// that connects and then sends nothing stalls the loop and blocks every other
+/// connection (head-of-line denial of service). Rustls does not impose its own
+/// timeout once the stream is handed to it.
+const TLS_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// An [`axum::serve::Listener`] whose accepted streams are wrapped in a rustls
 /// TLS session, giving the whole HTTP+WS surface HTTPS/WSS with the same
@@ -51,10 +59,21 @@ impl AxumListener for TlsListener {
             // Drive the handshake to completion so a client that connects and
             // never speaks is not held forever by hyper. The returned `TlsStream`
             // then wraps the stream for hyper to use.
-            let tls = match self.acceptor.accept(tcp).await {
-                Ok(tls) => tls,
-                Err(e) => {
+            let tls = match tokio::time::timeout(TLS_HANDSHAKE_TIMEOUT, self.acceptor.accept(tcp))
+                .await
+            {
+                Ok(Ok(tls)) => tls,
+                Ok(Err(e)) => {
                     tracing::debug!("TLS handshake failed: {e}");
+                    continue;
+                }
+                Err(_) => {
+                    // A client that connects and then stalls must not hold the
+                    // accept loop hostage; drop it and accept the next one.
+                    tracing::debug!(
+                        "TLS handshake timed out after {}s; dropping connection",
+                        TLS_HANDSHAKE_TIMEOUT.as_secs()
+                    );
                     continue;
                 }
             };

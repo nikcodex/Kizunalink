@@ -200,7 +200,7 @@ fn run_processor(
             if let Err(e) = std::thread::Builder::new()
                 .name(format!("soundcloud-decoder-{}", identifier))
                 .spawn(move || {
-                    if let Err(e) = p.run() {
+                    if let Err(e) = p.run_guarded() {
                         error!("SoundCloud AudioProcessor error for {}: {}", identifier, e);
                     }
                 })

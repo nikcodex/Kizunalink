@@ -12,33 +12,74 @@ use tracing::warn;
 
 use crate::{common::types::AnyResult, config::sources::HttpProxyConfig};
 
-/// Check whether an IP address is in a blocked range (loopback, private,
-/// link-local, multicast, unspecified, IPv4-mapped IPv6 loopback, ULA, metadata).
+/// Check whether an IP address is in a blocked range (SEC-001).
+///
+/// Blocks loopback, private (RFC1918), link-local, multicast, unspecified,
+/// broadcast, CGNAT, documentation, benchmarking, and other reserved/non-global
+/// IPv4 ranges, plus IPv6 loopback/link-local/ULA/multicast/unspecified,
+/// IPv4-mapped, IPv4-compatible, NAT64, 6to4, Teredo, and documentation ranges.
+///
+/// The policy is "only global unicast addresses may be contacted". Everything
+/// else is refused, so a new RFC reservation defaults to *blocked* rather than
+/// silently reachable.
 pub(crate) fn is_blocked_ip(ip: &IpAddr) -> bool {
     match ip {
         IpAddr::V4(ip) => {
-            let octets = ip.octets();
+            let o = ip.octets();
             ip.is_loopback()
                 || ip.is_private()
                 || ip.is_link_local()
                 || ip.is_multicast()
                 || ip.is_unspecified()
-                || (octets[0] == 100 && (octets[1] & 0xc0) == 64) // CGNAT 100.64.0.0/10
-                || ip.is_documentation() // 192.0.2.0/24 etc.
-                || (ip.is_private() && ip.is_unspecified())
+                || ip.is_broadcast()
+                || ip.is_documentation()
+                // "This network" 0.0.0.0/8 and IETF protocol assignments 192.0.0.0/24.
+                || o[0] == 0
+                || (o[0] == 192 && o[1] == 0 && o[2] == 0)
+                // Deprecated 6to4 relay anycast 192.88.99.0/24.
+                || (o[0] == 192 && o[1] == 88 && o[2] == 99)
+                // Shared address space / CGNAT 100.64.0.0/10.
+                || (o[0] == 100 && (o[1] & 0xc0) == 64)
+                // Benchmarking 198.18.0.0/15.
+                || (o[0] == 198 && (o[1] & 0xfe) == 18)
+                // Reserved for future use 240.0.0.0/4 (0xF0 ..= 0xFF) incl. broadcast.
+                || o[0] >= 0xf0
         }
         IpAddr::V6(ip) => {
-            // Check for IPv4-mapped IPv6 addresses (::ffff:a.b.c.d)
+            // IPv4-mapped (::ffff:a.b.c.d) embeds a v4 address; unmap and apply
+            // the v4 policy so `::ffff:127.0.0.1` cannot slip past the v6 checks.
             if let Some(mapped_v4) = ip.to_ipv4_mapped() {
                 return is_blocked_ip(&IpAddr::V4(mapped_v4));
             }
-            let segments = ip.segments();
-            let first = segments[0];
-            ip.is_loopback()
-                || ip.is_multicast()
-                || ip.is_unspecified()
-                || (first & 0xfe00) == 0xfc00 // unique-local fc00::/7
-                || (first & 0xffc0) == 0xfe80 // link-local fe80::/10
+            let seg = ip.segments();
+            let first = seg[0];
+            // Allowlist: only global unicast 2000::/3 may be contacted. Everything
+            // outside it — loopback, unspecified, multicast, ULA, link-local,
+            // IPv4-compatible `::a.b.c.d`, NAT64 `64:ff9b::/96`, discard-only
+            // `100::/64`, segment-routing `5f00::/16`, ... — is refused. New
+            // reservations therefore default to blocked.
+            if (first & 0xe000) != 0x2000 {
+                return true;
+            }
+            // Special-purpose ranges *inside* 2000::/3.
+            // 2001::/23 (Teredo 2001::/32, benchmarking 2001:2::/48, ORCHID
+            // 2001:10::/28, ORCHIDv2 2001:20::/28, ...).
+            if first == 0x2001 && seg[1] < 0x0200 {
+                return true;
+            }
+            // Documentation 2001:db8::/32.
+            if first == 0x2001 && seg[1] == 0x0db8 {
+                return true;
+            }
+            // 6to4 2002::/16 (reaches the embedded v4).
+            if first == 0x2002 {
+                return true;
+            }
+            // Documentation 3fff::/20.
+            if first == 0x3fff && seg[1] < 0x1000 {
+                return true;
+            }
+            false
         }
     }
 }
@@ -227,6 +268,29 @@ mod tests {
     }
 
     #[test]
+    fn redirect_policy_rejects_local_and_internal_hostnames_before_dns() {
+        // The redirect hop is checked by name, before any DNS lookup, so a
+        // redirect into the local network is stopped even though `can_handle`
+        // style syntax checks cannot see where the name resolves.
+        let from = url("https://media.example/track");
+        for target in [
+            "http://localhost/audio",
+            "http://api.localhost/audio",
+            "http://service.internal/audio",
+            "http://printer.local/audio",
+            "http://metadata.google.internal/computeMetadata/v1/",
+        ] {
+            assert!(
+                !validate_redirect_url(&from, &url(target)),
+                "local/internal name should be rejected: {target}"
+            );
+        }
+        // Ordinary public names still pass the name check (connect-time address
+        // validation is the authoritative layer for those).
+        assert!(validate_redirect_url(&from, &url("https://cdn.example/a")));
+    }
+
+    #[test]
     fn rejects_public_hostname_that_resolves_to_private_address() {
         // The resolver validates the exact socket addresses it passes to
         // Hyper, so a public-looking hostname cannot rebind to a private IP.
@@ -264,6 +328,106 @@ mod tests {
             &https_from,
             &url("https://cdn.example/audio")
         ));
+    }
+
+    #[test]
+    fn blocks_all_non_global_ipv4_ranges() {
+        use Ipv4Addr as V4;
+        // Only global unicast is allowed; everything reserved/non-public is
+        // refused so a new RFC reservation defaults to blocked.
+        for ip in [
+            V4::new(0, 0, 0, 0),         // "this network" 0.0.0.0/8
+            V4::new(0, 1, 2, 3),         // 0.0.0.0/8
+            V4::new(127, 0, 0, 1),       // loopback
+            V4::new(10, 0, 0, 1),        // private
+            V4::new(172, 16, 0, 1),      // private
+            V4::new(192, 168, 1, 1),     // private
+            V4::new(169, 254, 169, 254), // link-local / cloud metadata
+            V4::new(100, 64, 0, 1),      // CGNAT 100.64/10
+            V4::new(100, 127, 255, 255), // CGNAT upper bound
+            V4::new(192, 0, 0, 1),       // IETF protocol assignments 192.0.0.0/24
+            V4::new(192, 0, 2, 1),       // TEST-NET-1 192.0.2.0/24
+            V4::new(198, 18, 0, 1),      // benchmarking 198.18.0.0/15
+            V4::new(198, 19, 255, 255),  // benchmarking upper bound
+            V4::new(224, 0, 0, 1),       // multicast
+            V4::new(240, 0, 0, 1),       // reserved 240.0.0.0/4
+            V4::new(255, 255, 255, 255), // broadcast
+        ] {
+            assert!(is_blocked_ip(&IpAddr::V4(ip)), "{ip} must be blocked");
+        }
+
+        for ip in [
+            V4::new(8, 8, 8, 8),
+            V4::new(1, 1, 1, 1),
+            V4::new(93, 184, 216, 34),
+            V4::new(100, 63, 255, 255), // just below CGNAT
+            V4::new(100, 128, 0, 0),    // just above CGNAT
+            V4::new(198, 17, 255, 255), // just below benchmarking
+            V4::new(198, 20, 0, 0),     // just above benchmarking
+            V4::new(192, 88, 98, 255),  // below 6to4-relay 192.88.99.0/24
+            V4::new(192, 88, 100, 0),   // above 6to4-relay 192.88.99.0/24
+        ] {
+            assert!(!is_blocked_ip(&IpAddr::V4(ip)), "{ip} must be allowed");
+        }
+    }
+
+    #[test]
+    fn blocks_iana_special_ranges_found_by_oracle_diff() {
+        use Ipv4Addr as V4;
+        use Ipv6Addr as V6;
+        // These were missed before an independent oracle diff caught them.
+        assert!(is_blocked_ip(&IpAddr::V4(V4::new(192, 88, 99, 1))));
+        for ip in [
+            "100::1",
+            "2001:2::1",
+            "2001:10::1",
+            "2001:20::1",
+            "3fff::1",
+            "5f00::1",
+        ] {
+            assert!(
+                is_blocked_ip(&IpAddr::V6(V6::from_str(ip).unwrap())),
+                "{ip} must be blocked"
+            );
+        }
+        // Global unicast just outside the special sub-ranges stays reachable.
+        for ip in ["2001:4860:4860::8888", "2400:cb00::1", "2a00:1450:4001::1"] {
+            assert!(
+                !is_blocked_ip(&IpAddr::V6(V6::from_str(ip).unwrap())),
+                "{ip} must be allowed"
+            );
+        }
+    }
+
+    #[test]
+    fn blocks_ipv6_ranges_that_embed_or_reach_other_addresses() {
+        use Ipv6Addr as V6;
+        let parse = |s: &str| V6::from_str(s).unwrap();
+        for ip in [
+            "::1",                    // loopback
+            "::",                     // unspecified
+            "fe80::1",                // link-local
+            "fc00::1",                // ULA
+            "fdff::1",                // ULA upper
+            "ff02::1",                // multicast
+            "2001:db8::1",            // documentation
+            "::ffff:127.0.0.1",       // v4-mapped loopback
+            "::ffff:169.254.169.254", // v4-mapped metadata
+            "::ffff:10.0.0.1",        // v4-mapped private
+            "::127.0.0.1",            // IPv4-compatible loopback
+            "64:ff9b::7f00:1",        // NAT64 → 127.0.0.1
+            "64:ff9b::a9fe:a9fe",     // NAT64 → 169.254.169.254
+            "2002:7f00:1::",          // 6to4 → 127.0.0.1
+            "2001::1",                // Teredo
+        ] {
+            let addr = parse(ip);
+            assert!(is_blocked_ip(&IpAddr::V6(addr)), "{ip} must be blocked");
+        }
+
+        for ip in ["2606:4700:4700::1111", "2001:4860:4860::8888"] {
+            let addr = parse(ip);
+            assert!(!is_blocked_ip(&IpAddr::V6(addr)), "{ip} must be allowed");
+        }
     }
 }
 
@@ -309,5 +473,207 @@ mod pinned_client_tests {
         assert!(result.is_err());
         let public = IpAddr::V4(Ipv4Addr::new(93, 184, 216, 34));
         assert!(!super::is_blocked_ip(&public));
+    }
+}
+
+/// Deterministic, hermetic SSRF regression tests (SEC-001).
+///
+/// All targets are loopback fixtures the test itself binds on an ephemeral port;
+/// nothing external is contacted. The tests prove that the IP address actually
+/// used for the connection is subject to the policy — not merely an earlier
+/// lookup — for DNS rebinding, redirects, and a malicious resolver.
+#[cfg(test)]
+mod ssrf_regression_tests {
+    use super::{
+        Client, SocketAddr, create_client, create_client_with_pinning, make_redirect_policy,
+    };
+    use std::{
+        io::{Read, Write},
+        net::{Ipv4Addr, TcpListener},
+        sync::{
+            Arc,
+            atomic::{AtomicUsize, Ordering},
+        },
+        time::Duration,
+    };
+
+    struct Fixture {
+        port: u16,
+        hits: Arc<AtomicUsize>,
+    }
+
+    /// Spawn a single-shot HTTP responder on loopback, recording the number of
+    /// requests received.
+    fn fixture(body: &str) -> Fixture {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind fixture");
+        let port = listener.local_addr().unwrap().port();
+        let hits = Arc::new(AtomicUsize::new(0));
+        let h = hits.clone();
+        let body = body.to_owned();
+        std::thread::spawn(move || {
+            for mut s in listener.incoming().flatten() {
+                let mut buf = [0u8; 4096];
+                let _ = s.read(&mut buf);
+                h.fetch_add(1, Ordering::SeqCst);
+                let _ = s.write_all(body.as_bytes());
+                let _ = s.flush();
+            }
+        });
+        Fixture { port, hits }
+    }
+
+    fn ok_body() -> String {
+        "HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok".to_owned()
+    }
+
+    fn redirect_body(location: &str) -> String {
+        format!(
+            "HTTP/1.1 302 Found\r\nLocation: {location}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+        )
+    }
+
+    async fn settle() {
+        tokio::time::sleep(Duration::from_millis(150)).await;
+    }
+
+    #[tokio::test]
+    async fn hostname_resolving_to_private_is_refused_at_connect() {
+        // `localhost` genuinely resolves to 127.0.0.1; the connect-time resolver
+        // must refuse it, so the fixture is never contacted.
+        let server = fixture(&ok_body());
+        let client = create_client("test".into(), None, None, None).unwrap();
+        let result = client
+            .get(format!("http://localhost:{}/x", server.port))
+            .send()
+            .await;
+        assert!(result.is_err(), "loopback hostname must not connect");
+        settle().await;
+        assert_eq!(
+            server.hits.load(Ordering::SeqCst),
+            0,
+            "fixture was contacted"
+        );
+    }
+
+    #[tokio::test]
+    async fn dns_rebinding_cannot_reach_loopback() {
+        // Simulate rebinding: the URL host resolves to loopback, but validation
+        // pinned a *public* address. The connector must use the pinned address
+        // (unreachable here) and must NOT fall back to the rebinding lookup.
+        let server = fixture(&ok_body());
+        let pinned_public = SocketAddr::from((Ipv4Addr::new(93, 184, 216, 34), server.port));
+        let client = create_client_with_pinning(
+            "test".into(),
+            None,
+            None,
+            None,
+            Some("localhost".into()),
+            Some(vec![pinned_public]),
+        )
+        .unwrap();
+        let result = client
+            .get(format!("http://localhost:{}/x", server.port))
+            .send()
+            .await;
+        assert!(
+            result.is_err(),
+            "pinned public IP must not fall back to loopback"
+        );
+        settle().await;
+        assert_eq!(
+            server.hits.load(Ordering::SeqCst),
+            0,
+            "rebinding fallback reached the loopback fixture"
+        );
+    }
+
+    #[tokio::test]
+    async fn redirect_to_private_is_not_followed() {
+        // First hop is a public-looking redirect that points at a private target.
+        // The custom redirect policy must leave the 302 un-followed, so the
+        // private fixture records zero hits.
+        let private = fixture(&ok_body());
+        let first = fixture(&redirect_body(&format!(
+            "http://127.0.0.1:{}/secret",
+            private.port
+        )));
+        let client = Client::builder()
+            .redirect(make_redirect_policy())
+            .build()
+            .unwrap();
+        let response = client
+            .get(format!("http://127.0.0.1:{}/start", first.port))
+            .send()
+            .await
+            .expect("first hop should respond");
+        assert_eq!(response.status(), 302, "redirect must NOT be followed");
+        settle().await;
+        assert_eq!(first.hits.load(Ordering::SeqCst), 1);
+        assert_eq!(
+            private.hits.load(Ordering::SeqCst),
+            0,
+            "private redirect target was contacted"
+        );
+    }
+
+    #[tokio::test]
+    async fn redirect_to_metadata_ip_is_not_followed() {
+        // A 302 to a link-local metadata address must be left un-followed.
+        let first = fixture(&redirect_body("http://169.254.169.254/latest/meta-data/"));
+        let client = Client::builder()
+            .redirect(make_redirect_policy())
+            .build()
+            .unwrap();
+        let response = client
+            .get(format!("http://127.0.0.1:{}/start", first.port))
+            .send()
+            .await
+            .expect("first hop should respond");
+        assert_eq!(
+            response.status(),
+            302,
+            "metadata redirect must NOT be followed"
+        );
+        settle().await;
+        assert_eq!(first.hits.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn pinning_uses_pinned_ip_but_keeps_hostname_for_host_and_sni() {
+        // TLS SNI and the HTTP `Host` header come from the URL hostname, never
+        // from the pinned address: `ClientBuilder::resolve` only changes the dialed
+        // IP. Pin a public hostname to an unroutable public IP and assert (a) the
+        // connector dials the pinned IP rather than a fresh lookup, and (b) the
+        // request URL — the source of Host/SNI — still carries the hostname.
+        let pinned = SocketAddr::from((Ipv4Addr::new(93, 184, 216, 34), 443));
+        let client = create_client_with_pinning(
+            "test".into(),
+            None,
+            None,
+            None,
+            Some("media.example".into()),
+            Some(vec![pinned]),
+        )
+        .unwrap();
+        let err = client
+            .get("https://media.example/audio.mp3")
+            .send()
+            .await
+            .expect_err("unroutable pinned IP must fail to connect");
+
+        assert_eq!(
+            err.url().expect("error carries the request URL").host_str(),
+            Some("media.example"),
+            "pinning must preserve the hostname used for Host/SNI"
+        );
+        let text = format!("{err:?}");
+        assert!(
+            text.contains(&pinned.ip().to_string()),
+            "expected a connect to the pinned IP, got: {text}"
+        );
+        assert!(
+            !text.to_ascii_lowercase().contains("dns error"),
+            "pinning must bypass a fresh DNS lookup, got: {text}"
+        );
     }
 }

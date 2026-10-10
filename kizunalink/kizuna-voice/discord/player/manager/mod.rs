@@ -8,3 +8,4 @@ pub mod sponsorblock;
 pub mod start;
 
 pub use start::start_playback;
+pub use start::{StopOutcome, stop_playback};

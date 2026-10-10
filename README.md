@@ -2,17 +2,17 @@
 
 # KizunaLink
 
-### A High-Performance, Rust-Native Lavalink v4 Audio Node for Discord
+### Your Discord audio stack. Native Rust. No JVM.
 
-**Sub-second startup · ~25–32 MB RAM footprint · Zero-GC audio pipeline · Native Discord DAVE E2EE · 21 Built-in DSP Filters**
+A standalone audio node designed for **Lavalink v4 clients**, with integrated media sources, DSP filters, lyrics, and Discord DAVE encryption.
 
-[![Build](https://img.shields.io/github/actions/workflow/status/nikcodex/Kizunalink/ci.yml?branch=main&style=flat-square&logo=github-actions&logoColor=white)](https://github.com/nikcodex/Kizunalink/actions)
-[![Release](https://img.shields.io/github/v/release/nikcodex/Kizunalink?style=flat-square&logo=github)](https://github.com/nikcodex/Kizunalink/releases)
-[![License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](./LICENSE)
-[![Rust](https://img.shields.io/badge/rust-stable-orange?style=flat-square&logo=rust)](https://www.rust-lang.org/)
-[![Discord Protocol](https://img.shields.io/badge/Lavalink-v4%20Compliant-7289da?style=flat-square)](https://github.com/lavalink-devs/Lavalink)
+[![CI](https://img.shields.io/github/actions/workflow/status/codexdevsnik/Kizunalink/ci.yml?branch=hardening%2Fproduction-readiness&style=flat-square&label=hardening%20CI)](https://github.com/codexdevsnik/Kizunalink/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/codexdevsnik/Kizunalink?style=flat-square)](https://github.com/codexdevsnik/Kizunalink/releases)
+[![Rust](https://img.shields.io/badge/Rust-native-dea584?style=flat-square&logo=rust)](https://www.rust-lang.org/)
+[![API](https://img.shields.io/badge/API-Lavalink%20v4-5865f2?style=flat-square)](https://lavalink.dev/api/)
+[![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)](./LICENSE)
 
-[Quick start](#quick-start) · [Features](#features) · [Why KizunaLink?](#why-kizunalink) · [Architecture](#architecture) · [Bot integration](#bot-integration) · [Configuration](#configuration) · [API](#rest-and-websocket-api)
+[Quick start](#quick-start) · [Features](#features) · [Architecture](#architecture) · [Configuration](#configuration) · [Bot integration](#bot-integration) · [API](#rest-and-websocket-api) · [Development](#development)
 
 </div>
 
@@ -20,232 +20,156 @@
 
 ## Overview
 
-**KizunaLink** is a standalone, ultra-lightweight audio node that implements the full **Lavalink v4 REST and WebSocket protocol**. Existing Lavalink client libraries and Discord music bots connect to it out of the box without changing a single line of client protocol code.
+KizunaLink resolves media, decodes and processes audio, encodes Opus, and sends encrypted voice packets to Discord. Your bot handles commands and queues; the node handles audio.
 
-Built entirely in native Rust with **Tokio**, **Axum**, and **Symphonia**, KizunaLink resolves tracks, decodes audio, resamples and filters PCM, mixes playback layers, encodes Opus via `libopus`, and manages encrypted Discord voice transport—all without the JVM, Spring Boot, or third-party `.jar` plugins.
+Built with **Tokio**, **Axum**, **Symphonia**, and **libopus**, it brings a native runtime and an integrated feature set to the Lavalink-style deployment model.
 
----
-
-## Why KizunaLink?
-
-| Metric / Feature | **KizunaLink** (Rust) | **Standard Lavalink v4** (JVM) |
-|---|:---:|:---:|
-| **Runtime** | Native Rust (Single binary) | JVM (Java 17/21 + Spring Boot) |
-| **Active Memory Footprint** | **~24 – 32 MB RAM** *(verified live)* | **~350 MB – 1 GB+ RAM** |
-| **Startup Time** | **< 0.5 – 1.0 second** | **5 – 15+ seconds** |
-| **Audio Jitter & Latency** | **Zero-GC** (Deterministic 50 Hz / 20ms ticks) | Stop-the-world GC sweeps can cause audio stutter |
-| **Discord DAVE E2EE** | **Native Built-in** (MLS protocol v1) | Requires external proxy or experimental plugins |
-| **DSP Audio Filters** | **21 built-in** (static enum dispatch) | Basic built-in; advanced require `lavadsp` plugins |
-| **Sources & Resolvers** | **20+ built-in** (YouTube, Spotify, Deezer, etc.) | Moved to separate 3rd-party `.jar` plugins |
-| **SponsorBlock** | **Native Built-in** (auto-skip + WebSocket events) | Requires separate JVM plugin |
-| **Lyrics Engine** | **Native Built-in** (7+ concurrent providers) | Requires separate JVM plugin |
-| **Hardware Requirements** | Runs on micro VPS ($2/mo), Docker, ARM64/Termux | Requires 1 GB+ RAM and JRE runtime |
-
----
-
-## Architecture
-
-```text
-       Discord Bot / Lavalink Client (wavelink, lavalink-client, poru, etc.)
-                                │
-                                │ REST + WebSocket (/v4)
-                                ▼
-┌───────────────────────────────────────────────────────────────────────────┐
-│                             KizunaLink Node                               │
-│                                                                           │
-│  [API & Session Management]                                               │
-│   • Axum REST routes & WebSocket session coordinator                      │
-│   • Resumable sessions with count- & byte-capped event queues             │
-│   • Token-bucket rate limiter per IP with automatic idle cleanup          │
-│   • Prometheus /metrics & system telemetry                                │
-│                                                                           │
-│  [Source & Media Layer]                                                   │
-│   • 20+ Sources (YouTube Innertube multi-client spoofing, Spotify,        │
-│     Deezer Blowfish decryptor, Apple Music, JioSaavn, SoundCloud, etc.)   │
-│   • Scored Best-Match mirror resolver (ISRC, title/artist string distance)│
-│   • Native SponsorBlock segment fetcher and auto-skipper                  │
-│   • Multi-provider concurrent lyrics engine (LRCLib, Genius, YTM, etc.)   │
-│                                                                           │
-│  [DSP & Audio Engine]                                                     │
-│   • Symphonia demuxers (WebM, MP3, AAC, FLAC, Vorbis, Ogg)                │
-│   • Linear / Hermite (cubic) / Sinc resamplers to 48,000 Hz stereo        │
-│   • 21 statically dispatched DSP filters (zero vtable overhead)           │
-│   • Multi-track mixer with exponential soft-knee limiter (soft_clip_i16)  │
-│   • Segregated power-of-two pooled buffer allocator (BufferPool)          │
-│   • Zero-copy Opus passthrough when no DSP filters are active             │
-│                                                                           │
-│  [Discord Voice Gateway & Transport]                                      │
-│   • Discord Voice Gateway v4/v8 WebSocket client                          │
-│   • Strict 50 Hz (20ms) RTP transmission loop with silence padding        │
-│   • Modern ciphers: aead_aes256_gcm_rtpsize & aead_xchacha20_poly1305    │
-│   • Native DAVE E2EE (MLS protocol) with staged epoch transition support  │
-└───────────────────────────────────────────────────────────────────────────┘
-```
-
----
+> [!IMPORTANT]
+> **Production hardening is in progress.** The work is tracked in [PR #5](https://github.com/codexdevsnik/Kizunalink/pull/5) on `hardening/production-readiness`. Successful CI checks do not establish complete client compatibility, source availability, or production readiness. Validate your workload before migration; keep a rollback path for critical bots.
 
 ## Features
 
-### Audio Engine & DSP
-- **Zero-GC Audio Pipeline**: Uses segregated power-of-two pooled buffers (`BufferPool`) to eliminate heap allocations and fragmentation in the 50 Hz hot loop.
-- **Hardware Denormal Protection**: Configures CPU FPU hardware flags (`FTZ`/`DAZ`) before runtime creation to prevent microcode slow-paths during floating-point filter calculations.
-- **21 Built-in Audio Filters**: Dispatched with static compile-time enums (`ConcreteFilter`) eliminating dynamic dispatch overhead:
-  - **Equalizer**: 15-band biquad peaking EQ (25 Hz to 16 kHz).
-  - **Timescale**: WSOLA-based time stretching and pitch scaling.
-  - **Karaoke**: Center-channel phase cancellation vocal remover.
-  - **Reverb, Echo, Chorus, Flanger, Phaser, Tremolo, Vibrato, Rotation (8D), Distortion, Compressor, Low-Pass, High-Pass, Normalization, Spatial 3D Audio, and Phonograph (vinyl simulator)**.
-- **Exponential Soft Limiter**: Built-in soft-knee limiting (`soft_clip_i16` at 90% full scale) smoothly compresses audio peaks, preventing digital square-wave distortion.
-- **Micro-ramped Flow Controller**: Smooth volume, pause, and seek ramps eliminate audible audio pops and clicks.
+| Capability | What KizunaLink provides |
+|---|---|
+| Native runtime | A Rust server binary without a JVM or garbage collector |
+| Client-facing API | Lavalink v4-style REST control and WebSocket events |
+| Audio processing | Decoding, stereo resampling, DSP, mixing, and Opus encoding |
+| Discord voice | Voice gateway transport, RTP encryption, and DAVE integration through the patched `davey` crate |
+| Media resolution | Integrated sources and metadata-to-audio mirror matching |
+| Lyrics | Concurrent providers with synced and unsynced results |
+| SponsorBlock | Segment lookup, automatic skipping, and events |
+| Operations | Health probe, authenticated Prometheus metrics, TLS configuration, and per-IP rate limiting |
+| Sessions | Resumption support and bounded event queues |
 
-### Voice Transport & Security
-- **Native DAVE (End-to-End Encryption)**: Full implementation of Discord's DAVE protocol using Messaging Layer Security (MLS) via patched `davey` crate, supporting epoch transition staging (Opcode 22/23 contract).
-- **RTP Packet Encryption**: Native support for modern Discord voice ciphers (`aead_aes256_gcm_rtpsize` and `aead_xchacha20_poly1305_rtpsize`).
-- **Resilient Connection Loop**: Automatic UDP discovery, keepalives, session resumption, and silence frame generation (`MAX_SILENCE_FRAMES = 5`) to cleanly close audio streams.
+### Audio engine
 
-### Comprehensive Media Sources
-- **YouTube**: Multi-client Innertube spoofing (TV Cast, Android VR, Android, iOS, Web Remix, Web Embedded), automatic cipher solving / `n-sig` deobfuscation, startup cipher cache warming, and HLS live stream demuxing.
-- **Streaming Platforms**: Spotify, Deezer (with track decryptor), Apple Music, SoundCloud, Tidal, JioSaavn, Gaana, Mixcloud, NetEase, VK Music, Yandex Music, Audiomack, Audius, Twitch, Reddit, HTTP URLs, and Local files.
-- **Scored Mirror Resolver**: Automatically resolves metadata-only sources (e.g. Spotify, Apple Music) into playable audio streams using ISRC tags, string similarity, and duration tolerances.
-- **Native SponsorBlock**: Queries skip segments from the SponsorBlock API, merges contiguous segments, auto-seeks past sponsors, and emits plugin-compatible WebSocket events.
-- **Concurrent Lyrics**: Parallel queries across YouTube Music, LRCLib, Genius, Musixmatch, NetEase, Deezer, and Letras.mus with synced (timestamped) and unsynced delivery.
+| Component | Purpose |
+|---|---|
+| Symphonia decoding | Demux and decode supported media formats |
+| Resampling | Convert audio to 48 kHz stereo with selectable quality |
+| Equalizer | 15-band frequency shaping |
+| Timescale | Tempo and pitch processing |
+| Karaoke | Center-channel cancellation |
+| Reverb | Reverberation effect |
+| Echo | Delayed repeats |
+| Chorus | Modulated layered effect |
+| Flanger | Short modulated delay |
+| Phaser | Phase-shift effect |
+| Tremolo | Amplitude modulation |
+| Vibrato | Pitch modulation |
+| Rotation | Rotating stereo effect |
+| Distortion | Nonlinear processing |
+| Compressor | Dynamic-range control |
+| Low-pass | Attenuate high frequencies |
+| High-pass | Attenuate low frequencies |
+| Normalization | Level adjustment |
+| Spatial audio | 3D audio processing |
+| Phonograph | Vinyl-style effect |
+| Buffer pooling | Reuse audio buffers to reduce allocation pressure |
+| Soft limiting and ramps | Manage peaks and playback transitions |
 
----
+### Media sources
 
-## Quick Start
+The source implementations below are part of the project. **An implemented source is not a guarantee of current upstream availability.** Authentication, geography, account access, and provider changes can affect resolution or playback.
 
-### Option 1: Pre-built Binaries (Fastest)
+| Source | Source | Source |
+|---|---|---|
+| YouTube | Spotify | Deezer |
+| Apple Music | SoundCloud | Tidal |
+| JioSaavn | Gaana | Mixcloud |
+| NetEase | VK Music | Yandex Music |
+| Audiomack | Audius | Twitch |
+| Reddit | HTTP URLs | Local files |
 
-Download the standalone binary for your architecture from the [Latest Release](https://github.com/nikcodex/Kizunalink/releases):
+Metadata-only results may require a playable mirror. See [config.example.toml](./config.example.toml) for source settings and resolver priorities.
+
+## Quick start
+
+The commands below use the **hardening branch** so the configuration and build match this README. For a tagged release, use the matching tag and configuration instead.
+
+### 1. Get the project
 
 ```bash
-# Example for Linux (x86_64)
-curl -LO https://github.com/nikcodex/Kizunalink/releases/latest/download/kizunalink-linux-amd64
-chmod +x kizunalink-linux-amd64
-
-# Example for Linux / Android (ARM64 / aarch64)
-curl -LO https://github.com/nikcodex/Kizunalink/releases/latest/download/kizunalink-linux-arm64
-chmod +x kizunalink-linux-arm64
-
-# Copy configuration and run
-curl -LO https://raw.githubusercontent.com/nikcodex/Kizunalink/main/config.example.toml
-cp config.example.toml config.toml
-./kizunalink-linux-amd64
-```
-
-### Option 2: Docker Compose
-
-```bash
-git clone https://github.com/nikcodex/Kizunalink.git
+git clone --branch hardening/production-readiness https://github.com/codexdevsnik/Kizunalink.git
 cd Kizunalink
-
 cp config.example.toml config.toml
-# Edit config.toml and customize server.authorization
-nano config.toml
-
-docker compose up -d
-curl -s http://127.0.0.1:2333/health
 ```
 
-### Option 3: Build from Source
+### 2. Configure authentication
 
-#### Prerequisites
-- Rust stable toolchain (`cargo`, `rustfmt`, `clippy`)
-- CMake, pkg-config, and native C compiler
-- `libopus` development headers (`sudo apt install -y build-essential cmake pkg-config libopus-dev`)
-
-```bash
-git clone https://github.com/nikcodex/Kizunalink.git
-cd Kizunalink
-
-cargo build --release
-cp config.example.toml config.toml
-./target/release/kizuna-server
-```
-
----
-
-## Bot Integration
-
-KizunaLink accepts connections from any Lavalink v4 client library. Use `127.0.0.1:2333` and your configured `server.authorization`.
-
-### Python (`wavelink`)
-```python
-import discord
-from discord.ext import commands
-import wavelink
-
-bot = commands.Bot(command_prefix="!", intents=discord.Intents.all())
-
-@bot.event
-async def on_ready():
-    node = wavelink.Node(
-        uri="http://127.0.0.1:2333",
-        password="youshallnotpass",
-    )
-    await wavelink.Pool.connect(nodes=[node], client=bot)
-    print(f"Logged in as {bot.user}")
-
-@bot.command()
-async def play(ctx, *, search: str):
-    if not ctx.guild.voice_client:
-        player = await ctx.author.voice.channel.connect(cls=wavelink.Player)
-    else:
-        player = ctx.guild.voice_client
-
-    tracks = await wavelink.Playable.search(f"ytsearch:{search}")
-    if tracks:
-        await player.play(tracks[0])
-        await ctx.send(f"🎶 Playing: **{tracks[0].title}**")
-```
-
-### JavaScript / TypeScript (`lavalink-client`)
-```typescript
-import { LavalinkManager } from "lavalink-client";
-
-const manager = new LavalinkManager({
-  nodes: [
-    {
-      host: "127.0.0.1",
-      port: 2333,
-      authorization: "youshallnotpass",
-      secure: false,
-    },
-  ],
-  sendToShard: (guildId, payload) => client.guilds.cache.get(guildId)?.shard.send(payload),
-  client: { id: client.user.id, username: client.user.username },
-});
-```
-
----
-
-## Configuration
-
-KizunaLink loads `config.toml` from the working directory (falling back to `config.example.toml`). Settings can be customized directly or overridden with environment variables.
+Edit `config.toml` before starting:
 
 ```toml
 [server]
-address = "0.0.0.0"
+address = "127.0.0.1"
 port = 2333
-authorization = "replace-with-your-strong-secret"
-player_update_interval = 5        # seconds
-stats_interval = 30               # seconds
-rate_limit_per_minute = 2000      # requests/min per client IP (0 disables)
-
-[player]
-buffer_duration_ms = 400
-frame_buffer_duration_ms = 5000
-resampling_quality = "medium"     # low | medium | high
-opus_encoding_quality = 10        # 1-10
-
-[player.sponsorblock]
-enabled = true
-categories = ["sponsor", "intro", "outro", "interaction", "selfpromo", "music_offtopic"]
+authorization = "replace-with-your-own-long-random-secret"
 ```
 
-### Environment Overrides
+Replace the placeholder with a real secret. There is **no default**: the server
+refuses to start if `authorization` is missing, empty, or a known placeholder
+(such as `youshallnotpass`), on **every** bind address including loopback. For
+Docker, use `address = "0.0.0.0"` inside the container and a strong authorization
+value, and prefer injecting it via `KIZUNA_AUTHORIZATION` rather than the file.
 
-| Environment Variable | Config Path |
+> [!WARNING]
+> The Compose file binds `2333` to loopback on the host and requires
+> `KIZUNA_AUTHORIZATION`. To expose the node, put a TLS-terminating reverse proxy
+> in front — the proxy is not a substitute for the secret. Do not expose an
+> unprotected node, commit credentials, or enable HTTP/local-file sources for
+> untrusted clients without reviewing their access boundaries.
+
+### 3. Choose a runtime
+
+#### Docker Compose
+
+```bash
+docker compose up -d --build
+docker compose logs --tail=100 kizunalink
+curl --fail --silent --show-error http://127.0.0.1:2333/health
+
+# Stop the service
+docker compose down
+```
+
+The Compose setup mounts `config.toml` read-only, persists logs in a named volume, and uses a read-only container root filesystem.
+
+#### Build from source
+
+Install a stable Rust toolchain and native build dependencies. On Debian/Ubuntu:
+
+```bash
+sudo apt-get update
+sudo apt-get install -y build-essential cmake pkg-config clang libclang-dev perl libopus-dev
+
+export LIBOPUS_STATIC=1 OPUS_STATIC=1
+cargo build --release --workspace --locked
+./target/release/kizuna-server
+```
+
+#### Pre-built binaries
+
+Check the [releases page](https://github.com/codexdevsnik/Kizunalink/releases) for available platform assets. Release binaries may not include unmerged hardening work. Use the configuration corresponding to the downloaded release; do not assume every architecture has a published asset.
+
+### 4. Verify the API
+
+In another terminal, set `KIZUNA_AUTHORIZATION` to the same secret using your preferred secure environment-management method, then run:
+
+```bash
+curl --fail --silent --show-error \
+  -H "Authorization: ${KIZUNA_AUTHORIZATION:?Set the node secret first}" \
+  http://127.0.0.1:2333/v4/info
+```
+
+A successful health probe checks liveness, not Discord connectivity or media-source availability.
+
+## Configuration
+
+Use [config.example.toml](./config.example.toml) as the complete reference. By default, the server reads `config.toml` from its working directory, falling back to the example configuration. `KIZUNA_CONFIG_PATH` selects an explicit configuration path.
+
+| Environment variable | Setting |
 |---|---|
+| `KIZUNA_CONFIG_PATH` | Configuration file path |
 | `KIZUNA_ADDRESS` | `server.address` |
 | `KIZUNA_PORT` | `server.port` |
 | `KIZUNA_AUTHORIZATION` | `server.authorization` |
@@ -254,44 +178,191 @@ categories = ["sponsor", "intro", "outro", "interaction", "selfpromo", "music_of
 | `KIZUNA_TLS_ENABLED` | `server.tls.enabled` |
 | `KIZUNA_METRICS_ENABLED` | `metrics.prometheus.enabled` |
 
----
+A variable that is set but empty (for example `KIZUNA_ADDRESS=`, or a blank
+entry in a Compose `environment:` list) is rejected at startup by name rather
+than applied as an empty value; unset it to keep the configured value.
+
+### Authorization (required)
+
+`server.authorization` is the shared secret every REST and WebSocket client must
+send. There is **no default**. Startup fails, with a message that never echoes the
+secret, if the value is:
+
+- missing or empty,
+- only whitespace, or
+- a known placeholder such as `youshallnotpass`, `password`, `changeme`,
+  `secret`, or the example values `replace-with-your-strong-secret` /
+  `replace-with-your-own-long-random-secret`.
+
+This applies on **every** bind address, including `127.0.0.1`: a guessable
+credential is reachable by any local process or container port-forward, so it is
+never safe.
+
+Prefer injecting the secret from the environment (a Docker/Kubernetes secret) so
+it never lands in `config.toml`:
+
+```bash
+export KIZUNA_AUTHORIZATION="$(openssl rand -hex 32)"
+```
+
+An empty `KIZUNA_AUTHORIZATION` is a hard error rather than a silent fallback:
+the secret can never be accidentally cleared by an exported-but-empty variable.
+
+### Reverse proxy and network exposure
+
+Put KizunaLink behind a TLS-terminating reverse proxy (Caddy, nginx, Traefik)
+and terminate HTTPS/WSS there, or enable `server.tls` to serve TLS directly.
+
+A reverse proxy is **not** a substitute for the authorization secret:
+
+- Bind the backend to a private address (`127.0.0.1`, a private interface, or a
+  container network) so the node's port is not directly reachable, and always set
+  a strong `server.authorization`.
+- If the proxy adds or strips authentication, it must preserve the
+  `Authorization` header end-to-end (or inject the node's secret itself), and it
+  must not forward client-supplied `Authorization` values unfiltered.
+- `/health` is unauthenticated by design (for orchestrator probes). Do not expose
+  it to the public internet; restrict it at the proxy or bind locally.
+
+### Source access and regional routing
+
+| Situation | Guidance |
+|---|---|
+| YouTube blocks datacenter egress | Configure `sources.youtube.proxy` where appropriate. Proxy-aware handling includes OAuth refresh and media fetching; credentials do not guarantee upstream access. |
+| Indian catalogs | Consider `jssearch:` for JioSaavn or `gnsearch:` for Gaana, subject to provider availability. |
+| JioSaavn/Gaana mirrors | Use query-based matching; bare ISRC identifiers are not reliable searches for these providers. |
+| SoundCloud authorization failures | Inspect the returned source error; authentication/token delivery can change upstream. |
+| Account-dependent providers | Supply required credentials securely or disable the provider. |
+
+## Bot integration
+
+Configure a Lavalink v4 client with the node's host, port, authorization secret, and TLS setting. Libraries such as Wavelink and `lavalink-client` are intended integration targets; this is **not** a certification of every client version.
+
+### Python: Wavelink connection snippet
+
+Call this from your bot's initialization flow after creating the Discord client. `bot` is your existing bot instance; the snippet is not a complete bot.
+
+```python
+import os
+import wavelink
+
+async def connect_audio_node(bot):
+    password = os.environ.get("KIZUNA_AUTHORIZATION")
+    if not password:
+        raise RuntimeError("KIZUNA_AUTHORIZATION must be set")
+    node = wavelink.Node(
+        uri=os.environ.get("KIZUNA_NODE_URI", "http://127.0.0.1:2333"),
+        password=password,
+    )
+    await wavelink.Pool.connect(nodes=[node], client=bot)
+```
+
+### JavaScript / TypeScript: node settings
+
+Use these settings in your client's node configuration; your bot must also provide its Discord identity and gateway forwarding according to the client library's documentation.
+
+```typescript
+const authorization = process.env.KIZUNA_AUTHORIZATION;
+if (!authorization) {
+  throw new Error("KIZUNA_AUTHORIZATION must be set");
+}
+
+const node = {
+  host: "127.0.0.1",
+  port: 2333,
+  authorization,
+  secure: false,
+};
+```
+
+Real voice integrations must provide a valid Discord `User-Id`. DAVE readiness and successful source loading should be checked separately from the WebSocket handshake.
+
+## Architecture
+
+```mermaid
+flowchart TD
+    Bot["Discord bot / Lavalink client"] --> API["REST and WebSocket API"]
+    API --> Sessions["Sessions and players"]
+    Sessions --> Sources["Media sources and mirror resolver"]
+    Sources --> Audio["Decode, resample, filter, mix, encode"]
+    Audio --> Voice["Discord voice transport and DAVE"]
+    Voice --> Discord["Discord voice channel"]
+```
+
+| Location | Responsibility |
+|---|---|
+| `kizuna-server/` | API, sessions, monitoring, and server lifecycle |
+| `kizunalink/kizuna-voice/` | Audio engine, media, configuration, and Discord transport |
+| `vendor/davey/` | Patched DAVE dependency |
 
 ## REST and WebSocket API
 
-All `/v4` endpoints require the `Authorization` header. `/health` is unguarded for orchestrators.
+`/v4/*` and enabled metrics require the `Authorization` header. `/health` is unauthenticated. The metrics path is configurable.
 
 | Method | Endpoint | Purpose |
 |---|---|---|
-| `GET` | `/health` | Unauthenticated liveness probe |
-| `GET` | `/v4/info` | Node version, sources, and active filters |
-| `GET` | `/v4/stats` | Memory usage, CPU load, and uptime statistics |
-| `GET` | `/v4/loadtracks?identifier=` | Search or resolve track URLs |
-| `GET` | `/v4/loadsearch?identifier=` | Query search endpoints |
-| `GET` | `/v4/decodetrack?encodedTrack=` | Decode single base64 track payload |
-| `POST` | `/v4/decodetracks` | Decode array of base64 tracks |
-| `GET` | `/v4/sessions/{session}/players` | List all active players |
-| `PATCH` | `/v4/sessions/{session}/players/{guild}` | Play, pause, seek, set volume, and configure filters |
-| `DELETE` | `/v4/sessions/{session}/players/{guild}` | Destroy a guild player |
-| `GET` | `/v4/lyrics?track=` | Query lyrics across active providers |
-| `WS` | `/v4/websocket` | Real-time Lavalink v4 event stream |
-| `GET` | `/metrics` | Prometheus metrics exporter |
+| `GET` | `/health` | Liveness probe |
+| `GET` | `/v4/info` | Version, sources, and filters |
+| `GET` | `/v4/stats` | Node statistics |
+| `GET` | `/v4/loadtracks?identifier=` | Search or resolve a track |
+| `GET` | `/v4/loadsearch?identifier=` | Search extension |
+| `GET` | `/v4/decodetrack?encodedTrack=` | Decode one track |
+| `POST` | `/v4/decodetracks` | Decode multiple tracks |
+| `GET` | `/v4/sessions/{session}/players` | List players |
+| `PATCH` | `/v4/sessions/{session}/players/{guild}` | Update playback and filters |
+| `DELETE` | `/v4/sessions/{session}/players/{guild}` | Destroy a player |
+| `GET` | `/v4/lyrics?track=` | Lyrics extension |
+| `WS` | `/v4/websocket` | Session events |
+| `GET` | `/metrics` | Default Prometheus endpoint, when enabled |
 
----
+For load results, `empty` means no match and `error` means loading failed. `loadFailed` is a track-end event reason, **not** a `loadType`.
+
+## KizunaLink and Lavalink
+
+KizunaLink is an alternative implementation, not the official Lavalink server.
+
+| Area | KizunaLink | Lavalink |
+|---|---|---|
+| Runtime | Native Rust | Java 17+ |
+| DAVE | Integrated through patched `davey` | Officially supported |
+| Extensions | Integrated sources, DSP, lyrics, and SponsorBlock | Built-in functionality plus a plugin ecosystem |
+| Maturity | Production-hardening work in progress | Established production usage and client ecosystem |
+
+A native runtime avoids garbage collection, but does not guarantee lower jitter, lower CPU use, or better audio quality. Memory and startup comparisons require the same hardware, workload, versions, and configuration. No universal performance advantage is asserted here.
+
+### Voice scope: playback only
+
+KizunaLink is a playback (send-only) node. It joins a voice channel, negotiates
+DAVE end-to-end encryption, and sends audio; it does not read, decode, or mix
+incoming voice from other members. Incoming UDP/RTP media is discarded without
+allocation, and the DAVE send path refuses to emit plaintext while encryption is
+required but the group is not yet ready. Clients that expect a bot to transcribe
+or record other members' audio are out of scope.
 
 ## Development
 
 ```bash
-# Format check
+export LIBOPUS_STATIC=1 OPUS_STATIC=1
 cargo fmt --all -- --check
-
-# Test suite
-cargo test --workspace --all-targets
-
-# Linter
-cargo clippy --workspace --all-targets -- -D warnings
+cargo check --workspace --all-targets --locked
+cargo clippy --workspace --all-targets --locked -- -D warnings
+cargo test --workspace --all-targets --locked
+cargo test --workspace --doc --locked
+cargo test -p kizuna-server --locked -- --ignored soak --nocapture
+cargo deny check advisories
+cargo audit
+cargo build --release --workspace --locked
 ```
 
----
+Install `cargo-deny` and `cargo-audit` separately to run the advisory checks. Review [deny.toml](./deny.toml) and [.cargo/audit.toml](./.cargo/audit.toml): documented exceptions mean a successful advisory gate is not a claim of zero vulnerabilities.
+
+Live source, Docker, and Discord/DAVE checks are separate from unit tests. Record the exact commit, commands, outcomes, and blocked prerequisites; never report credential-dependent or unexecuted checks as passed.
+
+## Security and contributing
+
+Report vulnerabilities according to [SECURITY.md](./SECURITY.md). Keep secrets out of commits, issue bodies, and logs.
+
+For contributions, investigate existing behavior first, keep changes focused, and add regression tests for demonstrated defects. See [AGENTS.md](./AGENTS.md) for development notes and [the hardening PR](https://github.com/codexdevsnik/Kizunalink/pull/5) for the current review scope.
 
 ## License
 
@@ -301,7 +372,7 @@ Distributed under the [MIT License](./LICENSE).
 
 <div align="center">
 
-Made with ❤️ by [nikcodex](https://github.com/nikcodex)
+Made with care by [nikcodex](https://github.com/nikcodex).
 
 [Back to top](#kizunalink)
 

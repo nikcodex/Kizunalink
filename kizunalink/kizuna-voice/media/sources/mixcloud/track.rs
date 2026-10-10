@@ -100,7 +100,7 @@ impl PlayableTrack for MixcloudTrack {
                     if let Err(e) = std::thread::Builder::new()
                         .name(format!("mixcloud-decoder-{}", uri))
                         .spawn(move || {
-                            if let Err(e) = processor.run() {
+                            if let Err(e) = processor.run_guarded() {
                                 tracing::error!(
                                     "Mixcloud audio processor error for {}: {}",
                                     uri,

@@ -9,6 +9,7 @@ use axum::{
     response::{IntoResponse, Json},
 };
 
+use crate::api::rest::json::ApiJson;
 use crate::{protocol, server::AppState};
 
 /// GET /v4/routeplanner/status
@@ -22,7 +23,7 @@ pub async fn routeplanner_status(State(state): State<Arc<AppState>>) -> impl Int
 
 pub async fn routeplanner_free_address(
     State(state): State<Arc<AppState>>,
-    Json(body): Json<protocol::FreeAddressRequest>,
+    ApiJson(body): ApiJson<protocol::FreeAddressRequest>,
 ) -> impl IntoResponse {
     tracing::info!(
         "POST /v4/routeplanner/free/address: address='{}'",

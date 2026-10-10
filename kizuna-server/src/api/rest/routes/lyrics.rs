@@ -3,12 +3,9 @@
 
 use std::sync::Arc;
 
-use axum::{
-    Json,
-    extract::{Path, Query, State},
-    response::IntoResponse,
-};
+use axum::{Json, extract::State, response::IntoResponse};
 
+use crate::api::rest::json::{ApiPath, ApiQuery};
 use crate::{
     protocol::{
         models::{GetLyricsQuery, GetPlayerLyricsQuery, KizunaLinkLyrics, KizunaLinkLyricsLine},
@@ -19,7 +16,7 @@ use crate::{
 
 pub async fn subscribe_lyrics(
     State(state): State<Arc<AppState>>,
-    Path((session_id, guild_id)): Path<(String, String)>,
+    ApiPath((session_id, guild_id)): ApiPath<(String, String)>,
 ) -> axum::http::StatusCode {
     let session_id = kizunalink::common::types::SessionId(session_id);
     let guild_id = kizunalink::common::types::GuildId(guild_id);
@@ -99,7 +96,7 @@ pub async fn subscribe_lyrics(
 
 pub async fn unsubscribe_lyrics(
     State(state): State<Arc<AppState>>,
-    Path((session_id, guild_id)): Path<(String, String)>,
+    ApiPath((session_id, guild_id)): ApiPath<(String, String)>,
 ) -> axum::http::StatusCode {
     let session_id = kizunalink::common::types::SessionId(session_id);
     let guild_id = kizunalink::common::types::GuildId(guild_id);
@@ -124,7 +121,7 @@ pub async fn unsubscribe_lyrics(
 
 pub async fn get_lyrics(
     State(state): State<Arc<AppState>>,
-    Query(query): Query<GetLyricsQuery>,
+    ApiQuery(query): ApiQuery<GetLyricsQuery>,
 ) -> impl IntoResponse {
     tracing::info!(
         "GET /v4/lyrics: track='{}', skipTrackSource={}",
@@ -171,8 +168,8 @@ pub async fn get_lyrics(
 
 pub async fn get_player_lyrics(
     State(state): State<Arc<AppState>>,
-    Path((session_id, guild_id)): Path<(String, String)>,
-    Query(_query): Query<GetPlayerLyricsQuery>,
+    ApiPath((session_id, guild_id)): ApiPath<(String, String)>,
+    ApiQuery(_query): ApiQuery<GetPlayerLyricsQuery>,
 ) -> impl IntoResponse {
     let session_id = kizunalink::common::types::SessionId(session_id);
     let guild_id = kizunalink::common::types::GuildId(guild_id);

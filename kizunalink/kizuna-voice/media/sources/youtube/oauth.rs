@@ -28,7 +28,7 @@ pub struct YouTubeOAuth {
 }
 
 impl YouTubeOAuth {
-    pub fn new(refresh_tokens: Vec<String>) -> Self {
+    pub fn new(refresh_tokens: Vec<String>, client: reqwest::Client) -> Self {
         Self {
             refresh_tokens: RwLock::new(refresh_tokens),
             current_token_index: RwLock::new(0),
@@ -36,7 +36,7 @@ impl YouTubeOAuth {
             client_secret: std::env::var(CLIENT_SECRET_ENV)
                 .ok()
                 .filter(|secret| !secret.is_empty()),
-            client: reqwest::Client::new(),
+            client,
         }
     }
 

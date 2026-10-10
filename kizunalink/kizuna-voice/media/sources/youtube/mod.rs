@@ -47,6 +47,7 @@ pub struct YouTubeSource {
     oauth: Arc<YouTubeOAuth>,
     cipher_manager: Arc<YouTubeCipherManager>,
     visitor_data: SharedRw<Option<String>>,
+    proxy: Option<crate::config::sources::HttpProxyConfig>,
     #[allow(dead_code)]
     http: Arc<reqwest::Client>,
 }
@@ -62,7 +63,13 @@ pub struct YoutubeStreamContext {
 impl YouTubeSource {
     pub fn new(config: Option<YouTubeConfig>, http: Arc<reqwest::Client>) -> Self {
         let config = config.unwrap_or_default();
-        let oauth = Arc::new(YouTubeOAuth::new(config.refresh_tokens.clone()));
+        // OAuth token refresh must use the same proxy-aware client as playback:
+        // datacenter IPs are blocked by Google, and token requests would otherwise
+        // leave from the blocked host even when `sources.youtube.proxy` is set.
+        let oauth = Arc::new(YouTubeOAuth::new(
+            config.refresh_tokens.clone(),
+            http.as_ref().clone(),
+        ));
         let cipher_manager = Arc::new(YouTubeCipherManager::new(config.cipher.clone()));
 
         // Call initialization in background if no tokens provided and enabled in config
@@ -194,6 +201,7 @@ impl YouTubeSource {
             oauth,
             cipher_manager,
             visitor_data,
+            proxy: config.proxy.clone(),
             http,
         }
     }
@@ -473,7 +481,7 @@ impl SourcePlugin for YouTubeSource {
             cipher_manager: self.cipher_manager.clone(),
             visitor_data,
             local_addr: routeplanner.and_then(|rp| rp.get_address()),
-            proxy: None,
+            proxy: self.proxy.clone(),
         }))
     }
 }

@@ -3,13 +3,9 @@
 
 use std::sync::Arc;
 
-use axum::{
-    Json,
-    extract::{Path, State},
-    http::StatusCode,
-    response::IntoResponse,
-};
+use axum::{Json, extract::State, http::StatusCode, response::IntoResponse};
 
+use crate::api::rest::json::{ApiJson, ApiPath};
 use crate::server::AppState;
 
 /// GET /v4/sessions/{sessionId}/players/{guildId}/sponsorblock/categories
@@ -17,7 +13,7 @@ use crate::server::AppState;
 /// Mirror of the `SponsorBlock-Plugin` endpoint. Returns the set of categories
 /// the player currently skips.
 pub async fn get_categories(
-    Path((session_id, guild_id)): Path<(String, String)>,
+    ApiPath((session_id, guild_id)): ApiPath<(String, String)>,
     State(state): State<Arc<AppState>>,
 ) -> impl IntoResponse {
     let session_id = kizunalink::common::types::SessionId(session_id);
@@ -48,9 +44,9 @@ pub async fn get_categories(
 /// Replaces the set of categories the player skips. Must be a subset of the
 /// categories the SponsorBlock API knows.
 pub async fn set_categories(
-    Path((session_id, guild_id)): Path<(String, String)>,
+    ApiPath((session_id, guild_id)): ApiPath<(String, String)>,
     State(state): State<Arc<AppState>>,
-    Json(body): Json<Vec<String>>,
+    ApiJson(body): ApiJson<Vec<String>>,
 ) -> impl IntoResponse {
     let session_id = kizunalink::common::types::SessionId(session_id);
     let guild_id = kizunalink::common::types::GuildId(guild_id);
@@ -88,7 +84,7 @@ pub async fn set_categories(
 ///
 /// Disables SponsorBlock for this player by clearing all categories.
 pub async fn delete_categories(
-    Path((session_id, guild_id)): Path<(String, String)>,
+    ApiPath((session_id, guild_id)): ApiPath<(String, String)>,
     State(state): State<Arc<AppState>>,
 ) -> impl IntoResponse {
     let session_id = kizunalink::common::types::SessionId(session_id);
@@ -119,7 +115,7 @@ pub async fn delete_categories(
 ///
 /// Returns the currently-cached segments for the active track (or `[]`).
 pub async fn get_segments(
-    Path((session_id, guild_id)): Path<(String, String)>,
+    ApiPath((session_id, guild_id)): ApiPath<(String, String)>,
     State(state): State<Arc<AppState>>,
 ) -> impl IntoResponse {
     let session_id = kizunalink::common::types::SessionId(session_id);

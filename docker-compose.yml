@@ -2,11 +2,23 @@ services:
   kizunalink:
     build: .
     volumes:
-      # Mounted into WORKDIR (/app) so AppConfig::load() finds it. Override
-      # secrets via KIZUNA_* env vars instead of baking them into the file.
+      # Mounted into WORKDIR (/app) so AppConfig::load() finds it. Prefer
+      # injecting secrets via KIZUNA_* env vars (below) instead of baking them
+      # into the file.
       - ./config.toml:/app/config.toml:ro
+      # The default config writes ./logs/kizunalink.log. The image root is
+      # `read_only`, so without a writable mount that file log silently fails;
+      # a named volume keeps logs across restarts and leaves the root FS immutable.
+      - kizuna-logs:/app/logs
+    # REQUIRED: server.authorization has no default and must not be a known
+    # placeholder. Set a strong secret here (e.g. `openssl rand -hex 32`) or, for
+    # secrets managers, via a `.env` file / Docker secret. Startup fails without it.
+    environment:
+      KIZUNA_AUTHORIZATION: "${KIZUNA_AUTHORIZATION:?set KIZUNA_AUTHORIZATION to a strong secret}"
     ports:
-      - "2333:2333"
+      # Bind to loopback by default. Put a TLS-terminating reverse proxy in front
+      # and keep the backend private; a proxy is not a substitute for the secret.
+      - "127.0.0.1:2333:2333"
     restart: unless-stopped
     cap_drop:
       - ALL
@@ -15,3 +27,6 @@ services:
     read_only: true
     tmpfs:
       - /tmp
+
+volumes:
+  kizuna-logs:

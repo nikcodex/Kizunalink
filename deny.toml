@@ -2,7 +2,11 @@
 # See https://embarkstudios.github.io/cargo-deny/
 # Run locally with: cargo deny check
 #
-# CI runs `cargo deny check advisories` (the RustSec vulnerability gate).
+# CI runs `cargo deny check advisories` (this file) AND `cargo audit`
+# (.cargo/audit.toml). cargo-deny silently skips advisories that only constrain
+# `affected.functions` with no floor/ceiling in their `[versions]` block
+# (RUSTSEC-2026-0209/0211/0124/0330/0331); cargo-audit catches them, so it is
+# the authoritative gate. Keep the two ignore lists in sync.
 # The license/bans sections below are available for local use.
 
 [advisories]

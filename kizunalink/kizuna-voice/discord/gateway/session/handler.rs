@@ -211,6 +211,12 @@ impl<'a> SessionState<'a> {
 
         self.seq_ack.store(seq as i64, Ordering::Relaxed);
         let mut dave = self.dave.lock().await;
+        trace!(
+            "[{}] RX BIN OP: op={} len={}",
+            self.gateway.guild_id,
+            op,
+            data.len()
+        );
 
         match op {
             25 => {
@@ -811,6 +817,12 @@ impl<'a> SessionState<'a> {
     }
 
     fn send_binary(&self, op: u8, payload: &[u8]) {
+        trace!(
+            "[{}] TX BIN OP: op={} len={}",
+            self.gateway.guild_id,
+            op,
+            payload.len()
+        );
         let mut b = vec![op];
         b.extend_from_slice(payload);
         if self.tx.try_send(Message::Binary(b.into())).is_err() {

@@ -70,7 +70,7 @@ impl PlayableTrack for TidalTrack {
                     if let Err(e) = std::thread::Builder::new()
                         .name(format!("tidal-decoder-{}", identifier))
                         .spawn(move || {
-                            if let Err(e) = processor.run() {
+                            if let Err(e) = processor.run_guarded() {
                                 error!(
                                     "TidalTrack audio processor error for {}: {}",
                                     identifier, e

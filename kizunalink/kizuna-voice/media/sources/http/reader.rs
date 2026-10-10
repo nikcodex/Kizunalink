@@ -22,7 +22,7 @@ impl HttpReader {
     ) -> AnyResult<Self> {
         // Validate URL and resolve DNS to prevent SSRF (SEC-001) and avoid blocking workers (PERF-001)
         // This runs inside spawn_blocking, so blocking DNS resolution is acceptable here.
-        let (host, _port, addresses) = super::validate_public_url(url)?;
+        let (host, _port, addresses) = super::resolve_and_validate_public_url(url)?;
 
         let user_agent = crate::common::utils::default_user_agent();
         let client = create_client_with_pinning(

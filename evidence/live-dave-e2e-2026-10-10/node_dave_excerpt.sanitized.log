@@ -1,0 +1,360 @@
+[2m╭─[0m [2m[[0m2026-10-10 12:22:48.693[2m][0m [2m─[0m [2m[[0m[36m30.86 MB[0m[2m][0m [2m─[0m [2m[[0m[32m[1mINFO [0m[2m][0m
+[2m│[0m  [2mat:[0m kizuna_server::api::ws::handler:39
+[2m╰─>[0m WebSocket connected: session=lbzi7zp8x28f9sgb resumed=false[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:22:48.771[2m][0m [2m─[0m [2m[[0m[36m30.86 MB[0m[2m][0m [2m─[0m [2m[[0m[34m[1mDEBUG[0m[2m][0m
+[2m│[0m  [2mat:[0m kizunalink::discord::gateway::session:185
+[2m╰─>[0m [1485248400361259170] Dialing voice endpoint c-ord08-b5d19441.discord.media:2087 (resume=false)[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:22:48.890[2m][0m [2m─[0m [2m[[0m[36m30.86 MB[0m[2m][0m [2m─[0m [2m[[0m[34m[1mDEBUG[0m[2m][0m
+[2m│[0m  [2mat:[0m kizunalink::discord::gateway::session::handler:362
+[2m╰─>[0m [1485248400361259170] Ready: ssrc=3983, mode=aead_aes256_gcm_rtpsize[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:22:48.890[2m][0m [2m─[0m [2m[[0m[36m30.86 MB[0m[2m][0m [2m─[0m [2m[[0m[34m[1mDEBUG[0m[2m][0m
+[2m╰─>[0m IP discovery: target=104.29.158.103:19323 ssrc=3983 attempts=10 timeout=2s interval=1000ms[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:22:48.890[2m][0m [2m─[0m [2m[[0m[36m30.86 MB[0m[2m][0m [2m─[0m [2m[[0m[34m[1mDEBUG[0m[2m][0m
+[2m╰─>[0m IP discovery: attempt 1/10 sent probe to 104.29.158.103:19323[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:22:48.902[2m][0m [2m─[0m [2m[[0m[36m30.86 MB[0m[2m][0m [2m─[0m [2m[[0m[34m[1mDEBUG[0m[2m][0m
+[2m╰─>[0m IP discovery: ok after 1 attempt(s) — external 34.29.175.97:14336[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:22:48.923[2m][0m [2m─[0m [2m[[0m[36m30.86 MB[0m[2m][0m [2m─[0m [2m[[0m[34m[1mDEBUG[0m[2m][0m
+[2m│[0m  [2mat:[0m kizunalink::discord::crypto::dave:151
+[2m╰─>[0m DAVE session setup (v1)[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:22:48.924[2m][0m [2m─[0m [2m[[0m[36m30.86 MB[0m[2m][0m [2m─[0m [2m[[0m[34m[1mDEBUG[0m[2m][0m
+[2m│[0m  [2mat:[0m kizunalink::discord::gateway::session::handler:502
+[2m╰─>[0m DAVE setup context: protocol_version=1, mls_group_id=0[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:22:48.924[2m][0m [2m─[0m [2m[[0m[36m30.86 MB[0m[2m][0m [2m─[0m [2m[[0m[34m[1mDEBUG[0m[2m][0m
+[2m│[0m  [2mat:[0m kizunalink::discord::gateway::session::handler:752
+[2m╰─>[0m [1485248400361259170] Voice session established: ssrc=3983 addr=104.29.158.103:19323 mode=aead_aes256_gcm_rtpsize[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:22:48.924[2m][0m [2m─[0m [2m[[0m[36m30.86 MB[0m[2m][0m [2m─[0m [2m[[0m[34m[1mDEBUG[0m[2m][0m
+[2m│[0m  [2mat:[0m kizunalink::discord::gateway::session::handler:170
+[2m╰─>[0m [1485248400361259170] Media Sink Wants: Object {"any": Number(100)}[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:22:48.924[2m][0m [2m─[0m [2m[[0m[36m30.86 MB[0m[2m][0m [2m─[0m [2m[[0m[34m[1mDEBUG[0m[2m][0m
+[2m╰─>[0m speak_loop starting: addr=104.29.158.103:19323 ssrc=3983 mode=aead_aes256_gcm_rtpsize[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:22:50.905[2m][0m [2m─[0m [2m[[0m[36m33.22 MB[0m[2m][0m [2m─[0m [2m[[0m[34m[1mDEBUG[0m[2m][0m
+[2m╰─>[0m speak_loop: 100 ticks, frames_sent=0 frames_nulled=0[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:22:51.773[2m][0m [2m─[0m [2m[[0m[36m33.22 MB[0m[2m][0m [2m─[0m [2m[[0m[32m[1mINFO [0m[2m][0m
+[2m│[0m  [2mat:[0m kizuna_server::api::rest::routes::stats::track:35
+[2m╰─>[0m GET /v4/loadtracks: identifier_bytes=32, source_prefix=ytsearch[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:22:51.773[2m][0m [2m─[0m [2m[[0m[36m33.22 MB[0m[2m][0m [2m─[0m [2m[[0m[34m[1mDEBUG[0m[2m][0m
+[2m│[0m  [2mat:[0m kizunalink::media::sources::manager:64
+[2m╰─>[0m SourceManager: Loading 'ytsearch:never gonna give you up' with source: youtube[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:22:51.773[2m][0m [2m─[0m [2m[[0m[36m33.22 MB[0m[2m][0m [2m─[0m [2m[[0m[34m[1mDEBUG[0m[2m][0m
+[2m│[0m  [2mat:[0m kizunalink::media::sources::youtube:539
+[2m╰─>[0m Searching 'never gonna give you up' with Android[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:22:52.181[2m][0m [2m─[0m [2m[[0m[36m33.71 MB[0m[2m][0m [2m─[0m [2m[[0m[32m[1mINFO [0m[2m][0m
+[2m│[0m  [2mat:[0m kizunalink::discord::player::manager::start:112
+[2m╰─>[0m Playback starting: https://www.youtube.com/watch?v=dQw4w9WgXcQ (source: youtube)[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:22:52.181[2m][0m [2m─[0m [2m[[0m[36m33.71 MB[0m[2m][0m [2m─[0m [2m[[0m[34m[1mDEBUG[0m[2m][0m
+[2m│[0m  [2mat:[0m kizunalink::media::sources::youtube::track:61
+[2m╰─>[0m YoutubeTrack: Resolving 'dQw4w9WgXcQ' using TV Cast[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:22:52.272[2m][0m [2m─[0m [2m[[0m[36m33.71 MB[0m[2m][0m [2m─[0m [2m[[0m[32m[1mINFO [0m[2m][0m
+[2m│[0m  [2mat:[0m kizunalink::media::sources::youtube::track:75
+[2m╰─>[0m YoutubeTrack: resolved track URL for 'dQw4w9WgXcQ' using client 'TV Cast'[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:22:52.479[2m][0m [2m─[0m [2m[[0m[36m33.71 MB[0m[2m][0m [2m─[0m [2m[[0m[34m[1mDEBUG[0m[2m][0m
+[2m│[0m  [2mat:[0m kizunalink::engine::source::http:46
+[2m╰─>[0m HttpSource opened: https://rr2---sn-a5m7lnld.googlevideo.com/videoplayback?expire=1791656572&ei=HC7KauWkC_uX-coPmNmN0QM&ip=fda3%3Ae722%3Aac3%3A10%3A149%3A44c9%3Aa02%3A5f04&id=o-AANG-fey023ED5kkcLHDd3r6EH-t9JFxb_8EfzpGSWgo&itag=251&source=youtube&requiressl=yes&xpc=EgVo2aDSNQ%3D%3D&cps=1248&met=1791634972%2C&mh=7c&mm=18%2C29&mn=sn-a5m7lnld%2Csn-a5meknzr&ms=aub%2Crdu&mv=D&mvi=2&pl=0&rms=aub%2Caub&bui=AWzQHwoDmYyrSbGw_VGG6tWUO77nZQ8GWGnw1fpBoaeWEUYLbMo1QNPh2jX2eyZLD_soSH-tMI0t6kFy&spc=I-rgIdwsKkBWXecsdz0lQzXmcktINIhVkOT0rDcIlNf4sVKMvOR4UJpSh1idvw&vprv=1&svpuc=1&mime=audio%2Fwebm&ns=3A4xyDzu7DvVLk07EjsrXvUZ&rqh=1&gir=yes&clen=3433755&dur=213.061&lmt=1766955883819090&mt=1791634401&fvip=4&keepalive=yes&fexp=51565115%2C52112905%2C52184231%2C52227521%2C52250513&c=TVHTML5_CAST&sefc=1&txp=5532534&n=HUwpoP3h4tzvGA&sparams=expire%2Cei%2Cip%2Cid%2Citag%2Csource%2Crequiressl%2Cxpc%2Cbui%2Cspc%2Cvprv%2Csvpuc%2Cmime%2Cns%2Crqh%2Cgir%2Cclen%2Cdur%2Clmt&lsparams=cps%2Cmet%2Cmh%2Cmm%2Cmn%2Cms%2Cmv%2Cmvi%2Cpl%2Crms&lsig=APaTxxMwRQIhAIvRP6Jzq-RNJmFiUpjDfuQ1SCOQTGh6AYlHK58jmDX6AiB0ubpq2KCw_0OVjkXg4GwxhFTgtsy0ZIu-Vqu5yQdJJw%3D%3D&sig=AE0s2JYwRAIgdK5jfCKO8zfcJKVC8ZeibqjQ4WAULPrgbzETp3yJQUwCIAuPFu_fzCQKRHBl2ZzZiW_kp5QRADPUP2UGSXquPfUV (len=Some(3433755))[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:22:52.480[2m][0m [2m─[0m [2m[[0m[36m33.71 MB[0m[2m][0m [2m─[0m [2m[[0m[34m[1mDEBUG[0m[2m][0m
+[2m│[0m  [2mat:[0m kizunalink::engine::source::http:185
+[2m╰─>[0m HttpSource: hard seek 1024 → 0[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:22:52.480[2m][0m [2m─[0m [2m[[0m[36m33.71 MB[0m[2m][0m [2m─[0m [2m[[0m[32m[1mINFO [0m[2m][0m
+[2m│[0m  [2mat:[0m log:??
+[2m╰─>[0m stream is seekable with len=3433755 bytes.[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:22:52.660[2m][0m [2m─[0m [2m[[0m[36m33.71 MB[0m[2m][0m [2m─[0m [2m[[0m[34m[1mDEBUG[0m[2m][0m
+[2m│[0m  [2mat:[0m kizunalink::engine::source::http:185
+[2m╰─>[0m HttpSource: hard seek 1024 → 116[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:22:52.846[2m][0m [2m─[0m [2m[[0m[36m33.71 MB[0m[2m][0m [2m─[0m [2m[[0m[34m[1mDEBUG[0m[2m][0m
+[2m│[0m  [2mat:[0m kizunalink::engine::source::http:185
+[2m╰─>[0m HttpSource: hard seek 1140 → 175[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:22:52.905[2m][0m [2m─[0m [2m[[0m[36m33.71 MB[0m[2m][0m [2m─[0m [2m[[0m[34m[1mDEBUG[0m[2m][0m
+[2m╰─>[0m speak_loop: 200 ticks, frames_sent=0 frames_nulled=0[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:22:53.032[2m][0m [2m─[0m [2m[[0m[36m33.71 MB[0m[2m][0m [2m─[0m [2m[[0m[34m[1mDEBUG[0m[2m][0m
+[2m│[0m  [2mat:[0m kizunalink::engine::source::http:185
+[2m╰─>[0m HttpSource: hard seek 1199 → 259[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:22:53.211[2m][0m [2m─[0m [2m[[0m[36m34.63 MB[0m[2m][0m [2m─[0m [2m[[0m[34m[1mDEBUG[0m[2m][0m
+[2m│[0m  [2mat:[0m kizunalink::engine::source::http:185
+[2m╰─>[0m HttpSource: hard seek 1283 → 48[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:22:53.212[2m][0m [2m─[0m [2m[[0m[36m34.63 MB[0m[2m][0m [2m─[0m [2m[[0m[34m[1mDEBUG[0m[2m][0m
+[2m│[0m  [2mat:[0m kizunalink::engine::processor:119
+[2m╰─>[0m AudioProcessor: opened format — 48000Hz 2ch[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:22:53.212[2m][0m [2m─[0m [2m[[0m[36m34.63 MB[0m[2m][0m [2m─[0m [2m[[0m[34m[1mDEBUG[0m[2m][0m
+[2m│[0m  [2mat:[0m kizunalink::engine::processor:152
+[2m╰─>[0m Starting transcode loop: 48000Hz 2ch -> 48000Hz[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:22:53.348[2m][0m [2m─[0m [2m[[0m[36m34.63 MB[0m[2m][0m [2m─[0m [2m[[0m[34m[1mDEBUG[0m[2m][0m
+[2m│[0m  [2mat:[0m kizunalink::discord::crypto::dave:85
+[2m╰─>[0m DAVE adding users: [912362112620331029][0m
+[2m╭─[0m [2m[[0m2026-10-10 12:22:54.643[2m][0m [2m─[0m [2m[[0m[36m36.86 MB[0m[2m][0m [2m─[0m [2m[[0m[34m[1mDEBUG[0m[2m][0m
+[2m│[0m  [2mat:[0m kizunalink::discord::crypto::dave:375
+[2m╰─>[0m DAVE commit processed (tid 0)[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:22:54.645[2m][0m [2m─[0m [2m[[0m[36m36.86 MB[0m[2m][0m [2m─[0m [2m[[0m[34m[1mDEBUG[0m[2m][0m
+[2m│[0m  [2mat:[0m kizunalink::discord::crypto::dave:455
+[2m╰─>[0m DAVE session (v1) is READY[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:22:54.905[2m][0m [2m─[0m [2m[[0m[36m36.86 MB[0m[2m][0m [2m─[0m [2m[[0m[34m[1mDEBUG[0m[2m][0m
+[2m╰─>[0m speak_loop: 300 ticks, frames_sent=14 frames_nulled=1[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:22:56.906[2m][0m [2m─[0m [2m[[0m[36m36.90 MB[0m[2m][0m [2m─[0m [2m[[0m[34m[1mDEBUG[0m[2m][0m
+[2m╰─>[0m speak_loop: 400 ticks, frames_sent=114 frames_nulled=1[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:22:57.184[2m][0m [2m─[0m [2m[[0m[36m36.90 MB[0m[2m][0m [2m─[0m [2m[[0m[32m[1mINFO [0m[2m][0m
+[2m│[0m  [2mat:[0m kizuna_server::api::rest::routes::player::get:20
+[2m╰─>[0m GET /v4/sessions/lbzi7zp8x28f9sgb/players[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:22:58.906[2m][0m [2m─[0m [2m[[0m[36m36.91 MB[0m[2m][0m [2m─[0m [2m[[0m[34m[1mDEBUG[0m[2m][0m
+[2m╰─>[0m speak_loop: 500 ticks, frames_sent=214 frames_nulled=1[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:23:00.906[2m][0m [2m─[0m [2m[[0m[36m36.91 MB[0m[2m][0m [2m─[0m [2m[[0m[34m[1mDEBUG[0m[2m][0m
+[2m╰─>[0m speak_loop: 600 ticks, frames_sent=314 frames_nulled=1[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:23:02.190[2m][0m [2m─[0m [2m[[0m[36m36.91 MB[0m[2m][0m [2m─[0m [2m[[0m[32m[1mINFO [0m[2m][0m
+[2m│[0m  [2mat:[0m kizuna_server::api::rest::routes::player::get:20
+[2m╰─>[0m GET /v4/sessions/lbzi7zp8x28f9sgb/players[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:23:02.906[2m][0m [2m─[0m [2m[[0m[36m36.91 MB[0m[2m][0m [2m─[0m [2m[[0m[34m[1mDEBUG[0m[2m][0m
+[2m╰─>[0m speak_loop: 700 ticks, frames_sent=414 frames_nulled=1[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:23:04.906[2m][0m [2m─[0m [2m[[0m[36m36.87 MB[0m[2m][0m [2m─[0m [2m[[0m[34m[1mDEBUG[0m[2m][0m
+[2m╰─>[0m speak_loop: 800 ticks, frames_sent=514 frames_nulled=1[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:23:06.905[2m][0m [2m─[0m [2m[[0m[36m36.87 MB[0m[2m][0m [2m─[0m [2m[[0m[34m[1mDEBUG[0m[2m][0m
+[2m╰─>[0m speak_loop: 900 ticks, frames_sent=614 frames_nulled=1[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:23:07.197[2m][0m [2m─[0m [2m[[0m[36m36.87 MB[0m[2m][0m [2m─[0m [2m[[0m[32m[1mINFO [0m[2m][0m
+[2m│[0m  [2mat:[0m kizuna_server::api::rest::routes::player::get:20
+[2m╰─>[0m GET /v4/sessions/lbzi7zp8x28f9sgb/players[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:23:08.906[2m][0m [2m─[0m [2m[[0m[36m36.87 MB[0m[2m][0m [2m─[0m [2m[[0m[34m[1mDEBUG[0m[2m][0m
+[2m╰─>[0m speak_loop: 1000 ticks, frames_sent=714 frames_nulled=1[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:23:10.905[2m][0m [2m─[0m [2m[[0m[36m36.87 MB[0m[2m][0m [2m─[0m [2m[[0m[34m[1mDEBUG[0m[2m][0m
+[2m╰─>[0m speak_loop: 1100 ticks, frames_sent=814 frames_nulled=1[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:23:12.202[2m][0m [2m─[0m [2m[[0m[36m36.87 MB[0m[2m][0m [2m─[0m [2m[[0m[32m[1mINFO [0m[2m][0m
+[2m│[0m  [2mat:[0m kizuna_server::api::rest::routes::player::get:20
+[2m╰─>[0m GET /v4/sessions/lbzi7zp8x28f9sgb/players[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:23:12.906[2m][0m [2m─[0m [2m[[0m[36m36.87 MB[0m[2m][0m [2m─[0m [2m[[0m[34m[1mDEBUG[0m[2m][0m
+[2m╰─>[0m speak_loop: 1200 ticks, frames_sent=914 frames_nulled=1[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:23:14.906[2m][0m [2m─[0m [2m[[0m[36m36.87 MB[0m[2m][0m [2m─[0m [2m[[0m[34m[1mDEBUG[0m[2m][0m
+[2m╰─>[0m speak_loop: 1300 ticks, frames_sent=1014 frames_nulled=1[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:23:16.906[2m][0m [2m─[0m [2m[[0m[36m36.88 MB[0m[2m][0m [2m─[0m [2m[[0m[34m[1mDEBUG[0m[2m][0m
+[2m╰─>[0m speak_loop: 1400 ticks, frames_sent=1114 frames_nulled=1[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:23:17.206[2m][0m [2m─[0m [2m[[0m[36m36.88 MB[0m[2m][0m [2m─[0m [2m[[0m[32m[1mINFO [0m[2m][0m
+[2m│[0m  [2mat:[0m kizuna_server::api::rest::routes::player::get:20
+[2m╰─>[0m GET /v4/sessions/lbzi7zp8x28f9sgb/players[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:23:18.906[2m][0m [2m─[0m [2m[[0m[36m36.88 MB[0m[2m][0m [2m─[0m [2m[[0m[34m[1mDEBUG[0m[2m][0m
+[2m╰─>[0m speak_loop: 1500 ticks, frames_sent=1214 frames_nulled=1[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:23:20.906[2m][0m [2m─[0m [2m[[0m[36m36.88 MB[0m[2m][0m [2m─[0m [2m[[0m[34m[1mDEBUG[0m[2m][0m
+[2m╰─>[0m speak_loop: 1600 ticks, frames_sent=1314 frames_nulled=1[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:23:22.212[2m][0m [2m─[0m [2m[[0m[36m36.89 MB[0m[2m][0m [2m─[0m [2m[[0m[32m[1mINFO [0m[2m][0m
+[2m│[0m  [2mat:[0m kizuna_server::api::rest::routes::player::get:20
+[2m╰─>[0m GET /v4/sessions/lbzi7zp8x28f9sgb/players[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:23:22.905[2m][0m [2m─[0m [2m[[0m[36m36.89 MB[0m[2m][0m [2m─[0m [2m[[0m[34m[1mDEBUG[0m[2m][0m
+[2m╰─>[0m speak_loop: 1700 ticks, frames_sent=1414 frames_nulled=1[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:23:24.906[2m][0m [2m─[0m [2m[[0m[36m36.89 MB[0m[2m][0m [2m─[0m [2m[[0m[34m[1mDEBUG[0m[2m][0m
+[2m╰─>[0m speak_loop: 1800 ticks, frames_sent=1514 frames_nulled=1[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:23:25.811[2m][0m [2m─[0m [2m[[0m[36m36.89 MB[0m[2m][0m [2m─[0m [2m[[0m[32m[1mINFO [0m[2m][0m
+[2m│[0m  [2mat:[0m kizuna_server::api::rest::routes::player::get:20
+[2m╰─>[0m GET /v4/sessions/lbzi7zp8x28f9sgb/players[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:23:26.906[2m][0m [2m─[0m [2m[[0m[36m36.89 MB[0m[2m][0m [2m─[0m [2m[[0m[34m[1mDEBUG[0m[2m][0m
+[2m╰─>[0m speak_loop: 1900 ticks, frames_sent=1614 frames_nulled=1[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:23:27.218[2m][0m [2m─[0m [2m[[0m[36m36.89 MB[0m[2m][0m [2m─[0m [2m[[0m[32m[1mINFO [0m[2m][0m
+[2m│[0m  [2mat:[0m kizuna_server::api::rest::routes::player::get:20
+[2m╰─>[0m GET /v4/sessions/lbzi7zp8x28f9sgb/players[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:23:28.906[2m][0m [2m─[0m [2m[[0m[36m36.89 MB[0m[2m][0m [2m─[0m [2m[[0m[34m[1mDEBUG[0m[2m][0m
+[2m╰─>[0m speak_loop: 2000 ticks, frames_sent=1714 frames_nulled=1[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:23:30.906[2m][0m [2m─[0m [2m[[0m[36m36.89 MB[0m[2m][0m [2m─[0m [2m[[0m[34m[1mDEBUG[0m[2m][0m
+[2m╰─>[0m speak_loop: 2100 ticks, frames_sent=1814 frames_nulled=1[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:23:32.222[2m][0m [2m─[0m [2m[[0m[36m36.89 MB[0m[2m][0m [2m─[0m [2m[[0m[32m[1mINFO [0m[2m][0m
+[2m│[0m  [2mat:[0m kizuna_server::api::rest::routes::player::get:20
+[2m╰─>[0m GET /v4/sessions/lbzi7zp8x28f9sgb/players[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:23:32.906[2m][0m [2m─[0m [2m[[0m[36m36.89 MB[0m[2m][0m [2m─[0m [2m[[0m[34m[1mDEBUG[0m[2m][0m
+[2m╰─>[0m speak_loop: 2200 ticks, frames_sent=1914 frames_nulled=1[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:23:34.906[2m][0m [2m─[0m [2m[[0m[36m36.89 MB[0m[2m][0m [2m─[0m [2m[[0m[34m[1mDEBUG[0m[2m][0m
+[2m╰─>[0m speak_loop: 2300 ticks, frames_sent=2014 frames_nulled=1[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:23:36.905[2m][0m [2m─[0m [2m[[0m[36m36.89 MB[0m[2m][0m [2m─[0m [2m[[0m[34m[1mDEBUG[0m[2m][0m
+[2m╰─>[0m speak_loop: 2400 ticks, frames_sent=2114 frames_nulled=1[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:23:37.229[2m][0m [2m─[0m [2m[[0m[36m36.89 MB[0m[2m][0m [2m─[0m [2m[[0m[32m[1mINFO [0m[2m][0m
+[2m│[0m  [2mat:[0m kizuna_server::api::rest::routes::player::get:20
+[2m╰─>[0m GET /v4/sessions/lbzi7zp8x28f9sgb/players[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:23:38.905[2m][0m [2m─[0m [2m[[0m[36m36.89 MB[0m[2m][0m [2m─[0m [2m[[0m[34m[1mDEBUG[0m[2m][0m
+[2m╰─>[0m speak_loop: 2500 ticks, frames_sent=2214 frames_nulled=1[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:23:40.906[2m][0m [2m─[0m [2m[[0m[36m36.89 MB[0m[2m][0m [2m─[0m [2m[[0m[34m[1mDEBUG[0m[2m][0m
+[2m╰─>[0m speak_loop: 2600 ticks, frames_sent=2314 frames_nulled=1[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:23:42.232[2m][0m [2m─[0m [2m[[0m[36m36.89 MB[0m[2m][0m [2m─[0m [2m[[0m[32m[1mINFO [0m[2m][0m
+[2m│[0m  [2mat:[0m kizuna_server::api::rest::routes::player::get:20
+[2m╰─>[0m GET /v4/sessions/lbzi7zp8x28f9sgb/players[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:23:42.906[2m][0m [2m─[0m [2m[[0m[36m36.89 MB[0m[2m][0m [2m─[0m [2m[[0m[34m[1mDEBUG[0m[2m][0m
+[2m╰─>[0m speak_loop: 2700 ticks, frames_sent=2414 frames_nulled=1[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:23:44.906[2m][0m [2m─[0m [2m[[0m[36m36.89 MB[0m[2m][0m [2m─[0m [2m[[0m[34m[1mDEBUG[0m[2m][0m
+[2m╰─>[0m speak_loop: 2800 ticks, frames_sent=2514 frames_nulled=1[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:23:46.906[2m][0m [2m─[0m [2m[[0m[36m36.89 MB[0m[2m][0m [2m─[0m [2m[[0m[34m[1mDEBUG[0m[2m][0m
+[2m╰─>[0m speak_loop: 2900 ticks, frames_sent=2614 frames_nulled=1[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:23:47.239[2m][0m [2m─[0m [2m[[0m[36m36.89 MB[0m[2m][0m [2m─[0m [2m[[0m[32m[1mINFO [0m[2m][0m
+[2m│[0m  [2mat:[0m kizuna_server::api::rest::routes::player::get:20
+[2m╰─>[0m GET /v4/sessions/lbzi7zp8x28f9sgb/players[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:23:48.905[2m][0m [2m─[0m [2m[[0m[36m36.89 MB[0m[2m][0m [2m─[0m [2m[[0m[34m[1mDEBUG[0m[2m][0m
+[2m╰─>[0m speak_loop: 3000 ticks, frames_sent=2714 frames_nulled=1[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:23:50.906[2m][0m [2m─[0m [2m[[0m[36m36.89 MB[0m[2m][0m [2m─[0m [2m[[0m[34m[1mDEBUG[0m[2m][0m
+[2m╰─>[0m speak_loop: 3100 ticks, frames_sent=2814 frames_nulled=1[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:23:52.243[2m][0m [2m─[0m [2m[[0m[36m36.89 MB[0m[2m][0m [2m─[0m [2m[[0m[32m[1mINFO [0m[2m][0m
+[2m│[0m  [2mat:[0m kizuna_server::api::rest::routes::player::get:20
+[2m╰─>[0m GET /v4/sessions/lbzi7zp8x28f9sgb/players[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:23:52.906[2m][0m [2m─[0m [2m[[0m[36m36.89 MB[0m[2m][0m [2m─[0m [2m[[0m[34m[1mDEBUG[0m[2m][0m
+[2m╰─>[0m speak_loop: 3200 ticks, frames_sent=2914 frames_nulled=1[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:23:54.905[2m][0m [2m─[0m [2m[[0m[36m36.89 MB[0m[2m][0m [2m─[0m [2m[[0m[34m[1mDEBUG[0m[2m][0m
+[2m╰─>[0m speak_loop: 3300 ticks, frames_sent=3014 frames_nulled=1[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:23:56.905[2m][0m [2m─[0m [2m[[0m[36m36.89 MB[0m[2m][0m [2m─[0m [2m[[0m[34m[1mDEBUG[0m[2m][0m
+[2m╰─>[0m speak_loop: 3400 ticks, frames_sent=3114 frames_nulled=1[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:23:57.245[2m][0m [2m─[0m [2m[[0m[36m36.89 MB[0m[2m][0m [2m─[0m [2m[[0m[32m[1mINFO [0m[2m][0m
+[2m│[0m  [2mat:[0m kizuna_server::api::rest::routes::player::get:20
+[2m╰─>[0m GET /v4/sessions/lbzi7zp8x28f9sgb/players[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:23:58.906[2m][0m [2m─[0m [2m[[0m[36m36.89 MB[0m[2m][0m [2m─[0m [2m[[0m[34m[1mDEBUG[0m[2m][0m
+[2m╰─>[0m speak_loop: 3500 ticks, frames_sent=3214 frames_nulled=1[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:24:00.906[2m][0m [2m─[0m [2m[[0m[36m36.89 MB[0m[2m][0m [2m─[0m [2m[[0m[34m[1mDEBUG[0m[2m][0m
+[2m╰─>[0m speak_loop: 3600 ticks, frames_sent=3314 frames_nulled=1[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:24:02.251[2m][0m [2m─[0m [2m[[0m[36m36.89 MB[0m[2m][0m [2m─[0m [2m[[0m[32m[1mINFO [0m[2m][0m
+[2m│[0m  [2mat:[0m kizuna_server::api::rest::routes::player::get:20
+[2m╰─>[0m GET /v4/sessions/lbzi7zp8x28f9sgb/players[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:24:02.906[2m][0m [2m─[0m [2m[[0m[36m36.89 MB[0m[2m][0m [2m─[0m [2m[[0m[34m[1mDEBUG[0m[2m][0m
+[2m╰─>[0m speak_loop: 3700 ticks, frames_sent=3414 frames_nulled=1[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:24:04.906[2m][0m [2m─[0m [2m[[0m[36m36.89 MB[0m[2m][0m [2m─[0m [2m[[0m[34m[1mDEBUG[0m[2m][0m
+[2m╰─>[0m speak_loop: 3800 ticks, frames_sent=3514 frames_nulled=1[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:24:06.906[2m][0m [2m─[0m [2m[[0m[36m36.89 MB[0m[2m][0m [2m─[0m [2m[[0m[34m[1mDEBUG[0m[2m][0m
+[2m╰─>[0m speak_loop: 3900 ticks, frames_sent=3614 frames_nulled=1[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:24:07.254[2m][0m [2m─[0m [2m[[0m[36m36.89 MB[0m[2m][0m [2m─[0m [2m[[0m[32m[1mINFO [0m[2m][0m
+[2m│[0m  [2mat:[0m kizuna_server::api::rest::routes::player::get:20
+[2m╰─>[0m GET /v4/sessions/lbzi7zp8x28f9sgb/players[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:24:08.906[2m][0m [2m─[0m [2m[[0m[36m36.89 MB[0m[2m][0m [2m─[0m [2m[[0m[34m[1mDEBUG[0m[2m][0m
+[2m╰─>[0m speak_loop: 4000 ticks, frames_sent=3714 frames_nulled=1[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:24:10.906[2m][0m [2m─[0m [2m[[0m[36m36.89 MB[0m[2m][0m [2m─[0m [2m[[0m[34m[1mDEBUG[0m[2m][0m
+[2m╰─>[0m speak_loop: 4100 ticks, frames_sent=3814 frames_nulled=1[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:24:12.257[2m][0m [2m─[0m [2m[[0m[36m36.89 MB[0m[2m][0m [2m─[0m [2m[[0m[32m[1mINFO [0m[2m][0m
+[2m│[0m  [2mat:[0m kizuna_server::api::rest::routes::player::get:20
+[2m╰─>[0m GET /v4/sessions/lbzi7zp8x28f9sgb/players[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:24:12.906[2m][0m [2m─[0m [2m[[0m[36m36.89 MB[0m[2m][0m [2m─[0m [2m[[0m[34m[1mDEBUG[0m[2m][0m
+[2m╰─>[0m speak_loop: 4200 ticks, frames_sent=3914 frames_nulled=1[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:24:14.906[2m][0m [2m─[0m [2m[[0m[36m36.89 MB[0m[2m][0m [2m─[0m [2m[[0m[34m[1mDEBUG[0m[2m][0m
+[2m╰─>[0m speak_loop: 4300 ticks, frames_sent=4014 frames_nulled=1[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:24:16.906[2m][0m [2m─[0m [2m[[0m[36m36.89 MB[0m[2m][0m [2m─[0m [2m[[0m[34m[1mDEBUG[0m[2m][0m
+[2m╰─>[0m speak_loop: 4400 ticks, frames_sent=4114 frames_nulled=1[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:24:17.261[2m][0m [2m─[0m [2m[[0m[36m36.89 MB[0m[2m][0m [2m─[0m [2m[[0m[32m[1mINFO [0m[2m][0m
+[2m│[0m  [2mat:[0m kizuna_server::api::rest::routes::player::get:20
+[2m╰─>[0m GET /v4/sessions/lbzi7zp8x28f9sgb/players[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:24:18.906[2m][0m [2m─[0m [2m[[0m[36m36.90 MB[0m[2m][0m [2m─[0m [2m[[0m[34m[1mDEBUG[0m[2m][0m
+[2m╰─>[0m speak_loop: 4500 ticks, frames_sent=4214 frames_nulled=1[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:24:20.906[2m][0m [2m─[0m [2m[[0m[36m36.90 MB[0m[2m][0m [2m─[0m [2m[[0m[34m[1mDEBUG[0m[2m][0m
+[2m╰─>[0m speak_loop: 4600 ticks, frames_sent=4314 frames_nulled=1[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:24:22.266[2m][0m [2m─[0m [2m[[0m[36m36.90 MB[0m[2m][0m [2m─[0m [2m[[0m[32m[1mINFO [0m[2m][0m
+[2m│[0m  [2mat:[0m kizuna_server::api::rest::routes::player::get:20
+[2m╰─>[0m GET /v4/sessions/lbzi7zp8x28f9sgb/players[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:24:22.906[2m][0m [2m─[0m [2m[[0m[36m36.90 MB[0m[2m][0m [2m─[0m [2m[[0m[34m[1mDEBUG[0m[2m][0m
+[2m╰─>[0m speak_loop: 4700 ticks, frames_sent=4414 frames_nulled=1[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:24:24.905[2m][0m [2m─[0m [2m[[0m[36m36.90 MB[0m[2m][0m [2m─[0m [2m[[0m[34m[1mDEBUG[0m[2m][0m
+[2m╰─>[0m speak_loop: 4800 ticks, frames_sent=4514 frames_nulled=1[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:24:26.906[2m][0m [2m─[0m [2m[[0m[36m36.90 MB[0m[2m][0m [2m─[0m [2m[[0m[34m[1mDEBUG[0m[2m][0m
+[2m╰─>[0m speak_loop: 4900 ticks, frames_sent=4614 frames_nulled=1[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:24:27.272[2m][0m [2m─[0m [2m[[0m[36m36.90 MB[0m[2m][0m [2m─[0m [2m[[0m[32m[1mINFO [0m[2m][0m
+[2m│[0m  [2mat:[0m kizuna_server::api::rest::routes::player::get:20
+[2m╰─>[0m GET /v4/sessions/lbzi7zp8x28f9sgb/players[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:24:28.906[2m][0m [2m─[0m [2m[[0m[36m36.90 MB[0m[2m][0m [2m─[0m [2m[[0m[34m[1mDEBUG[0m[2m][0m
+[2m╰─>[0m speak_loop: 5000 ticks, frames_sent=4714 frames_nulled=1[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:24:30.906[2m][0m [2m─[0m [2m[[0m[36m36.90 MB[0m[2m][0m [2m─[0m [2m[[0m[34m[1mDEBUG[0m[2m][0m
+[2m╰─>[0m speak_loop: 5100 ticks, frames_sent=4814 frames_nulled=1[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:24:32.277[2m][0m [2m─[0m [2m[[0m[36m36.90 MB[0m[2m][0m [2m─[0m [2m[[0m[32m[1mINFO [0m[2m][0m
+[2m│[0m  [2mat:[0m kizuna_server::api::rest::routes::player::get:20
+[2m╰─>[0m GET /v4/sessions/lbzi7zp8x28f9sgb/players[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:24:32.905[2m][0m [2m─[0m [2m[[0m[36m36.90 MB[0m[2m][0m [2m─[0m [2m[[0m[34m[1mDEBUG[0m[2m][0m
+[2m╰─>[0m speak_loop: 5200 ticks, frames_sent=4914 frames_nulled=1[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:24:34.906[2m][0m [2m─[0m [2m[[0m[36m36.90 MB[0m[2m][0m [2m─[0m [2m[[0m[34m[1mDEBUG[0m[2m][0m
+[2m╰─>[0m speak_loop: 5300 ticks, frames_sent=5014 frames_nulled=1[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:24:36.906[2m][0m [2m─[0m [2m[[0m[36m36.90 MB[0m[2m][0m [2m─[0m [2m[[0m[34m[1mDEBUG[0m[2m][0m
+[2m╰─>[0m speak_loop: 5400 ticks, frames_sent=5114 frames_nulled=1[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:24:37.284[2m][0m [2m─[0m [2m[[0m[36m36.90 MB[0m[2m][0m [2m─[0m [2m[[0m[32m[1mINFO [0m[2m][0m
+[2m│[0m  [2mat:[0m kizuna_server::api::rest::routes::player::get:20
+[2m╰─>[0m GET /v4/sessions/lbzi7zp8x28f9sgb/players[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:24:38.906[2m][0m [2m─[0m [2m[[0m[36m36.90 MB[0m[2m][0m [2m─[0m [2m[[0m[34m[1mDEBUG[0m[2m][0m
+[2m╰─>[0m speak_loop: 5500 ticks, frames_sent=5214 frames_nulled=1[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:24:40.906[2m][0m [2m─[0m [2m[[0m[36m36.90 MB[0m[2m][0m [2m─[0m [2m[[0m[34m[1mDEBUG[0m[2m][0m
+[2m╰─>[0m speak_loop: 5600 ticks, frames_sent=5314 frames_nulled=1[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:24:42.287[2m][0m [2m─[0m [2m[[0m[36m36.90 MB[0m[2m][0m [2m─[0m [2m[[0m[32m[1mINFO [0m[2m][0m
+[2m│[0m  [2mat:[0m kizuna_server::api::rest::routes::player::get:20
+[2m╰─>[0m GET /v4/sessions/lbzi7zp8x28f9sgb/players[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:24:42.906[2m][0m [2m─[0m [2m[[0m[36m36.90 MB[0m[2m][0m [2m─[0m [2m[[0m[34m[1mDEBUG[0m[2m][0m
+[2m╰─>[0m speak_loop: 5700 ticks, frames_sent=5414 frames_nulled=1[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:24:44.906[2m][0m [2m─[0m [2m[[0m[36m36.90 MB[0m[2m][0m [2m─[0m [2m[[0m[34m[1mDEBUG[0m[2m][0m
+[2m╰─>[0m speak_loop: 5800 ticks, frames_sent=5514 frames_nulled=1[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:24:46.906[2m][0m [2m─[0m [2m[[0m[36m36.90 MB[0m[2m][0m [2m─[0m [2m[[0m[34m[1mDEBUG[0m[2m][0m
+[2m╰─>[0m speak_loop: 5900 ticks, frames_sent=5614 frames_nulled=1[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:24:47.292[2m][0m [2m─[0m [2m[[0m[36m36.90 MB[0m[2m][0m [2m─[0m [2m[[0m[32m[1mINFO [0m[2m][0m
+[2m│[0m  [2mat:[0m kizuna_server::api::rest::routes::player::get:20
+[2m╰─>[0m GET /v4/sessions/lbzi7zp8x28f9sgb/players[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:24:48.905[2m][0m [2m─[0m [2m[[0m[36m36.90 MB[0m[2m][0m [2m─[0m [2m[[0m[34m[1mDEBUG[0m[2m][0m
+[2m╰─>[0m speak_loop: 6000 ticks, frames_sent=5714 frames_nulled=1[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:24:50.906[2m][0m [2m─[0m [2m[[0m[36m36.90 MB[0m[2m][0m [2m─[0m [2m[[0m[34m[1mDEBUG[0m[2m][0m
+[2m╰─>[0m speak_loop: 6100 ticks, frames_sent=5814 frames_nulled=1[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:24:52.294[2m][0m [2m─[0m [2m[[0m[36m36.90 MB[0m[2m][0m [2m─[0m [2m[[0m[32m[1mINFO [0m[2m][0m
+[2m│[0m  [2mat:[0m kizuna_server::api::rest::routes::player::get:20
+[2m╰─>[0m GET /v4/sessions/lbzi7zp8x28f9sgb/players[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:24:52.906[2m][0m [2m─[0m [2m[[0m[36m36.90 MB[0m[2m][0m [2m─[0m [2m[[0m[34m[1mDEBUG[0m[2m][0m
+[2m╰─>[0m speak_loop: 6200 ticks, frames_sent=5914 frames_nulled=1[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:24:54.906[2m][0m [2m─[0m [2m[[0m[36m36.90 MB[0m[2m][0m [2m─[0m [2m[[0m[34m[1mDEBUG[0m[2m][0m
+[2m╰─>[0m speak_loop: 6300 ticks, frames_sent=6014 frames_nulled=1[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:24:56.906[2m][0m [2m─[0m [2m[[0m[36m36.90 MB[0m[2m][0m [2m─[0m [2m[[0m[34m[1mDEBUG[0m[2m][0m
+[2m╰─>[0m speak_loop: 6400 ticks, frames_sent=6114 frames_nulled=1[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:24:57.296[2m][0m [2m─[0m [2m[[0m[36m36.90 MB[0m[2m][0m [2m─[0m [2m[[0m[32m[1mINFO [0m[2m][0m
+[2m│[0m  [2mat:[0m kizuna_server::api::rest::routes::player::get:20
+[2m╰─>[0m GET /v4/sessions/lbzi7zp8x28f9sgb/players[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:24:58.906[2m][0m [2m─[0m [2m[[0m[36m36.90 MB[0m[2m][0m [2m─[0m [2m[[0m[34m[1mDEBUG[0m[2m][0m
+[2m╰─>[0m speak_loop: 6500 ticks, frames_sent=6214 frames_nulled=1[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:25:00.905[2m][0m [2m─[0m [2m[[0m[36m36.90 MB[0m[2m][0m [2m─[0m [2m[[0m[34m[1mDEBUG[0m[2m][0m
+[2m╰─>[0m speak_loop: 6600 ticks, frames_sent=6314 frames_nulled=1[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:25:02.302[2m][0m [2m─[0m [2m[[0m[36m36.90 MB[0m[2m][0m [2m─[0m [2m[[0m[32m[1mINFO [0m[2m][0m
+[2m│[0m  [2mat:[0m kizuna_server::api::rest::routes::player::get:20
+[2m╰─>[0m GET /v4/sessions/lbzi7zp8x28f9sgb/players[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:25:02.906[2m][0m [2m─[0m [2m[[0m[36m36.90 MB[0m[2m][0m [2m─[0m [2m[[0m[34m[1mDEBUG[0m[2m][0m
+[2m╰─>[0m speak_loop: 6700 ticks, frames_sent=6414 frames_nulled=1[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:25:04.905[2m][0m [2m─[0m [2m[[0m[36m36.90 MB[0m[2m][0m [2m─[0m [2m[[0m[34m[1mDEBUG[0m[2m][0m
+[2m╰─>[0m speak_loop: 6800 ticks, frames_sent=6514 frames_nulled=1[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:25:06.905[2m][0m [2m─[0m [2m[[0m[36m36.90 MB[0m[2m][0m [2m─[0m [2m[[0m[34m[1mDEBUG[0m[2m][0m
+[2m╰─>[0m speak_loop: 6900 ticks, frames_sent=6614 frames_nulled=1[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:25:07.309[2m][0m [2m─[0m [2m[[0m[36m36.90 MB[0m[2m][0m [2m─[0m [2m[[0m[32m[1mINFO [0m[2m][0m
+[2m│[0m  [2mat:[0m kizuna_server::api::rest::routes::player::get:20
+[2m╰─>[0m GET /v4/sessions/lbzi7zp8x28f9sgb/players[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:25:08.906[2m][0m [2m─[0m [2m[[0m[36m36.90 MB[0m[2m][0m [2m─[0m [2m[[0m[34m[1mDEBUG[0m[2m][0m
+[2m╰─>[0m speak_loop: 7000 ticks, frames_sent=6714 frames_nulled=1[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:25:10.905[2m][0m [2m─[0m [2m[[0m[36m36.90 MB[0m[2m][0m [2m─[0m [2m[[0m[34m[1mDEBUG[0m[2m][0m
+[2m╰─>[0m speak_loop: 7100 ticks, frames_sent=6814 frames_nulled=1[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:25:12.314[2m][0m [2m─[0m [2m[[0m[36m36.90 MB[0m[2m][0m [2m─[0m [2m[[0m[32m[1mINFO [0m[2m][0m
+[2m│[0m  [2mat:[0m kizuna_server::api::rest::routes::player::get:20
+[2m╰─>[0m GET /v4/sessions/lbzi7zp8x28f9sgb/players[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:25:12.905[2m][0m [2m─[0m [2m[[0m[36m36.90 MB[0m[2m][0m [2m─[0m [2m[[0m[34m[1mDEBUG[0m[2m][0m
+[2m╰─>[0m speak_loop: 7200 ticks, frames_sent=6914 frames_nulled=1[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:25:14.906[2m][0m [2m─[0m [2m[[0m[36m36.90 MB[0m[2m][0m [2m─[0m [2m[[0m[34m[1mDEBUG[0m[2m][0m
+[2m╰─>[0m speak_loop: 7300 ticks, frames_sent=7014 frames_nulled=1[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:25:16.906[2m][0m [2m─[0m [2m[[0m[36m36.90 MB[0m[2m][0m [2m─[0m [2m[[0m[34m[1mDEBUG[0m[2m][0m
+[2m╰─>[0m speak_loop: 7400 ticks, frames_sent=7114 frames_nulled=1[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:25:17.317[2m][0m [2m─[0m [2m[[0m[36m36.90 MB[0m[2m][0m [2m─[0m [2m[[0m[32m[1mINFO [0m[2m][0m
+[2m│[0m  [2mat:[0m kizuna_server::api::rest::routes::player::get:20
+[2m╰─>[0m GET /v4/sessions/lbzi7zp8x28f9sgb/players[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:25:18.906[2m][0m [2m─[0m [2m[[0m[36m36.90 MB[0m[2m][0m [2m─[0m [2m[[0m[34m[1mDEBUG[0m[2m][0m
+[2m╰─>[0m speak_loop: 7500 ticks, frames_sent=7214 frames_nulled=1[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:25:20.906[2m][0m [2m─[0m [2m[[0m[36m36.90 MB[0m[2m][0m [2m─[0m [2m[[0m[34m[1mDEBUG[0m[2m][0m
+[2m╰─>[0m speak_loop: 7600 ticks, frames_sent=7314 frames_nulled=1[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:25:22.321[2m][0m [2m─[0m [2m[[0m[36m36.90 MB[0m[2m][0m [2m─[0m [2m[[0m[32m[1mINFO [0m[2m][0m
+[2m│[0m  [2mat:[0m kizuna_server::api::rest::routes::player::get:20
+[2m╰─>[0m GET /v4/sessions/lbzi7zp8x28f9sgb/players[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:25:22.906[2m][0m [2m─[0m [2m[[0m[36m36.90 MB[0m[2m][0m [2m─[0m [2m[[0m[34m[1mDEBUG[0m[2m][0m
+[2m╰─>[0m speak_loop: 7700 ticks, frames_sent=7414 frames_nulled=1[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:25:24.906[2m][0m [2m─[0m [2m[[0m[36m36.90 MB[0m[2m][0m [2m─[0m [2m[[0m[34m[1mDEBUG[0m[2m][0m
+[2m╰─>[0m speak_loop: 7800 ticks, frames_sent=7514 frames_nulled=1[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:25:26.905[2m][0m [2m─[0m [2m[[0m[36m36.90 MB[0m[2m][0m [2m─[0m [2m[[0m[34m[1mDEBUG[0m[2m][0m
+[2m╰─>[0m speak_loop: 7900 ticks, frames_sent=7614 frames_nulled=1[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:25:27.327[2m][0m [2m─[0m [2m[[0m[36m36.90 MB[0m[2m][0m [2m─[0m [2m[[0m[32m[1mINFO [0m[2m][0m
+[2m│[0m  [2mat:[0m kizuna_server::api::rest::routes::player::get:20
+[2m╰─>[0m GET /v4/sessions/lbzi7zp8x28f9sgb/players[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:25:28.905[2m][0m [2m─[0m [2m[[0m[36m36.90 MB[0m[2m][0m [2m─[0m [2m[[0m[34m[1mDEBUG[0m[2m][0m
+[2m╰─>[0m speak_loop: 8000 ticks, frames_sent=7714 frames_nulled=1[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:25:30.906[2m][0m [2m─[0m [2m[[0m[36m36.90 MB[0m[2m][0m [2m─[0m [2m[[0m[34m[1mDEBUG[0m[2m][0m
+[2m╰─>[0m speak_loop: 8100 ticks, frames_sent=7814 frames_nulled=1[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:25:32.332[2m][0m [2m─[0m [2m[[0m[36m36.90 MB[0m[2m][0m [2m─[0m [2m[[0m[32m[1mINFO [0m[2m][0m
+[2m│[0m  [2mat:[0m kizuna_server::api::rest::routes::player::get:20
+[2m╰─>[0m GET /v4/sessions/lbzi7zp8x28f9sgb/players[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:25:32.906[2m][0m [2m─[0m [2m[[0m[36m36.90 MB[0m[2m][0m [2m─[0m [2m[[0m[34m[1mDEBUG[0m[2m][0m
+[2m╰─>[0m speak_loop: 8200 ticks, frames_sent=7914 frames_nulled=1[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:25:34.905[2m][0m [2m─[0m [2m[[0m[36m36.90 MB[0m[2m][0m [2m─[0m [2m[[0m[34m[1mDEBUG[0m[2m][0m
+[2m╰─>[0m speak_loop: 8300 ticks, frames_sent=8014 frames_nulled=1[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:25:36.906[2m][0m [2m─[0m [2m[[0m[36m36.90 MB[0m[2m][0m [2m─[0m [2m[[0m[34m[1mDEBUG[0m[2m][0m
+[2m╰─>[0m speak_loop: 8400 ticks, frames_sent=8114 frames_nulled=1[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:25:37.339[2m][0m [2m─[0m [2m[[0m[36m36.90 MB[0m[2m][0m [2m─[0m [2m[[0m[32m[1mINFO [0m[2m][0m
+[2m│[0m  [2mat:[0m kizuna_server::api::rest::routes::player::get:20
+[2m╰─>[0m GET /v4/sessions/lbzi7zp8x28f9sgb/players[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:25:38.307[2m][0m [2m─[0m [2m[[0m[36m36.90 MB[0m[2m][0m [2m─[0m [2m[[0m[32m[1mINFO [0m[2m][0m
+[2m│[0m  [2mat:[0m kizuna_server::api::rest::routes::player::get:20
+[2m╰─>[0m GET /v4/sessions/lbzi7zp8x28f9sgb/players[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:25:38.906[2m][0m [2m─[0m [2m[[0m[36m36.90 MB[0m[2m][0m [2m─[0m [2m[[0m[34m[1mDEBUG[0m[2m][0m
+[2m╰─>[0m speak_loop: 8500 ticks, frames_sent=8214 frames_nulled=1[0m
+[2m╭─[0m [2m[[0m2026-10-10 12:25:40.905[2m][0m [2m─[0m [2m[[0m[36m36.90 MB[0m[2m][0m [2m─[0m [2m[[0m[34m[1mDEBUG[0m[2m][0m
+[2m╰─>[0m speak_loop: 8600 ticks, frames_sent=8314 frames_nulled=1[0m

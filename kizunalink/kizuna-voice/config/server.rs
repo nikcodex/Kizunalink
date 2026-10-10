@@ -14,7 +14,12 @@ pub struct ServerConfig {
     #[serde(default = "default_port")]
     pub port: u16,
     /// Authorization password required for REST and WebSocket access.
-    #[serde(default = "default_authorization")]
+    ///
+    /// There is deliberately **no default**. A missing value deserializes to the
+    /// empty string and fails validation, so the server can never start with a
+    /// silently-injected, guessable credential. Inject the secret through
+    /// `KIZUNA_AUTHORIZATION` (preferred) or `config.toml`.
+    #[serde(default)]
     pub authorization: String,
     /// Interval between player state updates sent to the client (N02).
     ///
@@ -51,7 +56,9 @@ impl Default for ServerConfig {
         Self {
             address: default_address(),
             port: default_port(),
-            authorization: default_authorization(),
+            // No default secret: an empty value must fail validation rather than
+            // start the node with a guessable credential.
+            authorization: String::new(),
             player_update_interval: default_player_update_interval(),
             stats_interval: default_stats_interval(),
             websocket_ping_interval: default_websocket_ping_interval(),
@@ -85,9 +92,6 @@ fn default_address() -> String {
 }
 fn default_port() -> u16 {
     2333
-}
-fn default_authorization() -> String {
-    "youshallnotpass".to_string()
 }
 fn default_max_event_queue_size() -> usize {
     100

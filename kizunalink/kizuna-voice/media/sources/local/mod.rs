@@ -279,7 +279,7 @@ impl PlayableTrack for LocalTrack {
                     let spawn_result = std::thread::Builder::new()
                         .name(format!("local-decoder-{}", path))
                         .spawn(move || {
-                            if let Err(e) = processor.run() {
+                            if let Err(e) = processor.run_guarded() {
                                 error!("LocalTrack audio processor error: {e}");
                             }
                         });

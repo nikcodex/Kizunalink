@@ -625,4 +625,33 @@ mod tests {
         assert!(handler.pending_handshake.is_empty());
         assert!(handler.pending_proposals.is_empty());
     }
+
+    #[test]
+    fn user_churn_keeps_the_recognized_set_and_cache_consistent() {
+        let mut handler = DaveHandler::new(UserId(1), ChannelId(1));
+        // The local user is always part of its own group.
+        assert_eq!(handler.cached_user_ids, vec![1]);
+
+        // Growth beyond two members.
+        handler.add_users(&[10, 20, 30]);
+        assert_eq!(handler.cached_user_ids, vec![1, 10, 20, 30]);
+        assert_eq!(handler.recognized_users.len(), 4);
+
+        // Duplicate adds are idempotent (no cache drift, stays sorted).
+        handler.add_users(&[20, 30]);
+        assert_eq!(handler.cached_user_ids, vec![1, 10, 20, 30]);
+
+        // Intermediate member leaves: only that member is dropped.
+        handler.remove_user(20);
+        assert_eq!(handler.cached_user_ids, vec![1, 10, 30]);
+        assert_eq!(handler.recognized_users.len(), 3);
+
+        // Removing an unknown user is a no-op.
+        handler.remove_user(999);
+        assert_eq!(handler.cached_user_ids, vec![1, 10, 30]);
+
+        // Rejoin restores the member without reordering.
+        handler.add_users(&[20]);
+        assert_eq!(handler.cached_user_ids, vec![1, 10, 20, 30]);
+    }
 }

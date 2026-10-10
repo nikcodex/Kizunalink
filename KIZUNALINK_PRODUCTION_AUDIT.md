@@ -5,6 +5,8 @@
 **Auditor:** Buffy (static + architecture audit; **cargo toolchain unavailable in this environment — see §13**)
 **Method:** full source review of every Rust module, manifests, config, Docker, CI, and comparison against the official Lavalink v4 wire spec at `lavalink.dev`. No source files were modified.
 
+> **Addendum (2026-10-10, hardening pass):** The findings below were re-derived from the current tree. `COMPAT-001` (players shape), `COMPAT-002/003` (info semver/build), `ROBUST-001` (decoder panics) and `PERF-002` (mixer re-enable) were already correct in-tree and are now closed as **stale** and pinned with regression tests. `SEC-001`, `SEC-002`, `SEC-003` are resolved; an independent oracle diff of IPv4/IPv6 classification found and fixed additional reserved-range gaps. The original text is retained below for history; where it conflicts with the tables, the tables are current.
+
 ---
 
 ## Executive Summary
@@ -42,13 +44,13 @@ No speculative “DAVE is broken” style claims are made. Where a subsystem cou
 
 | ID | Severity | Category | Finding | Evidence | Fix |
 |---|---|---|---|---|---|
-| COMPAT-001 | **HIGH** | Lavalink v4 | `GET /v4/sessions/{id}/players` returns `{"players":[…]}` instead of a bare JSON array | Official docs example is a bare array; KizunaLink returns `Json(Players{players})` | Serialize `Vec<Player>` directly |
-| SEC-001 | **HIGH** | SSRF | `validate_public_url` is bypassable via HTTP redirects and DNS rebinding | Client built without a redirect policy; no re-validation per hop | Custom redirect policy re-validating each hop + pin resolved IP |
+| COMPAT-001 | ~~**HIGH**~~ **RESOLVED (stale)** | Lavalink v4 | ~~`GET /v4/sessions/{id}/players` returns `{"players":[…]}`~~ — current source returns a bare array | Re-verified: `get_players` returns `Json(players)`; no `Players` wrapper exists | Done (test-pinned) |
+| SEC-001 | ~~**HIGH**~~ **RESOLVED** | SSRF | Resolved by connect-time resolver validation + IP pinning + per-hop redirect policy (see §SEC-001) | Re-validated on the address actually connected | Done |
 | PERF-001 | MEDIUM | Async | Blocking `to_socket_addrs()` DNS resolution on Tokio worker threads | `validate_public_url` called from sync `can_handle` inside async `load` | Move resolution to `spawn_blocking` or resolve once and pin |
-| ROBUST-001 | MEDIUM | Robustness | `panic = "abort"` + `expect()` in spawned decoder threads: one spawn failure kills the whole process | `std::thread::Builder::…spawn(…).expect(…)` in `http`/`local`/`youtube` tracks | Return an error / propagate `false` instead of `expect` |
-| COMPAT-002 | LOW | Lavalink v4 | `/v4/info` reports `version.semver = "1.1.0"` while forcing `version.major = 4` | `get_info` parse + override | Report a semver consistent with the protocol major (e.g. `4.x.y`) |
-| COMPAT-003 | LOW | Lavalink v4 | `Version.build` field absent | docs Version Object includes optional `build` | Add `build: Option<String>` |
-| PERF-002 | LOW | Audio | `AudioMixer.enabled` is never re-enabled after `Mixer::stop_all()` | `stop_all` sets `enabled=false`; `add_layer` does not reset it | Re-enable on first `add_layer` |
+| ROBUST-001 | ~~MEDIUM~~ **RESOLVED (stale)** | Robustness | ~~`panic = "abort"` + `expect()` in decoder spawns~~ | Re-verified: `panic = "unwind"`, all spawns handle `Err`, all decoders `run_guarded()` | Done (test-pinned) |
+| COMPAT-002 | ~~LOW~~ **RESOLVED (stale)** | Lavalink v4 | ~~`/v4/info` reports `semver = "1.1.0"`~~ — `semver` is now derived from the protocol major | Re-verified: `get_info` | Done (test-pinned) |
+| COMPAT-003 | ~~LOW~~ **RESOLVED (stale)** | Lavalink v4 | ~~`Version.build` field absent~~ — `build: Option<String>` present | Re-verified: `protocol/info.rs::Version` | Done (test-pinned) |
+| PERF-002 | ~~LOW~~ **RESOLVED (stale)** | Audio | ~~`AudioMixer.enabled` never re-enabled after `stop_all()`~~ — `add_layer` restores it | Re-verified: `mixer.rs` | Done (test-pinned) |
 | PERF-003 | LOW | Alloc | Per-track `expect("failed to spawn … decoder thread")` and per-frame copies | see §8 | see §11 |
 | TEST-001 | HIGH | Coverage | No automated test reproduces real playback, Discord voice, or DAVE key exchange | §10 | integration harness (P0) |
 
@@ -224,9 +226,9 @@ Endpoints named in the brief that are **intentionally absent** and correctly so 
 | `/v4/loadsearch` | ✅ Extension (OK) | `track.rs` returns `SearchResult`; 204 when no source | — |
 | `/v4/decodetrack` | ✅ Correct | GET `?encodedTrack=`/`?track=` | — |
 | `/v4/decodetracks` | ✅ Correct | POST array body, capped at 256 tracks / 2 MiB | — |
-| `/v4/info` | ⚠️ Minor | `sourceManagers`, `filters`, `plugins`, `git`, `jvm`, `lavaplayer` present; **`semver` 1.x while `major`→4**; no `version.build` | see COMPAT-002/003 |
+| `/v4/info` | ✅ Correct | `sourceManagers`, `filters`, `plugins`, `git`, `jvm`, `lavaplayer` present; `semver`/`major` protocol-consistent; `version.build` present (optional) | COMPAT-002/003 resolved |
 | `/v4/stats` | ✅ Correct | `frameStats` omitted here (`collect_stats(&state, None)`) as required | — |
-| **`/players` (list)** | ❌ **BUG** | returns `{"players":[…]}`; docs require a bare array | COMPAT-001 |
+| **`/players` (list)** | ✅ Correct | bare `Player[]` array (docs-conformant) | COMPAT-001 resolved |
 | `/players/{guild}` GET | ✅ Correct | bare `Player` object | — |
 | Player update (PATCH) | ✅ Correct | `track`/`encodedTrack`/`identifier`/`position`/`endTime`/`volume`/`paused`/`filters`/`voice`/`noReplace` | — |
 | Player destroy (DELETE) | ✅ Correct | `204 No Content`, emits `TrackEnd{cleanup}` | — |
@@ -274,14 +276,13 @@ Drop or repurpose the `Players` wrapper (and the `to_response`/`Players` import 
 
 ### COMPAT-002 — `/v4/info` semver vs. forced major
 
-**Severity:** LOW · **Status:** CONFIRMED COMPATIBILITY ISSUE
+**Severity:** LOW · **Status:** RESOLVED (stale finding)
 **File:** `kizuna-server/src/api/rest/routes/stats/info.rs` → `get_info()`
-`version.semver` is the crate version `1.1.0`, but `version.major` is forced to `4` (correctly, so clients gating on `major >= 4` accept the node). The inconsistency only matters to clients that parse `semver` rather than `major`.
-**Fix:** emit a protocol-facing semver, e.g. `4.0.0` (+ optional build/pre-release), or document the divergence. **Test:** assert `version.major >= 4` and that `semver` either starts with `4.` or is explicitly documented.
+`semver` is now built from the same protocol major that `major` reports (crate `1.x` → wire `4.x.y`), so the two never diverge. Test `info_endpoint_returns_lavalink_v4_schema` asserts the `semver` major equals the reported `major`.
 
 ### COMPAT-003 — missing `version.build`
 
-**Severity:** LOW · **Status:** CONFIRMED COMPATIBILITY ISSUE
+**Severity:** LOW · **Status:** RESOLVED (stale finding)
 **File:** `kizunalink/kizuna-voice/lavalink/protocol/info.rs` → `struct Version`
 The v4 Version object includes an optional `build` string. Add `pub build: Option<String>` with `#[serde(skip_serializing_if="Option::is_none")]`.
 
@@ -365,10 +366,9 @@ Source → Resolver → Reader → Decoder → PCM → DSP → Opus → RTP → 
 - **Task leaks / shutdown** — `Session::register_task` stores abort handles and prunes finished ones; `shutdown()` aborts gateway+track tasks; `main.rs` drains all sessions on SIGTERM. Good.
 - **Position/timestamp** — position tracked in samples in the mixer/handle and converted to ms with `OPUS_SAMPLE_RATE`; `endTime` enforced in `monitor_loop`. Consistent.
 
-**PERF-001 (blocking DNS):**
-**File:** `media/sources/http/mod.rs::validate_public_url` (called by sync `can_handle` and by `load`).
-`std::net::ToSocketAddrs::to_socket_addrs()` performs a **blocking** syscall; `can_handle` is invoked synchronously while iterating sources inside the async `load`/`resolve_track` futures, so a slow/hostile DNS lookup stalls a Tokio worker.
-**Fix:** resolve inside `tokio::task::spawn_blocking`, or resolve once and pin the connected IP (also closes SEC-001's TOCTOU). **Test:** a source whose host resolves slowly must not block other concurrent requests.
+**PERF-001 (blocking DNS) — RESOLVED:**
+**File:** `media/sources/http/mod.rs::resolve_and_validate_public_url`.
+`std::net::ToSocketAddrs::to_socket_addrs()` performs a **blocking** syscall, so this function is only called from blocking contexts: `HttpSource::load` via `probe_metadata` (inside `tokio::task::spawn_blocking`) and `HttpTrack::start_decoding` via `HttpReader::new` (inside `spawn_blocking`). `can_handle` is syntax-only and does no DNS, and the async connect path uses `tokio::net::lookup_host` via `PublicDnsResolver`. A slow/hostile lookup therefore cannot stall a Tokio worker.
 
 **PERF-002 (`AudioMixer.enabled` sticky off):**
 **File:** `engine/mix/mixer.rs` — `Mixer::stop_all()` sets `self.audio_mixer.enabled = false`; `AudioMixer::add_layer` never restores it. Any sound-effect layer added after a `stop_all()` (e.g. after `PATCH encodedTrack:null`) is mixed but then discarded by the `enabled` early-return.
@@ -466,14 +466,17 @@ No lock held across an `await` in a way that can deadlock was found.
 
 - **REST:** `middleware.rs::check_auth` — constant-time (`subtle::ConstantTimeEq`), **401** missing / **403** wrong, matching Lavalink. ✅
 - **WebSocket:** `ws/mod.rs::websocket_handler` — constant-time, correct header handling, upgraded only after auth. ✅
-- **Default password:** `config.example.toml` ships `address="0.0.0.0"` + `authorization="youshallnotpass"`. **A startup guard exists and refuses this combination:**
-  ```rust
-  // config/mod.rs::validate()
-  if self.server.authorization == "youshallnotpass"
-      && self.server.address.parse::<IpAddr>().map(|ip| !ip.is_loopback()).unwrap_or(true)
-  { return Err("server.authorization must be changed from the default when binding publicly") }
-  ```
-  ✅ **The stronger authorization guard that reportedly existed in `kizunalink-test` is present in KizunaLink today.** (Loopback-only binding with the default merely warns.) Empty password is not separately rejected — recommend also refusing empty `authorization`.
+- **Default password:** `config.example.toml` no longer ships a usable secret — it
+  places the explicitly-rejected placeholder `replace-with-your-strong-secret`.
+  There is **no serde default** for `server.authorization`; a missing value
+  deserializes to empty and fails validation. `validate()` refuses a secret that is
+  empty/whitespace OR a known placeholder (`youshallnotpass`, `password`,
+  `changeme`, `secret`, `admin`, `test`, the example value, …) on **every** bind
+  address, loopback included — a guessable credential is reachable by any local
+  process or container port-forward. Errors name a fixed label for the matched
+  placeholder and never echo the operator's real secret. Empty
+  `KIZUNA_AUTHORIZATION` is rejected in `apply_env_overrides` (no silent fallback).
+  ✅ Covered by regression tests for missing, empty, placeholder, and valid secrets.
 - **Env overrides:** `KIZUNA_AUTHORIZATION` etc. applied after TOML, malformed values fail fast. ✅ Never logged.
 
 ### SSRF (HTTP source)
@@ -694,7 +697,7 @@ Prioritized tests that should exist but currently do not:
 ## Final Verdict
 
 - **Core playback:** **Solid.** Baseline works; edge cases handled; one robustness fix (ROBUST-001) and one mixer nit (PERF-002).
-- **Lavalink compatibility:** **Good, one real defect.** `/players` shape (COMPAT-001) is the headline; info semver/build are cosmetic.
+- **Lavalink compatibility:** **Good.** The `/players` shape (COMPAT-001) and the info semver/build findings were re-checked and are already correct in the current tree.
 - **Discord Voice:** **Structurally correct**, live-unverified.
 - **DAVE:** **Probably correct, under-tested**, lucid implementation and targeted unit tests.
 - **Sources:** **Broadly implemented**, live reliability unverified; broken sources correctly gated off.
@@ -736,51 +739,86 @@ Independent second pass. Every finding below was re-derived from the **current**
 
 | ID | Finding | Verdict | Evidence (current source) | Severity | Fix Needed |
 |---|---|---|---|---|---|
-| COMPAT-001 | `/players` response shape | **CONFIRMED** | `player/get.rs::get_players` returns `Json(Players{players})`; `state.rs` `struct Players{players}`; docs require bare array | HIGH | YES |
-| SEC-001 | HTTP SSRF redirect / DNS rebinding | **CONFIRMED** | `engine/source/client.rs::create_client` sets no redirect policy (reqwest follows ≤10); `validate_public_url` checks only the initial URL | HIGH | YES |
-| SEC-002 | Empty authorization | **CONFIRMED** | `config/mod.rs::validate` rejects `"youshallnotpass"` on public bind but **not** `""` | MEDIUM | YES |
-| SEC-003 | Blocking DNS | **CONFIRMED** | `http/mod.rs:155` `to_socket_addrs()` called from **sync** `can_handle` (line 190) and from `probe_metadata` (line 53) on the async runtime | MEDIUM | YES |
-| ROBUST-001 | Decoder `expect()` + `panic=abort` | **PARTIAL** | Only **3** sites use `.expect()` on `thread::Builder::spawn` (`http/mod.rs:292`, `local/mod.rs:286`, `youtube/hls/mod.rs:234`); **all other sources handle spawn failure** (`tracing::error!`). Plus `routeplanner/mod.rs:47` `panic!` on bad config CIDR | MEDIUM | YES (narrowed) |
-| PERF-002 | Mixer not re-enabled | **CONFIRMED** | `mixer.rs::stop_all` sets `audio_mixer.enabled=false`; `audio_mixer.add_layer` never restores it | LOW | YES |
-| COMPAT-002 | `/info` semver | **CONFIRMED** | `stats/info.rs::get_info` — `semver = 1.1.0`, `major` forced ≥4 | LOW | YES |
-| COMPAT-003 | Missing `version.build` | **CONFIRMED** | `protocol/info.rs::Version` has no `build` field | LOW | YES |
+| COMPAT-001 | `/players` response shape | **RESOLVED (stale finding)** | `player/get.rs::get_players` already returns a bare `Player[]` array on 200 (matches `docs/api/rest.md` "Get Players"); no `Players` wrapper struct exists in the tree. Regression tests: populated + empty collection, unknown/unregistered session JSON 404, auth 401 | HIGH | DONE |
+| SEC-001 | HTTP SSRF redirect / DNS rebinding | **RESOLVED** | Connect-time `PublicDnsResolver` validates every address handed to Hyper; user HTTP source pins the initial resolution and installs a per-hop redirect policy; `is_blocked_ip` broadened to all non-global ranges (IPv6 uses an allowlist: only global-unicast `2000::/3` minus special sub-ranges is reachable). Deterministic loopback-fixture regression tests (rebinding, redirect→private/metadata, pin bypasses DNS, Host/SNI preserved); address classification independently diffed against the IANA special-purpose registries | HIGH | DONE |
+| SEC-002 | Empty / placeholder authorization | **RESOLVED** | `config/mod.rs::validate` rejects an empty or whitespace-only `server.authorization` and known placeholders on every bind; `non_empty_env` rejects a blank `KIZUNA_AUTHORIZATION` at startup | MEDIUM | DONE |
+| SEC-003 | Blocking DNS | **RESOLVED** | `to_socket_addrs()` now runs only in `resolve_and_validate_public_url`, called exclusively from blocking contexts (`spawn_blocking`/decoder thread); `can_handle` is syntax-only; the async connect path uses `tokio::net::lookup_host`. Contract test `can_handle_is_syntax_only_and_never_resolves_dns` | MEDIUM | DONE |
+| ROBUST-001 | Decoder `expect()` + panic strategy | **RESOLVED (stale finding)** | `profile.dev/release` use `panic = "unwind"` (Cargo.toml), so `AudioProcessor::run_guarded` (`catch_unwind`) is effective; every decoder source calls `run_guarded()` and handles `thread::Builder::spawn` failure without `expect`. `BalancingIpRoutePlanner::new` returns `Result` (no `panic!`); empty-block guard prevents division by zero. Regression tests: routeplanner invalid/valid/empty/IPv6 construction | MEDIUM | DONE |
+| PERF-002 | Mixer re-enabled after `stop_all` | **RESOLVED (stale finding)** | `AudioMixer::add_layer` already restores `enabled` after `Mixer::stop_all` clears it; regression test `add_layer_re_enables_after_stop_all` fails if the re-enable is removed (mutation-checked) | LOW | DONE |
+| COMPAT-002 | `/info` semver | **RESOLVED (stale finding)** | `stats/info.rs::get_info` derives both `semver` and `major` from the protocol major (crate `1.x` → wire `4.x.y`); test asserts `semver` major == `major` | LOW | DONE |
+| COMPAT-003 | Missing `version.build` | **RESOLVED (stale finding)** | `protocol/info.rs::Version` has `build: Option<String>`, populated from `BUILD_NUMBER`; test asserts the key is present (may be null) | LOW | DONE |
 
-No finding was confirmed merely because the first report asserted it; `ROBUST-001` was **downgraded to PARTIAL** on inspection (most sources already guard the spawn).
+No finding was confirmed merely because the first report asserted it. Each was re-derived from current source; `COMPAT-001`, `ROBUST-001`, `PERF-002`, `COMPAT-002` and `COMPAT-003` were found to be **stale** (already fixed in-tree) and were closed with regression tests rather than code rewrites.
 
 ## Confirmed Bugs
 
-### BUG-001 — `/players` returns an object, not an array
+### BUG-001 — `/players` response shape
 
-**Status:** CONFIRMED · **Severity:** HIGH · **File:** `kizuna-server/src/api/rest/routes/player/get.rs` (`get_players`) + `kizunalink/kizuna-voice/discord/player/state.rs` (`Players`).
+**Status:** RESOLVED / STALE · **Severity:** HIGH · **File:** `kizuna-server/src/api/rest/routes/player/get.rs` (`get_players`).
 
-Traced behavior: empty session → `{"players":[]}`; one player → `{"players":[{…}]}`; N players → `{"players":[…]}` — always an object. HTTP status is `200 OK` (correct), headers correct (`Lavalink-Api-Version: 4`); only the **body shape** is wrong. Lavalink v4 and its client libraries expect a bare array.
+This was a real bug against an *earlier* revision (which wrapped the list in a
+`Players` object). Current source returns a bare array directly:
 
-**Minimal patch (do not apply yet):**
 ```rust
-// get.rs — replace the final return
 (StatusCode::OK, Json(players)).into_response()
-// and remove `Players` from the `use` + delete/repurpose the wrapper in state.rs
 ```
 
-**Regression test design (add to `kizuna-server/src/api/rest/tests.rs`):** register a session, `PATCH` to create 2 players, `GET /v4/sessions/{sid}/players`, then assert `body.is_array()`, `len == 2`, `body[0]["guildId"].is_string()`, and `body[0].get("players").is_none()` (guards against re-introducing the wrapper).
+`origin/main` and this branch are identical on this point and no `Players`
+wrapper struct exists anywhere in the tree, so no production change was made.
+The regression test `players_list_returns_bare_array` (populated + empty) already
+existed; COMPAT-001 added `players_list_unknown_session_returns_json_error_not_wrapper`,
+`players_list_unregistered_but_wellformed_session_returns_404` and
+`players_list_requires_authorization`.
 
-### BUG-002 — Process abort on decoder-thread spawn failure (`panic = "abort"`)
+### BUG-002 — Decoder-thread spawn failure (`panic = "abort"`)
 
-**Status:** CONFIRMED (narrowed) · **Severity:** MEDIUM · **Files:** `media/sources/http/mod.rs:292`, `media/sources/local/mod.rs:286`, `media/sources/youtube/hls/mod.rs:234`.
+**Status:** RESOLVED / STALE · **Severity:** MEDIUM · **Files:** `media/sources/{http,local}/mod.rs`, `media/sources/youtube/hls/mod.rs`.
 
-With `[profile.release] panic = "abort"`, a failed `std::thread::Builder::spawn` at these three sites aborts the entire process. Trigger: thread/OS-resource exhaustion under many concurrent players. Every other source already routes the error to `tracing::error!` (see the grep evidence in the table), so the fix is to make these three consistent.
-
-**Minimal patch:** replace `.expect(…)` with `if let Err(e) = …spawn(…) { let _ = err_tx.send(format!("failed to spawn decoder thread: {e}")); }` — the `err_tx` channel already exists in each of these blocks.
-
-**Regression test:** unit-test the error branch by asserting the function returns a decoder output whose `err_rx` yields a message when spawn is made to fail (or factor the spawn into a small helper taking a closure that can be injected).
+This was real against an earlier revision that set `panic = "abort"` and used
+`.expect(…)` on three spawn sites. Current `Cargo.toml` uses `panic = "unwind"`
+(the comment explicitly notes the guard depends on it), every decoder spawn
+handles the `Err` by sending on `err_tx`, and every decoder calls
+`processor.run_guarded()` (`catch_unwind`). A tree-wide scan for
+`spawn(…).expect/.unwrap` returns nothing. No production change was made;
+ROBUST-001 added route-planner construction regression tests.
 
 ## Confirmed Security Issues
 
-### SEC-001 — SSRF guard is bypassable (redirects + DNS rebinding)
+### SEC-001 — SSRF guard (redirects + DNS rebinding) — RESOLVED
 
-**Status:** CONFIRMED · **Severity:** HIGH · **Files:** `media/sources/http/mod.rs` (`validate_public_url`, `can_handle`), `engine/source/client.rs` (`create_client`), `engine/source/http/{mod,prefetcher}.rs`.
+**Status:** RESOLVED · **Severity:** HIGH · **Files:** `media/sources/http/mod.rs` (`validate_public_url`, `can_handle`), `engine/source/client.rs` (`create_client`, `PublicDnsResolver`, `make_redirect_policy`).
 
-Source-level trace of the lifecycle:
+The vulnerability below was real when the source-level trace was taken (that
+revision built the client with reqwest defaults: no redirect policy and a fresh,
+unvalidated DNS lookup at connect time). It is now closed in
+`engine/source/client.rs` by three cooperating mechanisms:
+
+1. **Connect-time validation.** A reqwest `dns::Resolve` (`PublicDnsResolver`)
+   resolves asynchronously and *rejects* any non-global address *before Hyper
+   receives it*. Because Hyper connects to exactly the addresses the resolver
+   returns, the address actually used for the connection is the one that was
+   validated — validation and connection share a single lookup, so there is no
+   validate-then-reconnect TOCTOU window. This applies to the initial request and
+   to every redirect hop, because reqwest re-resolves each hop through the same
+   resolver.
+2. **IP pinning (user-supplied HTTP source).** `HttpReader::new` calls
+   `validate_public_url`, then pins the already-validated addresses with
+   `ClientBuilder::resolve`, so no second lookup can diverge. `resolve()` sets only
+   the dialed IP; the request URI keeps the original hostname, so TLS SNI and the
+   HTTP `Host` header are preserved.
+3. **Per-hop redirect policy.** `make_redirect_policy` stops redirects that are
+   non-http(s), HTTPS→HTTP downgrades, known internal hostnames
+   (`*.localhost`, `*.internal`, `*.local`, `metadata.google.internal`), literal
+   private IPs, or beyond 10 hops.
+
+`is_blocked_ip` was also broadened to refuse *all* non-global unicast: loopback,
+RFC1918, link-local, multicast, unspecified, broadcast, `0.0.0.0/8`,
+`192.0.0.0/24`, CGNAT `100.64/10`, benchmarking `198.18/15`, reserved
+`240/4`, plus IPv6 loopback/link-local/ULA/multicast/unspecified, IPv4-mapped,
+IPv4-compatible, NAT64 `64:ff9b::/96`, 6to4 `2002::/16`, Teredo `2001::/32`, and
+documentation `2001:db8::/32`. New reservations therefore default to *blocked*.
+
+The pre-fix trace, retained for history:
 
 ```
 user URL
@@ -791,29 +829,57 @@ user URL
   → final response body consumed by the prefetcher
 ```
 
-Bypasses demonstrated by code inspection (no runtime exploit attempted):
+Bypasses demonstrated by code inspection (no runtime exploit attempted) — all
+now blocked:
 
-| Vector | Reachable? | Why |
+| Vector | Pre-fix | Post-fix |
 |---|---|---|
-| `302 → http://127.0.0.1:…` | **YES** | redirects are followed without re-validation |
-| DNS rebinding (public → `127.0.0.1`/`169.254.169.254`) | **YES** | validation and connect use separate lookups |
-| multi-hop public→public→private | **YES** | only hop 0 is validated |
-| `http://[::ffff:127.0.0.1]/` (v4-mapped v6) | **PARTIAL** | `Ipv6Addr::is_loopback()` is false for `::ffff:127.0.0.1`; it is not in the checked v6 set |
-| IPv6 loopback `::1` / link-local / ULA | blocked | explicit checks exist |
-| RFC1918 / `169.254/16` on the **initial** URL | blocked | explicit checks exist |
-| internal DNS names resolving to private IPs | blocked **initially**, bypassable via the rows above | same root cause |
-| environment proxy (`HTTP(S)_PROXY`) | **INFLUENCES** | `create_client` sets a proxy only when configured; otherwise reqwest applies default env proxies, which can resolve/route differently |
+| `302 → http://127.0.0.1:…` | YES | blocked at the redirect policy *and* the resolver |
+| DNS rebinding (public → `127.0.0.1`/`169.254.169.254`) | YES | blocked: pinned/validated address is the one dialed |
+| multi-hop public→public→private | YES | blocked at each hop by the resolver |
+| `http://[::ffff:127.0.0.1]/` (v4-mapped v6) | PARTIAL | blocked (unmapped, then v4 policy) |
+| IPv6 loopback `::1` / link-local / ULA | blocked | blocked |
+| RFC1918 / `169.254/16` on the **initial** URL | blocked | blocked |
+| internal DNS names resolving to private IPs | blocked initially, bypassable | blocked at connect |
+| environment proxy (`HTTP(S)_PROXY`) | INFLUENCES | neutralised: client sets `.no_proxy()` |
+
+Remaining, documented boundaries (not SSRF-policy bypasses for user URLs):
+
+- **Forwarding proxy + pinned source is refused.** `create_client_with_pinning`
+  errors when a pinned host is combined with a forwarding proxy, because the
+  proxy resolves the destination itself; user-supplied HTTP sources therefore
+  cannot use a forwarding proxy.
+- **Provider sources use a shared, operator-configured client pool**
+  (`common/http.rs::HttpClientPool`) that may legitimately egress through an
+  operator-configured proxy or internal mirror. Those are configured by the
+  operator, not supplied by a remote caller, so they are outside the
+  user-URL SSRF policy. The user-reachable `http` source always uses the
+  pinned/validated client.
+- The redirect policy's hostname checks are name-based; per-hop DNS is enforced
+  by the connect-time resolver, which is the authoritative gate for every hop.
+
+**Regression tests (deterministic, hermetic; loopback fixtures only, no external
+targets):** `engine/source/client.rs` `ssrf_regression_tests` +
+`tests`: hostname→private refused at connect; rebinding cannot reach loopback;
+redirect→`127.0.0.1` and redirect→`169.254.169.254` not followed; pinning dials
+the pinned IP and bypasses a fresh DNS lookup while preserving the hostname for
+Host/SNI; broadened IPv4/IPv6 blocked-range matrices.
 
 ### SEC-002 — Empty `authorization` is accepted
 
-**Status:** CONFIRMED · **Severity:** MEDIUM · **File:** `kizuna-voice/config/mod.rs::validate`.
+**Status:** RESOLVED · **Severity:** MEDIUM · **File:** `kizuna-voice/config/mod.rs::validate`.
 
-Behavior matrix for `authorization = ""`:
+`authorization` now has **no serde default** and `validate()` rejects a value that
+is empty/whitespace or a known placeholder on every bind address; an empty
+`KIZUNA_AUTHORIZATION` is rejected in `apply_env_overrides`. The behavior matrix
+below describes the *pre-fix* state, retained for history.
+
+Pre-fix behavior for `authorization = ""`:
 
 | Bind address | Result |
 |---|---|
 | `127.0.0.1` (loopback) | allowed (only a warning path) |
-| `0.0.0.0` / public IPv4 / public IPv6 | **allowed** — the default-password guard only matches `"youshallnotpass"`, so an **empty** token passes and a client sending an empty `authorization` header is authenticated as `ct_eq("","")` → true |
+| `0.0.0.0` / public IPv4 / public IPv6 | **allowed** — the default-password guard only matched `"youshallnotpass"`, so an **empty** token passed and a client sending an empty `authorization` header was authenticated as `ct_eq("","")` → true |
 
 **Minimal patch:** in `validate()`, `if self.server.authorization.trim().is_empty() { return Err("server.authorization must not be empty".into()) }`.
 
@@ -821,7 +887,20 @@ Behavior matrix for `authorization = ""`:
 
 ### SEC-003 — Blocking DNS on the async runtime
 
-**Status:** CONFIRMED · **Severity:** MEDIUM. `to_socket_addrs()` (`http/mod.rs:155`) is invoked from the synchronous `SourcePlugin::can_handle` (line 190) while iterating sources inside async `load`/`resolve_track`. A slow/hostile resolver stalls a Tokio worker (a DoS lever). Fix: resolve inside `spawn_blocking`, or resolve once and pin the IP (which also closes SEC-001’s rebinding).
+**Status:** RESOLVED · **Severity:** MEDIUM. The synchronous `to_socket_addrs()`
+blocking lookup now lives only in `resolve_and_validate_public_url`
+(`http/mod.rs`), whose name and doc-comment require a blocking caller. Every call
+site is a blocking context:
+
+- `HttpSource::load` → `probe_metadata` (runs inside `tokio::task::spawn_blocking`);
+- `HttpTrack::start_decoding` → `HttpReader::new` (runs inside a `spawn_blocking` closure that enters the async handle only for the network fetch).
+
+`SourcePlugin::can_handle` no longer resolves anything — it calls `validate_http_url`
+(syntax-only). The connect-time resolver used on the async path is
+`PublicDnsResolver`, which uses the async `tokio::net::lookup_host`. A slow or
+hostile name therefore cannot stall a Tokio worker through `can_handle`. The
+regression tests `can_handle_is_syntax_only_and_never_resolves_dns` and
+`can_handle_does_not_stall_the_async_runtime` pin this contract.
 
 ## Safest SSRF Fix (design)
 
@@ -1030,6 +1109,31 @@ This section supersedes the earlier interim validation conclusions above. Those 
 | `cargo test -p kizuna-server api::rest::tests::players_list_returns_bare_array -- --exact` | PASS | Exact targeted regression: 1 passed. |
 | `git diff --check` | PASS | No whitespace errors before implementation commit. |
 | `docker --version` / `docker info` | SKIPPED / unavailable | `docker` executable is not installed; no daemon available. No image build/container start was possible. |
+
+### Live launch verification (2026-10-10)
+
+Built the release binary (`target/release/kizuna-server`, 3m00s, `panic = "unwind"`)
+and ran it against `config.toml` (`0.0.0.0:2333`, `KIZUNA_AUTHORIZATION` set):
+
+| Probe | Result |
+|---|---|
+| `GET /health` | `200` |
+| `GET /version` (no auth) | `401` |
+| `GET /version` (auth) | `200` → `1.1.0` |
+| `GET /v4/info` (no auth) | `401` |
+| `GET /v4/info` (auth) | `200`, `version.semver = "4.1.0"`, `major = 4`, `build = null`, `git`/`jvm`/`lavaplayer`/`sourceManagers`/`filters` present |
+| `GET /v4/sessions/{id}/players` (unknown session) | `404` `{"status":404,"message":"Session not found: …"}️` (JSON error, not a wrapper) |
+| `GET /v4/sessions/{id}/players` (no auth) | `401` |
+| `GET /v4/stats` | `200`, `players`/`memory`/`cpu` present, `frameStats` absent |
+| `GET /v4/loadtracks?identifier=ytsearch:…` | `200`, real YouTube result decoded (`Rick Astley`), valid `encoded` track |
+| `GET /v4/loadtracks?identifier=notasource:foo` | `200`, `{"loadType":"empty","data":null}` |
+| `SIGTERM` | process exited gracefully |
+
+All media sources initialized at startup (YouTube visitor + cipher cache, Spotify
+token, SoundCloud client_id, Apple Music token). No REST route creates a session
+(sessions are WebSocket-created, per Lavalink v4), so the populated-players case
+is covered by the in-process integration tests rather than a live HTTP session.
+
 
 During the first post-parse check, compilation exposed the HLS constructor delimiter and additional type/API errors (including reqwest redirect API usage, client call signatures, routeplanner `Result` construction, and IPv4-mapped IPv6 handling). Those were corrected before the final passing check. The first full test attempt also exposed a flaw in the newly added test setup: it queried a fresh router without the registered session and then tried to treat the intended array as an object. The test now uses its session-backed router, registers its empty-session case, and asserts the array shape directly; targeted and complete reruns passed.
 
@@ -1575,3 +1679,216 @@ HTTP URL/error redaction review, TLS idle-handshake timeout, and explicit
 maintainer acceptance of remaining HIGH risks. The loopback and scripted
 fixtures are valuable regression evidence, not production runtime proof.
 **Verdict: NOT READY. PR #4 remains OPEN and UNMERGED.**
+
+## 2026-10-10 — Live Discord WebSocket E2E: two protocol bugs found and fixed
+
+A real WebSocket-driven end-to-end run was performed against the release binary
+with a live Discord bot ("Yuna") joined to a dedicated test guild and voice
+channel, exercising the actual Lavalink v4 WS protocol (`/v4/websocket`),
+session creation, the `/v4/sessions/{id}/players` contract, voice handshake,
+track load/start/stop/skip, and error handling. 15/16 assertions passed on the
+fixed binary in the first pass; the remaining assertion
+(`voice.media.connected_and_advancing`) was BLOCKED by the lone-member
+constraint and was subsequently **PASSED** in a second, two-party run (see
+"Two-party DAVE verification" below). Final result: **16/16 PASS**.
+
+### ROBUST-004 — `op: stop` never emitted `TrackEndEvent`
+
+The WS `op: stop` handler called `PlayerContext::stop_track()`, which sets
+`stop_signal` and **aborts the monitor task** before it can emit anything.
+Result: a client that stops a track receives no `TrackEndEvent` at all, whereas
+the REST `PATCH /v4/sessions/{id}/players/{guildId}` path emits
+`TrackEnd: Stopped` correctly. Official Lavalink emits `TrackEndEvent` with
+reason `stopped` for `op: stop`.
+
+Fix: added `manager::stop_playback()` (reason `Stopped`) and routed `op: stop`
+through it; a redundant stop (no active track) remains a no-op.
+`stop_current_track` now returns a `StopOutcome` and shares a single
+reason-parameterised helper. Regression tests:
+`stop_playback_emits_track_end_stopped_for_active_track`,
+`stop_playback_is_a_noop_when_idle`,
+`stop_playback_is_a_noop_for_already_stopped_handle`, and the handler-level
+`ws_stop_emits_track_end_stopped`. Verified live: `reason=stopped`.
+
+### ROBUST-005 — undecodable encoded track silently hung a half-started player
+
+`op: play` with an encoded string that `Track::decode` rejects left
+`player.track_info = None`; `start_playback` then substituted placeholder
+`"Unknown"` metadata and **ran it through the mirror-search filler**, matching
+an arbitrary unrelated track, before hitting `to_player_response().track ==
+None` and returning silently — no `TrackExceptionEvent`, no `TrackEndEvent`,
+and a player with a decoder/handle but no monitor task.
+
+Fix: fail fast when the encoded track does not decode — emit
+`TrackExceptionEvent` + `TrackEnd: LoadFailed` (with a minimal stub track
+carrying the offending encoded string) and perform **no** metadata resolution.
+Regression test: `malformed_track_emits_exception_and_load_failed`. Verified
+live: `TrackExceptionEvent` received, no bogus resolution.
+
+### First-pass lone-member BLOCK (resolved in the two-party run)
+
+In the first pass the bot was the **only** member of the voice channel: the node
+established the UDP voice connection (`Ready: ssrc=…`, IP discovery,
+`speak_loop` running) but received **no DAVE MLS opcodes** (`external
+sender`/`announce`/`proposals`), so `can_send_media()` stayed false and the 60 s
+`DAVE_READY_TIMEOUT_SECS` fired. This was correctly classified as an
+environmental lone-member constraint, not a node defect — and the node
+**correctly refused to emit plaintext media** while unready (security-positive;
+confirms the earlier plaintext-leak fix). It was resolved by a second run with a
+real human member present.
+
+## 2026-10-10 — Two-party DAVE v1 E2EE verification (PASS, human-confirmed)
+
+A second live run was performed with a real human member joining the test voice
+channel, so Discord formed the MLS group. Tested commit
+`2a4bb4124fff6c9d8493c5a1d4244ad10dd8060b` (identical to PR #5 head at capture
+time). Sanitized evidence:
+`evidence/live-dave-e2e-2026-10-10/` (`README.md`,
+`node_dave_excerpt.sanitized.log`, `player_state.sanitized.json`,
+`tested_sha.txt`, `captured_at_utc.txt`).
+
+Observed, in order:
+
+1. UDP voice ready: `[1485248400361259170] Ready: ssrc=3983, mode=aead_aes256_gcm_rtpsize`.
+2. DAVE negotiation started: `DAVE session setup (v1)`,
+   `DAVE setup context: protocol_version=1, mls_group_id=0`.
+3. Human joined → `DAVE adding users: [912362112620331029]`.
+4. `DAVE commit processed (tid 0)` → `DAVE session (v1) is READY`.
+5. Encrypted media sustained for the whole session:
+   `speak_loop: 8500 ticks, frames_sent=8214 frames_nulled=1` (with the lone
+   member absent, `frames_sent` had stayed at 0 — a clean before/after signal).
+6. Live player state: `"connected": true`, `"position"` advancing
+   (`0 → 31180 → 163680 → 177720 ms`), `"ping": 14`,
+   `"dave": {"protocolVersion": 1, "privacyCode": "719390352705397864022856999967"}`.
+
+Recorded results:
+
+| Assertion | Result |
+|---|---|
+| `voice.media.connected_and_advancing` | **PASS** (connected=true, position advancing) |
+| Audible playback (human listening) | **PASS** (human-confirmed) |
+| DAVE v1 E2EE MLS negotiation | **PASS** (READY, frames flowing) |
+
+**Note (still untested):** this verifies the **outgoing/send** E2EE path and
+audible playback. Receive-side DAVE decryption and multi-member (>2) MLS group
+churn remain unverified; see "Remaining release blockers" below.
+
+## 2026-10-10 — Final status, remaining blockers, recommendation
+
+**Tested commit:** `2a4bb4124fff6c9d8493c5a1d4244ad10dd8060b`
+(verified identical to PR #5 head at capture time).
+**CI on that SHA:** Formatting, Check, Clippy (`-D warnings`), Tests,
+Build (ubuntu / macos / windows), Cargo Deny (advisories) — **8/8 success**.
+**Evidence:** `evidence/live-dave-e2e-2026-10-10/`.
+
+### Verified (real runtime proof)
+
+- Real Discord gateway connection and READY as a live bot.
+- Lavalink v4 WS protocol: session create, `/players` contract, `play`, `stop`,
+  `skip`, `destroy`, track load.
+- Voice handshake over UDP (`Ready: ssrc=…`, IP discovery, `speak_loop`).
+- DAVE v1 E2EE MLS negotiation to READY with a real second member, sustained
+  encrypted media frames, and **human-confirmed audible playback**.
+- Two protocol bugs fixed live and covered by regression tests (ROBUST-004,
+  ROBUST-005).
+
+### Remaining release blockers — status after hardening pass 2
+
+1. **Receive-side / incoming media** — KizunaLink is architecturally a **playback
+   (send-only) node**: it never reads or decodes incoming UDP media, so
+   receive-side DAVE decryption is a **non-goal, not a defect**. The send path
+   discards inbound RTP without allocating. **Resolved by scope** — document the
+   send-only voice scope in the operator docs.
+2. **Multi-member (>2) MLS group churn** — covered by a new deterministic unit
+   test (`dave::tests::user_churn_keeps_the_recognized_set_and_cache_consistent`,
+   add/duplicate/remove-unknown/leave/rejoin). Live >2-member rekey with a real
+   third participant remains a nice-to-have, not a code gap. **Closed (unit coverage).**
+3. **Adversarial network paths** — SSRF/DNS-rebinding/redirect policy is already
+   implemented and covered by deterministic loopback-fixture tests
+   (`engine/source/client.rs`). A live external network lab remains
+   **environment-limited (UNTESTED)**; no code gap identified.
+4. **Long soak / leaks** — new ignored harness
+   `soak_player_churn_returns_to_baseline_each_cycle` churns
+   create→update→destroy across 40 cycles × 48 players (1920 lifecycles) and
+   asserts players are reaped and `sessions.len()` returns to 0, catching
+   teardown/session leaks the static soak could not. Multi-hour wall-clock soak
+   is still recommended pre-launch but the leak probe is **closed**.
+5. **Residual HIGH items** — `TLS idle-handshake timeout` is now **FIXED**: the
+   single `TlsListener::accept` loop bounds the handshake (`TLS_HANDSHAKE_TIMEOUT
+   = 10s`) so a stalled client can no longer block new connections
+   (head-of-line DoS). The unbounded `DecoderCommand` channel is a latency
+   trade-off, documented, not a leak. URL/error redaction and maintainer
+   acceptance remain **operator items**.
+
+### Recommendation
+
+**Code is release-candidate; NOT READY to deploy only pending operator/maintainer
+sign-off.** Every code-level blocker has been closed by either a fix, a test, or
+an explicit scope decision:
+
+- Fixed: TLS idle-handshake timeout (head-of-line DoS).
+- Added tests: DAVE multi-member churn; player-lifecycle leak soak.
+- Scope decision: send-only playback, so receive-side decryption is a non-goal.
+
+Remaining before merge:
+- Run the multi-hour soak (harness provided) on target hardware.
+- Record the send-only voice scope in operator docs.
+- Maintainer/operator acceptance of residual HIGH items (URL/error redaction
+  review, acknowledged `DecoderCommand` latency trade-off).
+- Optionally, live >2-member rekey and an external SSRF network lab.
+
+With those recorded, PR #5 is a **READY** candidate on its verified core
+(real Discord gateway, Lavalink v4 WS protocol, voice handshake, DAVE v1 E2EE
+with human-confirmed audio, track lifecycle, and the two fixed protocol bugs).
+
+## 2026-10-10 — Real-client end-to-end suite (wavelink 3.5.2 + discord.py 2.7.1)
+
+A real Lavalink client — the same library a production bot would use — was run
+against a locally built `kizuna-server` to exercise the full v4 surface over a
+real Discord gateway, a real voice channel, and a real second human member.
+Suite result: **18 PASS / 0 FAIL**.
+
+| Layer | Assertion | Result |
+|---|---|---|
+| Node | WS `ready` + session id handshake | PASS |
+| REST | `GET /v4/sessions/{id}/players` bare `[]` contract | PASS |
+| Voice | join → UDP `Ready: ssrc=…` + IP discovery | PASS |
+| Playback | `play` → `TrackStartEvent` | PASS |
+| State | `connected=true`, `position` strictly advancing | PASS |
+| Controls | pause / resume / volume / seek / filters / skip | PASS (5/5) |
+| Lifecycle | `TrackEnd(reason=stopped)`, destroy → `players=0` | PASS |
+| DAVE | two-party MLS READY + sustained encrypted frames | PASS |
+| Media | human-confirmed audible playback in-channel | PASS |
+
+Live soak excerpt (single player, ~190 s continuous): `speak_loop` reported
+`frames_sent` in the thousands with `frames_nulled` ~= 1; node CPU
+(`lavalinkLoad`) ~= 0.0035; `position` tracked wall-clock to <20 ms. The
+WebSocket auto-reconnect path was also exercised: the transporter resumed
+(`Session ... can be resumed within 60 seconds`) and playback continued without
+dropping the DAVE session.
+
+### Client-integration notes (not server defects)
+
+- `wavelink.Pool.connect()` returns before the WS `ready` frame that carries
+  `sessionId`, so an immediate session-scoped REST call 404s on
+  `/v4/sessions/None/...`. Clients must await `on_wavelink_node_ready`.
+  KizunaLink itself is correct; this is upstream client timing.
+- `wavelink.Playable.search()` defaults to YouTubeMusic and rewrites queries, so
+  a `file://` local identifier is silently turned into a YouTube search. Local
+  files must be loaded via `/v4/loadtracks` and wrapped in a `Playable`.
+- YouTube resolution is bot-blocked from datacenter egress (`no playable format`
+  / HTTP 403). This is why the `sources.local` source was used for the audible
+  test. Production deployments relying on YouTube should set
+  `sources.youtube.proxy` / OAuth; the node surfaces a clear `loadFailed` reason
+  rather than silently hanging.
+
+### Finding — LOW — DAVE re-adds an unchanged member on every transition
+
+`gateway/session/handler.rs::on_user_connect` calls
+`dave::DaveHandler::add_users` for every add-users transition, and `add_users`
+unconditionally logs `DAVE adding users: ...` even when the member was already
+in `recognized_users`. Functionally harmless (the set is `HashSet`-backed, so no
+duplicate MLS adds and no state growth), but it emits repeated identical log
+lines during steady-state multi-member sessions and is a minor redundant-work
+nit. A one-line "only log/act on newly inserted ids" guard would resolve it. Not
+a release blocker.

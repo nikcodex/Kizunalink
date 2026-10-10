@@ -31,6 +31,23 @@ ENV LIBOPUS_STATIC=1 \
     OPUS_STATIC=1 \
     CARGO_TERM_COLOR=always
 
+# Optional build metadata, baked in via option_env! and shown in the startup
+# banner and /v4/info. Pass with `--build-arg` in CI; unset locally.
+ARG BUILD_TIME \
+    BUILD_TIME_HUMAN \
+    GIT_BRANCH \
+    GIT_COMMIT \
+    GIT_COMMIT_SHORT \
+    GIT_COMMIT_TIME \
+    GIT_COMMIT_TIME_HUMAN
+ENV BUILD_TIME=${BUILD_TIME} \
+    BUILD_TIME_HUMAN=${BUILD_TIME_HUMAN} \
+    GIT_BRANCH=${GIT_BRANCH} \
+    GIT_COMMIT=${GIT_COMMIT} \
+    GIT_COMMIT_SHORT=${GIT_COMMIT_SHORT} \
+    GIT_COMMIT_TIME=${GIT_COMMIT_TIME} \
+    GIT_COMMIT_TIME_HUMAN=${GIT_COMMIT_TIME_HUMAN}
+
 WORKDIR /build
 COPY . .
 RUN cargo build --release --locked
@@ -43,6 +60,7 @@ FROM debian:bookworm-slim AS runtime-base
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     tzdata \
+    curl \
     && rm -rf /var/lib/apt/lists/* \
     && addgroup --system kizunalink \
     && adduser --system --ingroup kizunalink kizunalink
@@ -51,6 +69,9 @@ WORKDIR /app
 USER kizunalink
 EXPOSE 2333
 ENV RUST_LOG=info
+# `/health` is unauthenticated and cheap, so it is safe to poll from orchestrators.
+HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
+    CMD curl -fsS http://127.0.0.1:2333/health || exit 1
 ENTRYPOINT ["/app/kizunalink"]
 
 # ---------------------------------------------------------------------------

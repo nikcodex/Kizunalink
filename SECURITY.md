@@ -22,8 +22,17 @@ We aim to acknowledge reports within 48 hours and provide a fix or mitigation pl
 
 ## Security Best Practices for Deployment
 
-- Always use a strong, unique `authorization` token in `config.toml`.
+- Always use a strong, unique `authorization` token in `config.toml` or via
+  `KIZUNA_AUTHORIZATION`. There is no default: the server refuses to start if the
+  secret is missing, empty, or a known placeholder (including `youshallnotpass`),
+  on every bind address including loopback.
 - Never expose the REST/WebSocket port directly to the internet without a reverse proxy.
-- Use HTTPS/WSS in production (terminate TLS at your reverse proxy).
+- A reverse proxy is not a substitute for the secret. Bind the backend to a
+  private address (`127.0.0.1` or a container network) so the port is not
+  directly reachable, and always set a strong `authorization` value. If the proxy
+  manages auth, it must preserve or inject the `Authorization` header end-to-end.
+- Use HTTPS/WSS in production (terminate TLS at your reverse proxy, or enable
+  `server.tls`).
+- `/health` is unauthenticated for orchestrators; do not expose it publicly.
 - Run the Docker container as non-root (the default image already does this).
 - Regularly run `cargo audit` to check for known vulnerabilities in dependencies.
