@@ -437,6 +437,58 @@ async fn players_list_returns_bare_array() {
     );
 }
 
+/// COMPAT-001: the collection endpoint must match the official Lavalink v4
+/// contract (`docs/api/rest.md`, "Get Players"): a bare `Player[]` array on 200,
+/// and the project's JSON error object on an unknown session — never a
+/// `{"players":[...]}` wrapper, and never a bare 404.
+#[tokio::test]
+async fn players_list_unknown_session_returns_json_error_not_wrapper() {
+    let app = test_support::test_router(test_support::test_state());
+    let missing = kizunalink::common::types::SessionId::generate();
+    let (status, body) = request_on(
+        app,
+        "GET",
+        &format!("/v4/sessions/{}/players", missing),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert!(body.is_object(), "error body must be a JSON object");
+    assert_eq!(body["status"], 404);
+    assert_eq!(body["error"], "Not Found");
+    assert_eq!(body["path"], format!("/v4/sessions/{}/players", missing));
+    assert!(body["timestamp"].as_u64().is_some());
+    // A wrapper would surface as a `players` field on the object; an error must not.
+    assert!(body.get("players").is_none());
+}
+
+/// Auth is enforced on the players collection like every other `/v4` path.
+#[tokio::test]
+async fn players_list_requires_authorization() {
+    let app = test_support::test_router(test_support::test_state());
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .uri("/v4/sessions/abc/players")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+}
+
+/// A structurally valid session id that is not registered must 404 with the JSON
+/// error shape (path extractor succeeds; lookup fails).
+#[tokio::test]
+async fn players_list_unregistered_but_wellformed_session_returns_404() {
+    let app = test_support::test_router(test_support::test_state());
+    let (status, body) =
+        request_on(app, "GET", "/v4/sessions/zzzzzzzzzzzzzzzzzz/players", None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(body["error"], "Not Found");
+}
+
 async fn post(uri: &str, body: &str) -> (StatusCode, serde_json::Value) {
     let app = test_support::test_router(test_support::test_state());
     let resp = app
