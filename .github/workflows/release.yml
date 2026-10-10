@@ -69,7 +69,15 @@ jobs:
           fi
 
       - name: 🏗 Build release binary
-        run: cargo build --release --locked --target ${{ matrix.target }}
+        run: |
+          export BUILD_TIME="$(date -u +%s)"
+          export BUILD_TIME_HUMAN="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          export GIT_BRANCH="${GITHUB_REF_NAME}"
+          export GIT_COMMIT="${GITHUB_SHA}"
+          export GIT_COMMIT_SHORT="${GITHUB_SHA:0:7}"
+          export GIT_COMMIT_TIME="$(git log -1 --format=%ct)"
+          export GIT_COMMIT_TIME_HUMAN="$(git log -1 --format=%cI)"
+          cargo build --release --locked --target ${{ matrix.target }}
 
       - name: 📦 Rename binary
         run: |
@@ -138,6 +146,17 @@ jobs:
         if: startsWith(matrix.os, 'macos')
         run: brew install cmake pkg-config
 
+      - name: 🧬 Inject build metadata
+        shell: bash
+        run: |
+          echo "BUILD_TIME=$(date -u +%s)" >> "$GITHUB_ENV"
+          echo "BUILD_TIME_HUMAN=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_ENV"
+          echo "GIT_BRANCH=${GITHUB_REF_NAME}" >> "$GITHUB_ENV"
+          echo "GIT_COMMIT=${GITHUB_SHA}" >> "$GITHUB_ENV"
+          echo "GIT_COMMIT_SHORT=${GITHUB_SHA:0:7}" >> "$GITHUB_ENV"
+          echo "GIT_COMMIT_TIME=$(git log -1 --format=%ct)" >> "$GITHUB_ENV"
+          echo "GIT_COMMIT_TIME_HUMAN=$(git log -1 --format=%cI)" >> "$GITHUB_ENV"
+
       - name: 🏗 Build release binary
         env:
           CMAKE_POLICY_VERSION_MINIMUM: 3.5
@@ -204,6 +223,16 @@ jobs:
           echo "CC_aarch64_linux_android=${NDK_PATH}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android35-clang" >> $GITHUB_ENV
           echo "AR_aarch64_linux_android=${NDK_PATH}/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar" >> $GITHUB_ENV
           echo "CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=${NDK_PATH}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android35-clang" >> $GITHUB_ENV
+
+      - name: 🧬 Inject build metadata
+        run: |
+          echo "BUILD_TIME=$(date -u +%s)" >> "$GITHUB_ENV"
+          echo "BUILD_TIME_HUMAN=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_ENV"
+          echo "GIT_BRANCH=${GITHUB_REF_NAME}" >> "$GITHUB_ENV"
+          echo "GIT_COMMIT=${GITHUB_SHA}" >> "$GITHUB_ENV"
+          echo "GIT_COMMIT_SHORT=${GITHUB_SHA:0:7}" >> "$GITHUB_ENV"
+          echo "GIT_COMMIT_TIME=$(git log -1 --format=%ct)" >> "$GITHUB_ENV"
+          echo "GIT_COMMIT_TIME_HUMAN=$(git log -1 --format=%cI)" >> "$GITHUB_ENV"
 
       - name: 🏗 Build Termux binary
         env:

@@ -31,6 +31,23 @@ ENV LIBOPUS_STATIC=1 \
     OPUS_STATIC=1 \
     CARGO_TERM_COLOR=always
 
+# Optional build metadata, baked in via option_env! and shown in the startup
+# banner and /v4/info. Pass with `--build-arg` in CI; unset locally.
+ARG BUILD_TIME \
+    BUILD_TIME_HUMAN \
+    GIT_BRANCH \
+    GIT_COMMIT \
+    GIT_COMMIT_SHORT \
+    GIT_COMMIT_TIME \
+    GIT_COMMIT_TIME_HUMAN
+ENV BUILD_TIME=${BUILD_TIME} \
+    BUILD_TIME_HUMAN=${BUILD_TIME_HUMAN} \
+    GIT_BRANCH=${GIT_BRANCH} \
+    GIT_COMMIT=${GIT_COMMIT} \
+    GIT_COMMIT_SHORT=${GIT_COMMIT_SHORT} \
+    GIT_COMMIT_TIME=${GIT_COMMIT_TIME} \
+    GIT_COMMIT_TIME_HUMAN=${GIT_COMMIT_TIME_HUMAN}
+
 WORKDIR /build
 COPY . .
 RUN cargo build --release --locked

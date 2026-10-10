@@ -1,0 +1,45 @@
+# cargo-audit configuration for KizunaLink.
+#
+# CI runs BOTH `cargo deny check advisories` (deny.toml) and `cargo audit`.
+# cargo-deny silently SKIPS the five `affected.functions`-only libcrux
+# advisories below (RUSTSEC-2026-0209/0211/0124/0330/0331); cargo-audit does
+# not, so it is the authoritative gate. Every ignore here mirrors an entry in
+# deny.toml and is either a no-safe-upgrade case or a non-reachable code path.
+#
+# All eight are transitive inside the DAVE/MLS crypto stack
+# (davey -> openmls_rust_crypto -> hpke-rs -> hpke-rs-libcrux -> libcrux-*),
+# whose exact libcrux version is pinned upstream; there is no upgrade path
+# available to us. The reachability notes below are specific to how KizunaLink
+# uses that stack for Discord voice E2EE.
+[advisories]
+ignore = [
+    # RUSTSEC-2026-0212: libcrux-secrets 0.0.5 constant-time swap/select is
+    # wrong only on aarch64. Deterministic hashing primitives only.
+    "RUSTSEC-2026-0212",
+    # RUSTSEC-2026-0207: libcrux-sha3 0.0.8 incremental SHAKE squeeze is wrong
+    # only when squeezing in multiple non-RATE-aligned calls. MLS hashes the
+    # whole message at once, so the incremental path is not hit.
+    "RUSTSEC-2026-0207",
+    # RUSTSEC-2026-0208: libcrux-sha3 0.0.8 AVX2 SHAKE-256 panics only for
+    # output lengths > 32 not divisible by 8 outside ML-KEM/ML-DSA. Not used.
+    "RUSTSEC-2026-0208",
+    # RUSTSEC-2026-0209: libcrux-aesgcm 0.0.7 does not enforce the 2^64-bit AAD
+    # length limit. Not reachable: the caller's AAD is a small struct of public
+    # group/epoch fields, never attacker-sized.
+    "RUSTSEC-2026-0209",
+    # RUSTSEC-2026-0211: libcrux-aesgcm 0.0.7 tag check is not constant-time in
+    # certain codegen. Value never crosses a trust boundary; the AEAD key is
+    # derived from the E2EE handshake.
+    "RUSTSEC-2026-0211",
+    # RUSTSEC-2026-0124: libcrux-chacha20poly1305 0.0.7 panics on an overlong
+    # ciphertext buffer. KizunaLink calls the `aead::Aead` trait, which sizes
+    # the buffer itself; the raw overlong-input path is not reachable.
+    "RUSTSEC-2026-0124",
+    # RUSTSEC-2026-0330: libcrux-kem 0.0.7 panics encapsulating from a short
+    # seed. Not reachable: encapsulation is randomized; no seed is supplied.
+    "RUSTSEC-2026-0330",
+    # RUSTSEC-2026-0331: libcrux-kem 0.0.7 panics decoding short hybrid keys.
+    # Reachable only by a peer that already passed the MLS credential checks;
+    # DTLS already authenticates the voice peer.
+    "RUSTSEC-2026-0331",
+]

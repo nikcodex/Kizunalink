@@ -9,12 +9,17 @@ Rust-native Lavalink v4 audio node for Discord. Cargo workspace:
 export LIBOPUS_STATIC=1 OPUS_STATIC=1   # required; libopus is linked statically
 cargo build --release --workspace        # release: panic="unwind" (decoder catch_unwind), strip=true; ~5 min cold
 cargo check --workspace --all-targets
-cargo test --workspace                   # 241 tests
+cargo test --workspace                   # 247 tests (+1 ignored soak)
 cargo test -p kizuna-server -- --ignored soak --nocapture   # soak harness
 cargo clippy --workspace --all-targets -- -D warnings
 cargo fmt --all -- --check
 cargo deny check advisories
+cargo audit                             # authoritative advisory gate (see Security)
 ```
+
+Build metadata (`BUILD_TIME*`, `GIT_COMMIT*` shown in the banner and `/v4/info`)
+is read via `option_env!`; release CI and the Dockerfile inject it. Unset env
+vars render as `unknown`/`0`, so local builds are unaffected.
 
 The binary loads `config.toml` from the current working directory. Copy
 `config.example.toml` to `config.toml`. The example binds `0.0.0.0` and keeps the
@@ -40,6 +45,19 @@ header (401 = missing, 403 = wrong). WebSocket handshake needs `Authorization`,
 - `kizuna-server/src/{main.rs, health.rs, tls.rs, monitoring/, server/, api/{rest,ws}/}`
 - `kizunalink/kizuna-voice/{config, engine, media, discord, lavalink, common}/`
 - `vendor/davey` — vendored DAVE (E2EE) crate, patched via `[patch.crates-io]`
+
+## Security
+
+- Dependency advisories are checked by BOTH `cargo deny check advisories`
+  (`deny.toml`) and `cargo audit` (`.cargo/audit.toml`). cargo-deny silently
+  skips advisories that constrain only `affected.functions` with no floor/ceiling
+  in `[versions]` (currently RUSTSEC-2026-0209/0211/0124/0330/0331), so
+  **`cargo audit` is the authoritative gate** — do not trust deny alone.
+- All current ignores are transitive `libcrux-*` advisories inside the DAVE/MLS
+  crypto stack (`davey → openmls_rust_crypto → hpke-rs → hpke-rs-libcrux →
+  libcrux-*`); the exact libcrux version is pinned upstream, so there is no
+  upgrade path. Keep the two ignore lists in sync and update the reachability
+  comments when the crypto stack is bumped.
 
 ## Gotchas
 
