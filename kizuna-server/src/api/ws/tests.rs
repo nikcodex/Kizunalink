@@ -243,3 +243,99 @@ async fn ws_configure_resuming_updates_session() {
     assert!(state.sessions.contains_key(&sid));
     socket.close(None).await.unwrap();
 }
+
+/// A `TrackHandle` whose decoder receiver is kept alive, so `get_state()`
+/// reports `Playing` rather than `Stopped` (a dropped receiver looks stopped).
+fn live_track_handle() -> kizunalink::engine::playback::TrackHandle {
+    let (tx, rx) = flume::unbounded::<kizunalink::engine::processor::DecoderCommand>();
+    let handle = kizunalink::engine::playback::TrackHandle::new(
+        tx,
+        std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+    )
+    .0;
+    std::mem::forget(rx);
+    handle
+}
+
+fn sample_track() -> kizunalink::lavalink::protocol::tracks::Track {
+    kizunalink::lavalink::protocol::tracks::Track::new(
+        kizunalink::lavalink::protocol::tracks::TrackInfo {
+            identifier: "abc".to_string(),
+            is_seekable: true,
+            author: "Author".to_string(),
+            length: 1000,
+            is_stream: false,
+            position: 0,
+            title: "Title".to_string(),
+            uri: Some("https://example.test/abc".to_string()),
+            artwork_url: None,
+            isrc: None,
+            source_name: "test".to_string(),
+        },
+    )
+}
+
+/// `op: stop` over the real WebSocket handler must emit `TrackEndEvent` with
+/// reason `stopped` for an active track. Regression for the path that used to
+/// call `player.stop_track()` and thereby abort the monitor task before it could
+/// emit anything.
+#[tokio::test]
+async fn ws_stop_emits_track_end_stopped() {
+    use kizunalink::common::types::{GuildId, SessionId};
+
+    let (base, state) = spawn_test_server().await;
+    let (mut socket, _) = connect(&base, &[]).await;
+    let ready = next_json(&mut socket).await;
+    let session_id = SessionId::from(ready["sessionId"].as_str().unwrap().to_string());
+
+    let session = state
+        .sessions
+        .get(&session_id)
+        .expect("session registered after connect")
+        .value()
+        .clone();
+    let guild = GuildId("stop-guild".to_string());
+    {
+        let player = session.get_or_create_player(guild.clone(), state.clone());
+        let mut guard = player.write().await;
+        guard.track_handle = Some(live_track_handle());
+        guard.track_info = Some(sample_track());
+        guard.track = Some("encoded".to_string());
+    }
+
+    socket
+        .send(TungMessage::Text(
+            serde_json::json!({"op": "stop", "guildId": guild.0})
+                .to_string()
+                .into(),
+        ))
+        .await
+        .unwrap();
+
+    let event = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        loop {
+            let msg = next_json(&mut socket).await;
+            if msg["op"] == "event" && msg["type"] == "TrackEndEvent" {
+                return msg;
+            }
+        }
+    })
+    .await
+    .expect("TrackEndEvent must be emitted after op:stop");
+
+    assert_eq!(event["reason"], "stopped");
+    assert_eq!(event["guildId"], "stop-guild");
+    assert_eq!(event["track"]["info"]["title"], "Title");
+
+    // The player must be cleared so subsequent updates cannot expose a track
+    // with no decoder behind it.
+    let player = session.get_or_create_player(guild, state.clone());
+    let guard = player.read().await;
+    assert!(guard.track.is_none(), "track must be cleared after stop");
+    assert!(
+        guard.track_handle.is_none(),
+        "handle must be cleared after stop"
+    );
+
+    socket.close(None).await.unwrap();
+}

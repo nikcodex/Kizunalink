@@ -44,7 +44,12 @@ pub async fn handle_op(
         IncomingMessage::Stop { guild_id } => {
             if let Some(player_arc) = session.players.get(&guild_id).map(|kv| kv.value().clone()) {
                 let mut player = player_arc.write().await;
-                player.stop_track();
+                let session_ctx: &dyn kizunalink::common::server_hooks::SessionContext =
+                    session.as_ref();
+                // Emit `TrackEnd: Stopped` for an active track. The old
+                // `player.stop_track()` aborted the monitor task before it could
+                // emit anything, so clients never saw the track end.
+                kizunalink::discord::player::manager::stop_playback(&mut player, session_ctx).await;
             }
             Ok(())
         }

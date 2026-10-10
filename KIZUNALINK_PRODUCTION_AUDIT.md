@@ -1679,3 +1679,61 @@ HTTP URL/error redaction review, TLS idle-handshake timeout, and explicit
 maintainer acceptance of remaining HIGH risks. The loopback and scripted
 fixtures are valuable regression evidence, not production runtime proof.
 **Verdict: NOT READY. PR #4 remains OPEN and UNMERGED.**
+
+## 2026-10-10 — Live Discord WebSocket E2E: two protocol bugs found and fixed
+
+A real WebSocket-driven end-to-end run was performed against the release binary
+with a live Discord bot ("Yuna") joined to a dedicated test guild and voice
+channel, exercising the actual Lavalink v4 WS protocol (`/v4/websocket`),
+session creation, the `/v4/sessions/{id}/players` contract, voice handshake,
+track load/start/stop/skip, and error handling. 15/16 assertions passed on the
+fixed binary; the single BLOCK is environmental (see below).
+
+### ROBUST-004 — `op: stop` never emitted `TrackEndEvent`
+
+The WS `op: stop` handler called `PlayerContext::stop_track()`, which sets
+`stop_signal` and **aborts the monitor task** before it can emit anything.
+Result: a client that stops a track receives no `TrackEndEvent` at all, whereas
+the REST `PATCH /v4/sessions/{id}/players/{guildId}` path emits
+`TrackEnd: Stopped` correctly. Official Lavalink emits `TrackEndEvent` with
+reason `stopped` for `op: stop`.
+
+Fix: added `manager::stop_playback()` (reason `Stopped`) and routed `op: stop`
+through it; a redundant stop (no active track) remains a no-op.
+`stop_current_track` now returns a `StopOutcome` and shares a single
+reason-parameterised helper. Regression tests:
+`stop_playback_emits_track_end_stopped_for_active_track`,
+`stop_playback_is_a_noop_when_idle`,
+`stop_playback_is_a_noop_for_already_stopped_handle`, and the handler-level
+`ws_stop_emits_track_end_stopped`. Verified live: `reason=stopped`.
+
+### ROBUST-005 — undecodable encoded track silently hung a half-started player
+
+`op: play` with an encoded string that `Track::decode` rejects left
+`player.track_info = None`; `start_playback` then substituted placeholder
+`"Unknown"` metadata and **ran it through the mirror-search filler**, matching
+an arbitrary unrelated track, before hitting `to_player_response().track ==
+None` and returning silently — no `TrackExceptionEvent`, no `TrackEndEvent`,
+and a player with a decoder/handle but no monitor task.
+
+Fix: fail fast when the encoded track does not decode — emit
+`TrackExceptionEvent` + `TrackEnd: LoadFailed` (with a minimal stub track
+carrying the offending encoded string) and perform **no** metadata resolution.
+Regression test: `malformed_track_emits_exception_and_load_failed`. Verified
+live: `TrackExceptionEvent` received, no bogus resolution.
+
+### Environmental BLOCK — DAVE readiness with a lone channel member
+
+`voice.media.connected_and_advancing` remained false: the node established the
+UDP voice connection (`Ready: ssrc=…`, IP discovery, `speak_loop` running) but
+received **no DAVE MLS opcodes** (`external sender`/`announce`/`proposals`)
+because the bot was the only member of the voice channel. Discord does not form
+the MLS group for a lone member, so `can_send_media()` stays false and the 60 s
+`DAVE_READY_TIMEOUT_SECS` fires. This is the documented lone-member constraint,
+not a node defect — and notably the node **correctly refused to emit plaintext
+media** while unready (security-positive; confirms the earlier plaintext-leak
+fix). Reproducing audible media requires a second real member in the channel.
+
+**Verdict unchanged: NOT READY** pending two-party DAVE audio and maintainer
+acceptance; this run closes the "real Discord connection" gate for session
+creation, voice handshake, track lifecycle and error paths.

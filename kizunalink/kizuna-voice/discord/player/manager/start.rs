@@ -38,30 +38,45 @@ pub struct PlaybackStartConfig {
 pub async fn start_playback(player: &mut PlayerContext, config: PlaybackStartConfig) {
     stop_current_track(player, config.session.as_ref()).await;
 
-    player.track_info = crate::lavalink::protocol::tracks::Track::decode(&config.track);
+    // A client must send an encoded track string produced by `/v4/loadtracks`. If
+    // it does not decode there is no metadata to resolve and nothing to play, so
+    // fail loudly with `TrackException` + `TrackEnd: LoadFailed`. Previously the
+    // node substituted placeholder "Unknown" metadata, ran that through the
+    // mirror-search filler (which can match an arbitrary, unrelated track), then
+    // silently returned once it failed to build the track response — leaving the
+    // client with no event and a half-started player.
+    let Some(decoded) = crate::lavalink::protocol::tracks::Track::decode(&config.track) else {
+        // Build a minimal stub so the failure event still carries the offending
+        // encoded string. No metadata is resolved — the old code substituted
+        // placeholder "Unknown" metadata and ran it through the mirror-search
+        // filler, matching an arbitrary unrelated track.
+        player.track_info = Some(crate::lavalink::protocol::tracks::Track {
+            encoded: config.track.clone(),
+            info: crate::lavalink::protocol::tracks::TrackInfo::default(),
+            plugin_info: serde_json::json!({}),
+            user_data: serde_json::json!({}),
+        });
+        player.track = Some(config.track.clone());
+        player.position = 0;
+        error!(
+            "Rejecting play: encoded track could not be decoded (len={})",
+            config.track.len()
+        );
+        send_load_failed(
+            player,
+            config.session.as_ref(),
+            "Invalid or corrupted encoded track".to_string(),
+        )
+        .await;
+        return;
+    };
+    let track_info = decoded.info.clone();
+    player.track_info = Some(decoded);
     player.track = Some(config.track.clone());
     player.position = 0;
     player.end_time = config.end_time;
     player.user_data = config.user_data.unwrap_or_else(|| serde_json::json!({}));
     player.stop_signal = Arc::new(std::sync::atomic::AtomicBool::new(false));
-
-    let track_info = player
-        .track_info
-        .as_ref()
-        .map(|t| t.info.clone())
-        .unwrap_or_else(|| crate::lavalink::protocol::tracks::TrackInfo {
-            title: "Unknown".to_string(),
-            author: "Unknown".to_string(),
-            length: 0,
-            identifier: config.track.clone(),
-            is_stream: false,
-            uri: Some(config.track.clone()),
-            artwork_url: None,
-            isrc: None,
-            source_name: "unknown".to_string(),
-            is_seekable: true,
-            position: 0,
-        });
 
     let identifier = track_info
         .uri
@@ -203,6 +218,16 @@ pub async fn start_playback(player: &mut PlayerContext, config: PlaybackStartCon
     player.track_task = Some(track_task);
 }
 
+/// Whether a stop cancelled an active track (and emitted `TrackEnd`) or was a
+/// no-op because nothing was playing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StopOutcome {
+    /// A track was active; it was cancelled and a `TrackEnd` event was emitted.
+    Stopped,
+    /// No active track; nothing was cancelled and no event was emitted.
+    Nothing,
+}
+
 /// Stops the current track while preserving unrelated mixer tracks and sound
 /// effects.
 ///
@@ -211,7 +236,18 @@ pub async fn start_playback(player: &mut PlayerContext, config: PlaybackStartCon
 async fn stop_current_track(
     player: &mut PlayerContext,
     session: &dyn crate::common::server_hooks::SessionContext,
-) {
+) -> StopOutcome {
+    stop_current_track_with_reason(player, session, TrackEndReason::Replaced).await
+}
+
+/// Like [`stop_current_track`] but lets the caller choose the `TrackEnd` reason
+/// (`op: stop` uses `Stopped`, a replacing play uses `Replaced`).
+async fn stop_current_track_with_reason(
+    player: &mut PlayerContext,
+    session: &dyn crate::common::server_hooks::SessionContext,
+    reason: TrackEndReason,
+) -> StopOutcome {
+    let mut outcome = StopOutcome::Nothing;
     if let Some(handle) = &player.track_handle
         && handle.get_state() != PlaybackState::Stopped
         && let Some(track) = player.to_player_response().await.track
@@ -220,9 +256,10 @@ async fn stop_current_track(
             event: Box::new(KizunaLinkEvent::TrackEnd {
                 guild_id: player.guild_id.clone(),
                 track,
-                reason: TrackEndReason::Replaced,
+                reason,
             }),
         });
+        outcome = StopOutcome::Stopped;
     }
 
     player.stop_signal.store(true, Ordering::Release);
@@ -251,4 +288,202 @@ async fn stop_current_track(
         player.frames_nulled.swap(0, Ordering::Relaxed),
         Ordering::Relaxed,
     );
+
+    outcome
+}
+
+/// Explicit `op: stop`. Emits `TrackEnd: Stopped` when a track was playing
+/// (matching the REST `PATCH .../players/{guildId}` path); a redundant stop is a
+/// no-op so it cannot produce a spurious event.
+pub async fn stop_playback(
+    player: &mut PlayerContext,
+    session: &dyn crate::common::server_hooks::SessionContext,
+) -> StopOutcome {
+    stop_current_track_with_reason(player, session, TrackEndReason::Stopped).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::{Arc, Mutex, atomic::AtomicU64};
+
+    use crate::common::server_hooks::SessionContext;
+    use crate::common::types::GuildId;
+    use crate::engine::playback::TrackHandle;
+    use crate::engine::processor::DecoderCommand;
+    use crate::lavalink::protocol::OutgoingMessage;
+    use crate::lavalink::protocol::tracks::{Track, TrackInfo};
+
+    /// Captures every outgoing message as JSON so tests can assert on emitted
+    /// events without requiring `Deserialize` on the protocol types.
+    #[derive(Default)]
+    struct CapturingSession {
+        sent: Mutex<Vec<serde_json::Value>>,
+        sent_frames: AtomicU64,
+        nulled_frames: AtomicU64,
+    }
+
+    impl CapturingSession {
+        fn events(&self) -> Vec<serde_json::Value> {
+            self.sent
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|m| m["op"] == "event")
+                .cloned()
+                .collect()
+        }
+    }
+
+    impl crate::common::server_hooks::ServerContext for CapturingSession {}
+
+    impl SessionContext for CapturingSession {
+        fn send_message(&self, msg: &OutgoingMessage) {
+            self.sent
+                .lock()
+                .unwrap()
+                .push(serde_json::to_value(msg).expect("serialize outgoing message"));
+        }
+        fn register_task(&self, _handle: tokio::task::AbortHandle) {}
+        fn total_sent_historical(&self) -> &AtomicU64 {
+            &self.sent_frames
+        }
+        fn total_nulled_historical(&self) -> &AtomicU64 {
+            &self.nulled_frames
+        }
+        fn get_player(
+            &self,
+            _guild_id: &GuildId,
+        ) -> Option<Arc<tokio::sync::RwLock<PlayerContext>>> {
+            None
+        }
+    }
+
+    fn sample_track() -> Track {
+        Track::new(TrackInfo {
+            identifier: "abc".to_string(),
+            is_seekable: true,
+            author: "Author".to_string(),
+            length: 1000,
+            is_stream: false,
+            position: 0,
+            title: "Title".to_string(),
+            uri: Some("https://example.test/abc".to_string()),
+            artwork_url: None,
+            isrc: None,
+            source_name: "test".to_string(),
+        })
+    }
+
+    fn dummy_handle() -> TrackHandle {
+        let (tx, rx) = flume::unbounded::<DecoderCommand>();
+        let handle = TrackHandle::new(tx, Arc::new(std::sync::atomic::AtomicBool::new(false))).0;
+        // `get_state()` reports `Stopped` once the decoder receiver is dropped,
+        // so leak the receiver to model a live decoder for the test's lifetime.
+        std::mem::forget(rx);
+        handle
+    }
+
+    fn make_player(state: Arc<dyn crate::common::server_hooks::ServerContext>) -> PlayerContext {
+        PlayerContext::new(
+            GuildId("1".to_string()),
+            &crate::config::player::PlayerConfig::default(),
+            state,
+        )
+    }
+
+    #[tokio::test]
+    async fn stop_playback_emits_track_end_stopped_for_active_track() {
+        let session = Arc::new(CapturingSession::default());
+        let mut player = make_player(session.clone());
+        player.track_handle = Some(dummy_handle());
+        player.track_info = Some(sample_track());
+        player.track = Some("encoded".to_string());
+
+        let outcome = stop_playback(&mut player, session.as_ref()).await;
+
+        assert_eq!(outcome, StopOutcome::Stopped);
+        let events = session.events();
+        assert_eq!(events.len(), 1, "exactly one TrackEnd expected: {events:?}");
+        assert_eq!(events[0]["type"], "TrackEndEvent");
+        assert_eq!(events[0]["reason"], "stopped");
+        assert!(player.track_handle.is_none());
+        assert!(player.track.is_none());
+    }
+
+    #[tokio::test]
+    async fn stop_playback_is_a_noop_when_idle() {
+        let session = Arc::new(CapturingSession::default());
+        let mut player = make_player(session.clone());
+
+        let outcome = stop_playback(&mut player, session.as_ref()).await;
+
+        assert_eq!(outcome, StopOutcome::Nothing);
+        assert!(
+            session.sent.lock().unwrap().is_empty(),
+            "idle stop must emit nothing"
+        );
+    }
+
+    #[tokio::test]
+    async fn stop_playback_is_a_noop_for_already_stopped_handle() {
+        let session = Arc::new(CapturingSession::default());
+        let mut player = make_player(session.clone());
+        let handle = dummy_handle();
+        handle.stop();
+        player.track_handle = Some(handle);
+        player.track_info = Some(sample_track());
+        player.track = Some("encoded".to_string());
+
+        let outcome = stop_playback(&mut player, session.as_ref()).await;
+
+        assert_eq!(outcome, StopOutcome::Nothing);
+        assert!(session.sent.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn malformed_encoded_track_fails_to_decode() {
+        assert!(Track::decode("not-a-real-encoded-track").is_none());
+    }
+
+    #[tokio::test]
+    async fn malformed_track_emits_exception_and_load_failed() {
+        let session = Arc::new(CapturingSession::default());
+        let mut player = make_player(session.clone());
+        let config: crate::config::AppConfig =
+            toml::from_str("[server]\nauthorization = \"test-suite-secret-9f2c\"\n")
+                .expect("minimal config parses");
+        let source_manager = Arc::new(crate::media::sources::SourceManager::new(&config));
+        let lyrics_manager = Arc::new(crate::media::lyrics::LyricsManager::new(&config));
+
+        start_playback(
+            &mut player,
+            PlaybackStartConfig {
+                track: "not-a-real-encoded-track".to_string(),
+                session: session.clone(),
+                source_manager,
+                lyrics_manager,
+                routeplanner: None,
+                update_interval: Duration::from_secs(5),
+                user_data: None,
+                end_time: None,
+                start_time_ms: None,
+            },
+        )
+        .await;
+
+        // The node must fail loudly instead of silently hanging a half-started
+        // player: `TrackException` followed by `TrackEnd: loadFailed`.
+        let events = session.events();
+        let types: Vec<&str> = events.iter().map(|e| e["type"].as_str().unwrap()).collect();
+        assert_eq!(
+            types,
+            vec!["TrackExceptionEvent", "TrackEndEvent"],
+            "{events:?}"
+        );
+        assert_eq!(events[1]["reason"], "loadFailed");
+        // No metadata resolution, so no bogus track start.
+        assert!(player.track_handle.is_none());
+        assert!(player.track.is_none());
+    }
 }
