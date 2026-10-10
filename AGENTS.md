@@ -49,6 +49,23 @@ are dropped (`opcodes.rs` logs and ignores them), so real clients must send it.
 `Session-Id` enables resumption. `python3` + `pip install websockets` works for
 protocol tests.
 
+`scripts/e2e_pause_resume.py` is the real-client regression for the
+pause/resume-mid-ramp silent-playback bug (see Gotchas). It drives discord.py +
+wavelink against a live node, then bursts `pause(); resume()` with a gap short
+enough that the resume lands inside the 500 ms tape stop-ramp, and gates on the
+player still advancing position afterwards. It needs `DISCORD_TOKEN` and a
+second member in the voice channel (DAVE must form, or the RTP loop emits
+nothing). Run it after any change to `TapeEffect`, `FlowController` or
+`Mixer::mix`:
+
+```bash
+DISCORD_TOKEN=... GUILD=<id> VOICE_CHANNEL=<id> KIZUNA_AUTHORIZATION=... \
+  python3 scripts/e2e_pause_resume.py
+```
+
+Exit 0 = gate passed, 1 = regression, 2 = inconclusive (no DAVE-ready audio
+path).
+
 ## Layout
 
 - `kizuna-server/src/{main.rs, health.rs, tls.rs, monitoring/, server/, api/{rest,ws}/}`
