@@ -5,6 +5,8 @@
 **Auditor:** Buffy (static + architecture audit; **cargo toolchain unavailable in this environment — see §13**)
 **Method:** full source review of every Rust module, manifests, config, Docker, CI, and comparison against the official Lavalink v4 wire spec at `lavalink.dev`. No source files were modified.
 
+> **Addendum (2026-10-10, hardening pass):** The findings below were re-derived from the current tree. `COMPAT-001` (players shape), `COMPAT-002/003` (info semver/build), `ROBUST-001` (decoder panics) and `PERF-002` (mixer re-enable) were already correct in-tree and are now closed as **stale** and pinned with regression tests. `SEC-001`, `SEC-002`, `SEC-003` are resolved; an independent oracle diff of IPv4/IPv6 classification found and fixed additional reserved-range gaps. The original text is retained below for history; where it conflicts with the tables, the tables are current.
+
 ---
 
 ## Executive Summary
@@ -42,13 +44,13 @@ No speculative “DAVE is broken” style claims are made. Where a subsystem cou
 
 | ID | Severity | Category | Finding | Evidence | Fix |
 |---|---|---|---|---|---|
-| COMPAT-001 | **HIGH** | Lavalink v4 | `GET /v4/sessions/{id}/players` returns `{"players":[…]}` instead of a bare JSON array | Official docs example is a bare array; KizunaLink returns `Json(Players{players})` | Serialize `Vec<Player>` directly |
+| COMPAT-001 | ~~**HIGH**~~ **RESOLVED (stale)** | Lavalink v4 | ~~`GET /v4/sessions/{id}/players` returns `{"players":[…]}`~~ — current source returns a bare array | Re-verified: `get_players` returns `Json(players)`; no `Players` wrapper exists | Done (test-pinned) |
 | SEC-001 | ~~**HIGH**~~ **RESOLVED** | SSRF | Resolved by connect-time resolver validation + IP pinning + per-hop redirect policy (see §SEC-001) | Re-validated on the address actually connected | Done |
 | PERF-001 | MEDIUM | Async | Blocking `to_socket_addrs()` DNS resolution on Tokio worker threads | `validate_public_url` called from sync `can_handle` inside async `load` | Move resolution to `spawn_blocking` or resolve once and pin |
-| ROBUST-001 | MEDIUM | Robustness | `panic = "abort"` + `expect()` in spawned decoder threads: one spawn failure kills the whole process | `std::thread::Builder::…spawn(…).expect(…)` in `http`/`local`/`youtube` tracks | Return an error / propagate `false` instead of `expect` |
-| COMPAT-002 | LOW | Lavalink v4 | `/v4/info` reports `version.semver = "1.1.0"` while forcing `version.major = 4` | `get_info` parse + override | Report a semver consistent with the protocol major (e.g. `4.x.y`) |
-| COMPAT-003 | LOW | Lavalink v4 | `Version.build` field absent | docs Version Object includes optional `build` | Add `build: Option<String>` |
-| PERF-002 | LOW | Audio | `AudioMixer.enabled` is never re-enabled after `Mixer::stop_all()` | `stop_all` sets `enabled=false`; `add_layer` does not reset it | Re-enable on first `add_layer` |
+| ROBUST-001 | ~~MEDIUM~~ **RESOLVED (stale)** | Robustness | ~~`panic = "abort"` + `expect()` in decoder spawns~~ | Re-verified: `panic = "unwind"`, all spawns handle `Err`, all decoders `run_guarded()` | Done (test-pinned) |
+| COMPAT-002 | ~~LOW~~ **RESOLVED (stale)** | Lavalink v4 | ~~`/v4/info` reports `semver = "1.1.0"`~~ — `semver` is now derived from the protocol major | Re-verified: `get_info` | Done (test-pinned) |
+| COMPAT-003 | ~~LOW~~ **RESOLVED (stale)** | Lavalink v4 | ~~`Version.build` field absent~~ — `build: Option<String>` present | Re-verified: `protocol/info.rs::Version` | Done (test-pinned) |
+| PERF-002 | ~~LOW~~ **RESOLVED (stale)** | Audio | ~~`AudioMixer.enabled` never re-enabled after `stop_all()`~~ — `add_layer` restores it | Re-verified: `mixer.rs` | Done (test-pinned) |
 | PERF-003 | LOW | Alloc | Per-track `expect("failed to spawn … decoder thread")` and per-frame copies | see §8 | see §11 |
 | TEST-001 | HIGH | Coverage | No automated test reproduces real playback, Discord voice, or DAVE key exchange | §10 | integration harness (P0) |
 
@@ -224,9 +226,9 @@ Endpoints named in the brief that are **intentionally absent** and correctly so 
 | `/v4/loadsearch` | ✅ Extension (OK) | `track.rs` returns `SearchResult`; 204 when no source | — |
 | `/v4/decodetrack` | ✅ Correct | GET `?encodedTrack=`/`?track=` | — |
 | `/v4/decodetracks` | ✅ Correct | POST array body, capped at 256 tracks / 2 MiB | — |
-| `/v4/info` | ⚠️ Minor | `sourceManagers`, `filters`, `plugins`, `git`, `jvm`, `lavaplayer` present; **`semver` 1.x while `major`→4**; no `version.build` | see COMPAT-002/003 |
+| `/v4/info` | ✅ Correct | `sourceManagers`, `filters`, `plugins`, `git`, `jvm`, `lavaplayer` present; `semver`/`major` protocol-consistent; `version.build` present (optional) | COMPAT-002/003 resolved |
 | `/v4/stats` | ✅ Correct | `frameStats` omitted here (`collect_stats(&state, None)`) as required | — |
-| **`/players` (list)** | ❌ **BUG** | returns `{"players":[…]}`; docs require a bare array | COMPAT-001 |
+| **`/players` (list)** | ✅ Correct | bare `Player[]` array (docs-conformant) | COMPAT-001 resolved |
 | `/players/{guild}` GET | ✅ Correct | bare `Player` object | — |
 | Player update (PATCH) | ✅ Correct | `track`/`encodedTrack`/`identifier`/`position`/`endTime`/`volume`/`paused`/`filters`/`voice`/`noReplace` | — |
 | Player destroy (DELETE) | ✅ Correct | `204 No Content`, emits `TrackEnd{cleanup}` | — |
@@ -274,14 +276,13 @@ Drop or repurpose the `Players` wrapper (and the `to_response`/`Players` import 
 
 ### COMPAT-002 — `/v4/info` semver vs. forced major
 
-**Severity:** LOW · **Status:** CONFIRMED COMPATIBILITY ISSUE
+**Severity:** LOW · **Status:** RESOLVED (stale finding)
 **File:** `kizuna-server/src/api/rest/routes/stats/info.rs` → `get_info()`
-`version.semver` is the crate version `1.1.0`, but `version.major` is forced to `4` (correctly, so clients gating on `major >= 4` accept the node). The inconsistency only matters to clients that parse `semver` rather than `major`.
-**Fix:** emit a protocol-facing semver, e.g. `4.0.0` (+ optional build/pre-release), or document the divergence. **Test:** assert `version.major >= 4` and that `semver` either starts with `4.` or is explicitly documented.
+`semver` is now built from the same protocol major that `major` reports (crate `1.x` → wire `4.x.y`), so the two never diverge. Test `info_endpoint_returns_lavalink_v4_schema` asserts the `semver` major equals the reported `major`.
 
 ### COMPAT-003 — missing `version.build`
 
-**Severity:** LOW · **Status:** CONFIRMED COMPATIBILITY ISSUE
+**Severity:** LOW · **Status:** RESOLVED (stale finding)
 **File:** `kizunalink/kizuna-voice/lavalink/protocol/info.rs` → `struct Version`
 The v4 Version object includes an optional `build` string. Add `pub build: Option<String>` with `#[serde(skip_serializing_if="Option::is_none")]`.
 
@@ -696,7 +697,7 @@ Prioritized tests that should exist but currently do not:
 ## Final Verdict
 
 - **Core playback:** **Solid.** Baseline works; edge cases handled; one robustness fix (ROBUST-001) and one mixer nit (PERF-002).
-- **Lavalink compatibility:** **Good, one real defect.** `/players` shape (COMPAT-001) is the headline; info semver/build are cosmetic.
+- **Lavalink compatibility:** **Good.** The `/players` shape (COMPAT-001) and the info semver/build findings were re-checked and are already correct in the current tree.
 - **Discord Voice:** **Structurally correct**, live-unverified.
 - **DAVE:** **Probably correct, under-tested**, lucid implementation and targeted unit tests.
 - **Sources:** **Broadly implemented**, live reliability unverified; broken sources correctly gated off.
@@ -744,10 +745,10 @@ Independent second pass. Every finding below was re-derived from the **current**
 | SEC-003 | Blocking DNS | **RESOLVED** | `to_socket_addrs()` now runs only in `resolve_and_validate_public_url`, called exclusively from blocking contexts (`spawn_blocking`/decoder thread); `can_handle` is syntax-only; the async connect path uses `tokio::net::lookup_host`. Contract test `can_handle_is_syntax_only_and_never_resolves_dns` | MEDIUM | DONE |
 | ROBUST-001 | Decoder `expect()` + panic strategy | **RESOLVED (stale finding)** | `profile.dev/release` use `panic = "unwind"` (Cargo.toml), so `AudioProcessor::run_guarded` (`catch_unwind`) is effective; every decoder source calls `run_guarded()` and handles `thread::Builder::spawn` failure without `expect`. `BalancingIpRoutePlanner::new` returns `Result` (no `panic!`); empty-block guard prevents division by zero. Regression tests: routeplanner invalid/valid/empty/IPv6 construction | MEDIUM | DONE |
 | PERF-002 | Mixer re-enabled after `stop_all` | **RESOLVED (stale finding)** | `AudioMixer::add_layer` already restores `enabled` after `Mixer::stop_all` clears it; regression test `add_layer_re_enables_after_stop_all` fails if the re-enable is removed (mutation-checked) | LOW | DONE |
-| COMPAT-002 | `/info` semver | **CONFIRMED** | `stats/info.rs::get_info` — `semver = 1.1.0`, `major` forced ≥4 | LOW | YES |
-| COMPAT-003 | Missing `version.build` | **CONFIRMED** | `protocol/info.rs::Version` has no `build` field | LOW | YES |
+| COMPAT-002 | `/info` semver | **RESOLVED (stale finding)** | `stats/info.rs::get_info` derives both `semver` and `major` from the protocol major (crate `1.x` → wire `4.x.y`); test asserts `semver` major == `major` | LOW | DONE |
+| COMPAT-003 | Missing `version.build` | **RESOLVED (stale finding)** | `protocol/info.rs::Version` has `build: Option<String>`, populated from `BUILD_NUMBER`; test asserts the key is present (may be null) | LOW | DONE |
 
-No finding was confirmed merely because the first report asserted it. Each was re-derived from current source; `COMPAT-001`, `ROBUST-001` and `PERF-002` were found to be **stale** (already fixed in-tree) and were closed with regression tests rather than code rewrites.
+No finding was confirmed merely because the first report asserted it. Each was re-derived from current source; `COMPAT-001`, `ROBUST-001`, `PERF-002`, `COMPAT-002` and `COMPAT-003` were found to be **stale** (already fixed in-tree) and were closed with regression tests rather than code rewrites.
 
 ## Confirmed Bugs
 

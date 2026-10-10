@@ -152,6 +152,16 @@ async fn info_endpoint_returns_lavalink_v4_schema() {
             .as_u64()
             .is_some_and(|major| major >= 4)
     );
+    // COMPAT-002: `semver` must be derived from the same (protocol) major that is
+    // reported, not the crate's own release version.
+    assert_eq!(
+        body["version"]["semver"]
+            .as_str()
+            .and_then(|s| s.split('.').next())
+            .and_then(|s| s.parse::<u64>().ok()),
+        body["version"]["major"].as_u64(),
+        "version.semver major must match version.major"
+    );
     assert!(
         body["version"].get("build").is_some(),
         "version.build must be present (it may be null)"
