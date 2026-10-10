@@ -89,6 +89,19 @@ protocol tests.
   channel may never receive the proposal/commit that makes the session ready. Do
   not conclude "DAVE is broken" from a lone-bot test — put a second client in the
   channel, or check for `DAVE session (v1) is READY` in the logs.
+- **"Player says PLAYING but the channel is silent" after a pause/resume.**
+  `TapeEffect` (the varispeed stop/start ramp) must never be pinned at its 0.01
+  floor while the state is `Playing`. `Mixer::mix` drives the ramp from the
+  *target* state plus the current rate (`tape.rate()`), not from the state
+  transition edge: a `resume()` that lands inside the stop-ramp window
+  (`tape_stop_duration_ms`, default 500 ms — wavelink's `pause(); resume()` does
+  exactly this) used to skip the start ramp, so the stop ramp completed, the
+  state rolled `Starting -> Playing`, and the tape stayed at 0.01 emitting
+  permanent silence. Regression test:
+  `engine::mix::mixer::tests::tape_recovers_when_resume_lands_mid_stop_ramp`.
+  When debugging silent playback, probe RMS *after* `FlowController::process_frame`
+  (i.e. after `tape.process`) — decode/resample/encode can all be healthy and the
+  tape will still zero the frame.
 - YouTube (the most common source) supports a per-source `proxy` like every other
   source; it is what lets the node work from datacenter IPs that YouTube blocks
   (HTTP 403 from `googlevideo.com`). See `default_playback_clients()` and
