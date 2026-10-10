@@ -41,16 +41,31 @@ fn main() {
     }
 
     // 2. pkg-config probe (system opus) on non-Windows targets.
+    //
+    // The `pkg-config` crate only emits `static=` when opus's `.pc` file
+    // contains an explicit `-L` pointing at the archive. Debian/Ubuntu `.pc`
+    // files omit `-L` for the default `/usr/lib/<triple>` dir, so a plain probe
+    // silently links the *shared* library even under `LIBOPUS_STATIC`. That is
+    // how the Docker runtime image ended up missing `libopus.so.0`. When static
+    // linking is requested, resolve `libdir` ourselves and only accept it if
+    // `libopus.a` is actually present; otherwise fall through to the vendored
+    // static build (which honours the `LIBOPUS_STATIC` contract).
     if target_os != "windows"
         && env::var_os("LIBOPUS_NO_PKG").is_none()
         && env::var_os("OPUS_NO_PKG").is_none()
-        && pkg_config::Config::new()
-            .statik(is_static)
-            .probe("opus")
-            .is_ok()
     {
-        println!("cargo:info=Found opus via pkg-config.");
-        return;
+        if is_static {
+            if let Some(dir) = pkg_config_libdir("opus")
+                && dir.join("libopus.a").exists()
+            {
+                println!("cargo:info=Found static opus via pkg-config: {}", dir.display());
+                link("static", &dir.display().to_string());
+                return;
+            }
+        } else if pkg_config::Config::new().statik(false).probe("opus").is_ok() {
+            println!("cargo:info=Found opus via pkg-config.");
+            return;
+        }
     }
 
     // 3. Vendored static CMake build (Windows, containers, musl, missing system opus).
@@ -64,6 +79,24 @@ fn main() {
 /// Returns the `cargo:rustc-link-lib` kind word for the linking preference.
 fn kind_word(is_static: bool) -> &'static str {
     if is_static { "static" } else { "dylib" }
+}
+
+/// Resolves a pkg-config module's `libdir` via the `pkg-config` binary.
+///
+/// Used to find the static archive directly, because the `pkg-config` crate's
+/// `static=` decision relies on the `.pc` file carrying an explicit `-L`, which
+/// Debian/Ubuntu omit for the default library directory.
+fn pkg_config_libdir(module: &str) -> Option<std::path::PathBuf> {
+    let bin = env::var_os("PKG_CONFIG").unwrap_or_else(|| "pkg-config".into());
+    let out = std::process::Command::new(bin)
+        .args(["--variable=libdir", module])
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let dir = String::from_utf8(out.stdout).ok()?.trim().to_string();
+    (!dir.is_empty()).then(|| std::path::PathBuf::from(dir))
 }
 
 /// Whether opus should be linked statically, honoring `LIBOPUS_STATIC`/`OPUS_STATIC`.
