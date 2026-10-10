@@ -9,7 +9,7 @@ Rust-native Lavalink v4 audio node for Discord. Cargo workspace:
 export LIBOPUS_STATIC=1 OPUS_STATIC=1   # required; libopus is linked statically
 cargo build --release --workspace        # release: panic="unwind" (decoder catch_unwind), strip=true; ~5 min cold
 cargo check --workspace --all-targets
-cargo test --workspace                   # 247 tests (+1 ignored soak)
+cargo test --workspace                   # 249 tests (+1 ignored soak)
 cargo test -p kizuna-server -- --ignored soak --nocapture   # soak harness
 cargo clippy --workspace --all-targets -- -D warnings
 cargo fmt --all -- --check
@@ -21,7 +21,9 @@ Build metadata (`BUILD_TIME*`, `GIT_COMMIT*` shown in the banner and `/v4/info`)
 is read via `option_env!`; release CI and the Dockerfile inject it. Unset env
 vars render as `unknown`/`0`, so local builds are unaffected.
 
-The binary loads `config.toml` from the current working directory. Copy
+The binary loads `config.toml` from the current working directory. Set
+`KIZUNA_CONFIG_PATH` to an absolute path to load a config from elsewhere (useful
+when the working directory is read-only or shared). Copy
 `config.example.toml` to `config.toml`. The example binds `0.0.0.0` and keeps the
 default `authorization = "youshallnotpass"`, which config validation rejects when
 binding non-loopback — set a real secret or `KIZUNA_AUTHORIZATION`, or bind
@@ -64,6 +66,16 @@ protocol tests.
 
 ## Gotchas
 
+- The WebSocket client op set is intentionally small (`IncomingMessage` in
+  `kizunalink/.../lavalink/protocol/opcodes.rs`): `voiceUpdate`, `play`, `stop`,
+  `destroy`, `configureResuming`. Unknown ops fail to deserialize and are logged
+  and dropped. When adding or changing a client op, mirror it in REST (`PATCH
+  /v4/sessions/{id}`) so both transports stay in sync, and add a `ws/tests.rs`
+  case.
+- YouTube (the most common source) supports a per-source `proxy` like every other
+  source; it is what lets the node work from datacenter IPs that YouTube blocks
+  (HTTP 403 from `googlevideo.com`). See `default_playback_clients()` and
+  `YouTubeConfig::proxy`.
 - Release uses `panic = "unwind"` so `AudioProcessor::run_guarded` (a `catch_unwind`
   wrapper around the decoder loop) can isolate a panic on one bad stream instead of
   aborting the node. Do not set `panic = "abort"` — it silently makes the guard dead

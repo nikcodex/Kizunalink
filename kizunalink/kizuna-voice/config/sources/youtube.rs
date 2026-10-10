@@ -3,7 +3,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::config::sources::{default_false, default_true};
+use crate::config::sources::{HttpProxyConfig, default_false, default_true};
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct YouTubeConfig {
@@ -17,6 +17,13 @@ pub struct YouTubeConfig {
     pub refresh_tokens: Vec<String>,
     #[serde(default = "default_false")]
     pub get_oauth_token: bool,
+    /// Route all YouTube requests (innertube, player, CDN fetches) through this proxy.
+    ///
+    /// YouTube aggressively blocks datacenter/cloud IPs ("Sign in to confirm you're not
+    /// a bot" / HTTP 403 from `googlevideo.com`). Routing through a residential or
+    /// otherwise clean egress is the most reliable mitigation.
+    #[serde(default)]
+    pub proxy: Option<HttpProxyConfig>,
 }
 
 impl Default for YouTubeConfig {
@@ -27,6 +34,7 @@ impl Default for YouTubeConfig {
             cipher: YouTubeCipherConfig::default(),
             refresh_tokens: Vec::new(),
             get_oauth_token: false,
+            proxy: None,
         }
     }
 }

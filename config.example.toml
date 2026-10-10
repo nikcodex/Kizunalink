@@ -91,6 +91,10 @@ excluded_ips = []
 enabled = true
 #refresh_tokens = [] # for tv client playback
 get_oauth_token = false
+# YouTube blocks datacenter/cloud IPs ("Sign in to confirm you're not a bot" /
+# HTTP 403 from googlevideo.com). Routing YouTube through a clean/residential
+# proxy is the most reliable fix. Uncomment and edit to enable:
+# proxy = { url = "http://proxy:8080", username = "user", password = "pass" }
 
 [sources.youtube.clients]
 search = ["MUSIC_ANDROID", "MUSIC_WEB", "ANDROID", "WEB"]
@@ -280,7 +284,10 @@ enabled = true
 # proxy = { url = "http://proxy:8080", username = "user", password = "pass" }
 
 [sources.amazonmusic]
-enabled = true
+# Requires an authenticated Amazon Music session (accessToken/csrf from
+# music.amazon.com/config.json); without one it returns empty results.
+# Disabled by default because the public site config cannot authenticate.
+enabled = false
 search_limit = 10
 # proxy = { url = "http://proxy:8080", username = "user", password = "pass" }
 

@@ -90,11 +90,22 @@ fn register_core_sources(
 
     // YouTube handled explicitly
     if config.sources.youtube.as_ref().is_some_and(|c| c.enabled) {
-        tracing::info!("Loaded source: YouTube");
-        let yt_client = http_pool.get(None);
+        let yt_proxy = config
+            .sources
+            .youtube
+            .as_ref()
+            .and_then(|c| c.proxy.clone());
+        if let Some(p) = &yt_proxy {
+            tracing::info!(
+                "Loading YouTube with proxy: {}",
+                p.url.as_ref().unwrap_or(&"enabled".to_owned())
+            );
+        }
+        let yt_client = http_pool.get(yt_proxy.clone());
         let yt = YouTubeSource::new(config.sources.youtube.clone(), yt_client);
         yt_ctx = (Some(yt.cipher_manager()), Some(yt.stream_context()));
         sources.push(Box::new(yt));
+        tracing::info!("Loaded source: YouTube");
     }
 
     // SoundCloud
@@ -502,6 +513,12 @@ fn register_amazonmusic(
         match AmazonMusicSource::new(c.clone(), http_pool.get(proxy)) {
             Ok(src) => {
                 tracing::info!("Loaded source: Amazon Music");
+                tracing::warn!(
+                    "Amazon Music is enabled but requires an authenticated Amazon session \
+                     (accessToken/csrf from music.amazon.com/config.json). Without one, \
+                     searches and track lookups will return empty. Disable it unless you \
+                     have such a session."
+                );
                 sources.push(Box::new(src));
             }
             Err(e) => {

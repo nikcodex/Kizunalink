@@ -47,6 +47,7 @@ pub struct YouTubeSource {
     oauth: Arc<YouTubeOAuth>,
     cipher_manager: Arc<YouTubeCipherManager>,
     visitor_data: SharedRw<Option<String>>,
+    proxy: Option<crate::config::sources::HttpProxyConfig>,
     #[allow(dead_code)]
     http: Arc<reqwest::Client>,
 }
@@ -194,6 +195,7 @@ impl YouTubeSource {
             oauth,
             cipher_manager,
             visitor_data,
+            proxy: config.proxy.clone(),
             http,
         }
     }
@@ -473,7 +475,7 @@ impl SourcePlugin for YouTubeSource {
             cipher_manager: self.cipher_manager.clone(),
             visitor_data,
             local_addr: routeplanner.and_then(|rp| rp.get_address()),
-            proxy: None,
+            proxy: self.proxy.clone(),
         }))
     }
 }

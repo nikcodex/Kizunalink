@@ -41,22 +41,45 @@ pub struct AppConfig {
 }
 
 impl AppConfig {
-    /// The `log_println!` lines here intentionally write to the console before the
-    /// tracing subscriber exists (and mirror to the log file once it does) — hence the
-    /// local N05 `print_stdout` allow.
-    #[allow(clippy::print_stdout)]
-    pub async fn load() -> AnyResult<Self> {
-        let config_path = if Path::new("config.toml").exists() {
-            "config.toml"
+    /// Resolve the configuration file path.
+    ///
+    /// Resolution order:
+    /// 1. `KIZUNA_CONFIG_PATH` (explicit override, must exist — fails fast)
+    /// 2. `config.toml` in the current working directory
+    /// 3. `config.example.toml` in the current working directory (with a warning)
+    ///
+    /// Operators commonly launch the node from elsewhere (systemd, a process manager,
+    /// a Docker `WORKDIR` that differs from the config mount). The environment override
+    /// removes the "must `cd` into the config directory" papercut without changing the
+    /// default behaviour.
+    fn resolve_config_path() -> String {
+        if let Ok(path) = std::env::var("KIZUNA_CONFIG_PATH") {
+            if Path::new(&path).exists() {
+                return path;
+            }
+            return path; // Let the read fail fast with a clear "No such file" error.
+        }
+
+        if Path::new("config.toml").exists() {
+            "config.toml".to_string()
         } else if Path::new("config.example.toml").exists() {
             tracing::warn!(
                 "config.toml not found — falling back to config.example.toml. \
                  For production, copy config.example.toml to config.toml and customize it."
             );
-            "config.example.toml"
+            "config.example.toml".to_string()
         } else {
-            return Err("config.toml or config.example.toml not found — please create one from config.example.toml".into());
-        };
+            "config.toml".to_string() // Produces a clear read error naming the path.
+        }
+    }
+
+    /// The `log_println!` lines here intentionally write to the console before the
+    /// tracing subscriber exists (and mirror to the log file once it does) — hence the
+    /// local N05 `print_stdout` allow.
+    #[allow(clippy::print_stdout)]
+    pub async fn load() -> AnyResult<Self> {
+        let config_path = Self::resolve_config_path();
+        let config_path = config_path.as_str();
 
         crate::log_println!("Loading configuration from: {}", config_path);
 
@@ -393,5 +416,26 @@ mod tests {
         loopback_ok
             .validate()
             .expect("default auth on loopback should pass (with warning)");
+    }
+
+    #[test]
+    fn config_path_override_is_honoured() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        let previous = std::env::var("KIZUNA_CONFIG_PATH").ok();
+
+        unsafe {
+            std::env::set_var("KIZUNA_CONFIG_PATH", "/tmp/kizunalink-does-not-exist.toml");
+        }
+        // The override is returned verbatim (so the subsequent read fails fast with a
+        // clear path instead of silently falling back to a different file).
+        assert_eq!(
+            AppConfig::resolve_config_path(),
+            "/tmp/kizunalink-does-not-exist.toml"
+        );
+
+        match previous {
+            Some(v) => unsafe { std::env::set_var("KIZUNA_CONFIG_PATH", v) },
+            None => unsafe { std::env::remove_var("KIZUNA_CONFIG_PATH") },
+        }
     }
 }

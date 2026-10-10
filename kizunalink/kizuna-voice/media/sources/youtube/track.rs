@@ -52,6 +52,7 @@ impl PlayableTrack for YoutubeTrack {
             'playback_loop: loop {
                 // Resolve a playback URL using any available client.
                 let mut resolved_url: Option<(String, String)> = None;
+                let mut failures: Vec<String> = Vec::new();
 
                 for (idx, client) in clients_async.iter().enumerate().skip(current_client_index) {
                     current_client_index = idx;
@@ -83,12 +84,14 @@ impl PlayableTrack for YoutubeTrack {
                                 "YoutubeTrack: client {} returned no URL for {}",
                                 client_name, identifier_async
                             );
+                            failures.push(format!("{client_name}: no playable format"));
                         }
                         Err(e) => {
                             warn!(
                                 "YoutubeTrack: client {} failed to resolve {}: {}",
                                 client_name, identifier_async, e
                             );
+                            failures.push(format!("{client_name}: {e}"));
                         }
                     }
                 }
@@ -97,8 +100,13 @@ impl PlayableTrack for YoutubeTrack {
                     Some(r) => r,
                     None => {
                         let msg = format!(
-                            "YoutubeTrack: All clients failed to resolve '{}'",
-                            identifier_async
+                            "YoutubeTrack: All clients failed to resolve '{}': {}. \
+                             This usually means YouTube is blocking this machine's IP \
+                             (\"Sign in to confirm you're not a bot\") or its CDN is \
+                             returning HTTP 403. Configure `sources.youtube.proxy` to a \
+                             clean/residential egress, or set up OAuth refresh tokens.",
+                            identifier_async,
+                            failures.join("; ")
                         );
                         error!("{}", msg);
                         let _ = err_tx.send(msg);
