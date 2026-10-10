@@ -72,6 +72,19 @@ protocol tests.
   and dropped. When adding or changing a client op, mirror it in REST (`PATCH
   /v4/sessions/{id}`) so both transports stay in sync, and add a `ws/tests.rs`
   case.
+- **`IncomingMessage` field names must be `#[serde(rename = "...")]`-ed one by
+  one.** The enum is internally tagged (`tag = "op"`), and in that form
+  `rename_all = "camelCase"` only renames the *variant* names — it does NOT touch
+  field names. Lavalink clients send `guildId`/`sessionId`/`channelId`, so without
+  the explicit renames every real client frame fails with `missing field
+  'guild_id'` and is silently dropped. The unit tests in `opcodes.rs` send the
+  exact camelCase wire shapes to catch this; keep them when editing the enum.
+- DAVE E2EE: `dave.can_send_media()` gates the RTP send loop, so a session that
+  never reaches MLS readiness emits nothing (the bot appears silent). Discord only
+  completes the MLS group when the channel has other members; a bot alone in a
+  channel may never receive the proposal/commit that makes the session ready. Do
+  not conclude "DAVE is broken" from a lone-bot test — put a second client in the
+  channel, or check for `DAVE session (v1) is READY` in the logs.
 - YouTube (the most common source) supports a per-source `proxy` like every other
   source; it is what lets the node work from datacenter IPs that YouTube blocks
   (HTTP 403 from `googlevideo.com`). See `default_playback_clients()` and
