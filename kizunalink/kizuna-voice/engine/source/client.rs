@@ -36,6 +36,8 @@ pub(crate) fn is_blocked_ip(ip: &IpAddr) -> bool {
                 // "This network" 0.0.0.0/8 and IETF protocol assignments 192.0.0.0/24.
                 || o[0] == 0
                 || (o[0] == 192 && o[1] == 0 && o[2] == 0)
+                // Deprecated 6to4 relay anycast 192.88.99.0/24.
+                || (o[0] == 192 && o[1] == 88 && o[2] == 99)
                 // Shared address space / CGNAT 100.64.0.0/10.
                 || (o[0] == 100 && (o[1] & 0xc0) == 64)
                 // Benchmarking 198.18.0.0/15.
@@ -44,32 +46,40 @@ pub(crate) fn is_blocked_ip(ip: &IpAddr) -> bool {
                 || o[0] >= 0xf0
         }
         IpAddr::V6(ip) => {
-            // IPv4-mapped (::ffff:a.b.c.d) and IPv4-compatible (::a.b.c.d) both
-            // embed a v4 address; unmap and apply the v4 policy so `::ffff:127.0.0.1`
-            // and `::7f00:1` cannot slip past the v6 checks.
+            // IPv4-mapped (::ffff:a.b.c.d) embeds a v4 address; unmap and apply
+            // the v4 policy so `::ffff:127.0.0.1` cannot slip past the v6 checks.
             if let Some(mapped_v4) = ip.to_ipv4_mapped() {
                 return is_blocked_ip(&IpAddr::V4(mapped_v4));
             }
             let seg = ip.segments();
             let first = seg[0];
-            ip.is_loopback()
-                || ip.is_multicast()
-                || ip.is_unspecified()
-                // Unique-local fc00::/7.
-                || (first & 0xfe00) == 0xfc00
-                // Link-local fe80::/10.
-                || (first & 0xffc0) == 0xfe80
-                // NAT64 well-known prefix 64:ff9b::/96 (reaches the embedded v4).
-                || (first == 0x0064 && seg[1] == 0xff9b)
-                // 6to4 2002::/16 (reaches the embedded v4).
-                || first == 0x2002
-                // Teredo 2001::/32 (tunnels to an arbitrary v4/v6 peer).
-                || (first == 0x2001 && seg[1] == 0)
-                // Documentation 2001:db8::/32.
-                || (first == 0x2001 && seg[1] == 0x0db8)
-                // IPv4-compatible ::a.b.c.d and ::/96 — deprecated but still routed
-                // by some stacks; segment 0..=5 zero means the v4 is in the low bits.
-                || (seg[0..6].iter().all(|s| *s == 0))
+            // Allowlist: only global unicast 2000::/3 may be contacted. Everything
+            // outside it — loopback, unspecified, multicast, ULA, link-local,
+            // IPv4-compatible `::a.b.c.d`, NAT64 `64:ff9b::/96`, discard-only
+            // `100::/64`, segment-routing `5f00::/16`, ... — is refused. New
+            // reservations therefore default to blocked.
+            if (first & 0xe000) != 0x2000 {
+                return true;
+            }
+            // Special-purpose ranges *inside* 2000::/3.
+            // 2001::/23 (Teredo 2001::/32, benchmarking 2001:2::/48, ORCHID
+            // 2001:10::/28, ORCHIDv2 2001:20::/28, ...).
+            if first == 0x2001 && seg[1] < 0x0200 {
+                return true;
+            }
+            // Documentation 2001:db8::/32.
+            if first == 0x2001 && seg[1] == 0x0db8 {
+                return true;
+            }
+            // 6to4 2002::/16 (reaches the embedded v4).
+            if first == 0x2002 {
+                return true;
+            }
+            // Documentation 3fff::/20.
+            if first == 0x3fff && seg[1] < 0x1000 {
+                return true;
+            }
+            false
         }
     }
 }
@@ -258,6 +268,29 @@ mod tests {
     }
 
     #[test]
+    fn redirect_policy_rejects_local_and_internal_hostnames_before_dns() {
+        // The redirect hop is checked by name, before any DNS lookup, so a
+        // redirect into the local network is stopped even though `can_handle`
+        // style syntax checks cannot see where the name resolves.
+        let from = url("https://media.example/track");
+        for target in [
+            "http://localhost/audio",
+            "http://api.localhost/audio",
+            "http://service.internal/audio",
+            "http://printer.local/audio",
+            "http://metadata.google.internal/computeMetadata/v1/",
+        ] {
+            assert!(
+                !validate_redirect_url(&from, &url(target)),
+                "local/internal name should be rejected: {target}"
+            );
+        }
+        // Ordinary public names still pass the name check (connect-time address
+        // validation is the authoritative layer for those).
+        assert!(validate_redirect_url(&from, &url("https://cdn.example/a")));
+    }
+
+    #[test]
     fn rejects_public_hostname_that_resolves_to_private_address() {
         // The resolver validates the exact socket addresses it passes to
         // Hyper, so a public-looking hostname cannot rebind to a private IP.
@@ -331,8 +364,38 @@ mod tests {
             V4::new(100, 128, 0, 0),    // just above CGNAT
             V4::new(198, 17, 255, 255), // just below benchmarking
             V4::new(198, 20, 0, 0),     // just above benchmarking
+            V4::new(192, 88, 98, 255),  // below 6to4-relay 192.88.99.0/24
+            V4::new(192, 88, 100, 0),   // above 6to4-relay 192.88.99.0/24
         ] {
             assert!(!is_blocked_ip(&IpAddr::V4(ip)), "{ip} must be allowed");
+        }
+    }
+
+    #[test]
+    fn blocks_iana_special_ranges_found_by_oracle_diff() {
+        use Ipv4Addr as V4;
+        use Ipv6Addr as V6;
+        // These were missed before an independent oracle diff caught them.
+        assert!(is_blocked_ip(&IpAddr::V4(V4::new(192, 88, 99, 1))));
+        for ip in [
+            "100::1",
+            "2001:2::1",
+            "2001:10::1",
+            "2001:20::1",
+            "3fff::1",
+            "5f00::1",
+        ] {
+            assert!(
+                is_blocked_ip(&IpAddr::V6(V6::from_str(ip).unwrap())),
+                "{ip} must be blocked"
+            );
+        }
+        // Global unicast just outside the special sub-ranges stays reachable.
+        for ip in ["2001:4860:4860::8888", "2400:cb00::1", "2a00:1450:4001::1"] {
+            assert!(
+                !is_blocked_ip(&IpAddr::V6(V6::from_str(ip).unwrap())),
+                "{ip} must be allowed"
+            );
         }
     }
 
