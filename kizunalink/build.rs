@@ -58,11 +58,18 @@ fn main() {
             if let Some(dir) = pkg_config_libdir("opus")
                 && dir.join("libopus.a").exists()
             {
-                println!("cargo:info=Found static opus via pkg-config: {}", dir.display());
+                println!(
+                    "cargo:info=Found static opus via pkg-config: {}",
+                    dir.display()
+                );
                 link("static", &dir.display().to_string());
                 return;
             }
-        } else if pkg_config::Config::new().statik(false).probe("opus").is_ok() {
+        } else if pkg_config::Config::new()
+            .statik(false)
+            .probe("opus")
+            .is_ok()
+        {
             println!("cargo:info=Found opus via pkg-config.");
             return;
         }
